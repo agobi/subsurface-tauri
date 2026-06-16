@@ -1,0 +1,64 @@
+/* AI-generated (Claude) - design tokens ported verbatim from subsurface-reskin.html :root */
+
+/* ============================================================
+   DESIGN TOKENS  — map these 1:1 to a Qt palette + QSS theme.
+   Spacing scale: 4 / 8 / 12 / 16 / 24 / 32  (4px grid)
+   Radii: 6 controls · 10 panels · 999 pills
+   Type: SF Pro (UI) · SF Mono (tabular data)
+   ============================================================ */
+:root {
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px;
+  --r-control: 6px; --r-panel: 10px; --r-pill: 999px;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* depth / water language */
+  --aqua: #39C2E0;        /* depth curve, water accent  */
+  --aqua-soft: #7FE0F0;
+  --blue: #2E8FF5;        /* primary action            */
+  --amber: #F2A33C;       /* tank pressure             */
+  --teal: #5FD3C5;        /* temperature               */
+  --rate-fast: #E5484D;   /* ascent too fast (domain)  */
+  --rate-ok: #46C56A;     /* slow / safe (domain)      */
+  --ceiling: #46C56A;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0B1620;          /* abyss            */
+  --panel: #102230;       /* surface          */
+  --panel-2: #0D1C28;     /* recessed         */
+  --elev: #173241;        /* hover / selected */
+  --hair: rgba(255, 255, 255, .08);
+  --hair-strong: rgba(255, 255, 255, .14);
+  --txt: #E8EEF2;
+  --txt-2: #93A7B4;       /* secondary  (AA on dark) */
+  --txt-3: #647885;       /* tertiary                */
+  --grid: rgba(255, 255, 255, .06);
+  --row-alt: rgba(255, 255, 255, .022);
+  --shadow: 0 8px 28px rgba(0, 0, 0, .45);
+}
+
+:root[data-theme="light"] {
+  --bg: #EEF2F5;
+  --panel: #FFFFFF;
+  --panel-2: #F6F8FA;
+  --elev: #E8F2F8;
+  --hair: rgba(8, 30, 45, .10);
+  --hair-strong: rgba(8, 30, 45, .18);
+  --txt: #0F2531;
+  --txt-2: #56707E;       /* AA on white */
+  --txt-3: #82939E;
+  --grid: rgba(8, 30, 45, .07);
+  --row-alt: rgba(8, 30, 45, .025);
+  --shadow: 0 8px 28px rgba(12, 40, 60, .14);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--txt);
+  -webkit-font-smoothing: antialiased;
+}
+.tnum { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
