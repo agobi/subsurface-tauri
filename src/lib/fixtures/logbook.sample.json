@@ -1,0 +1,88 @@
+{
+  "dives": [
+    {
+      "number": 1,
+      "dateTime": "2024-03-15T12:28:43",
+      "durationSec": 300,
+      "siteId": "04782ed8",
+      "tags": [
+        "cave"
+      ],
+      "rating": 4,
+      "diveGuide": "Test Diver",
+      "cylinders": [
+        {
+          "description": "D12 232 bar",
+          "volumeL": 24,
+          "workPressureBar": 232,
+          "o2Percent": 32,
+          "depthM": 39.845
+        }
+      ],
+      "dcModel": "Shearwater Perdix AI",
+      "maxDepthM": 34.7,
+      "meanDepthM": 14.793,
+      "waterTempC": 19,
+      "decoModel": "GF 55/85",
+      "samples": [
+        {
+          "timeSec": 5,
+          "depthM": 1.6,
+          "tempC": 25,
+          "cns": 5
+        },
+        {
+          "timeSec": 60,
+          "depthM": 9,
+          "tempC": 25,
+          "cns": 5
+        },
+        {
+          "timeSec": 150,
+          "depthM": 20,
+          "tempC": 24,
+          "ndlSec": 3300,
+          "cns": 5
+        },
+        {
+          "timeSec": 240,
+          "depthM": 30,
+          "tempC": 24,
+          "ndlSec": 2100,
+          "cns": 5
+        },
+        {
+          "timeSec": 300,
+          "depthM": 0,
+          "tempC": 24,
+          "ndlSec": 2100,
+          "cns": 5
+        }
+      ],
+      "events": [
+        {
+          "timeSec": 5,
+          "name": "gaschange",
+          "type": 25,
+          "flags": 1,
+          "cylinder": 0,
+          "o2Percent": 32
+        }
+      ]
+    }
+  ],
+  "trips": [],
+  "sites": [
+    {
+      "id": "04782ed8",
+      "name": "Test Spring",
+      "description": "",
+      "notes": "",
+      "gps": {
+        "lat": 47.668408,
+        "lon": 18.307076
+      }
+    }
+  ],
+  "units": "METRIC"
+}
