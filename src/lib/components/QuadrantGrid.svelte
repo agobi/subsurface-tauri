@@ -1,5 +1,6 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { app } from "$lib/stores/app.svelte.ts";
   import DiveProfile from "$lib/components/DiveProfile.svelte";
   import InfoPanel from "$lib/components/InfoPanel.svelte";
@@ -14,31 +15,34 @@
   let selected = $derived(app.selectedDive);
   let selectedSite = $derived(app.logbook.sites.find((s) => s.id === selected?.siteId));
 
-  function dragCol(e: MouseEvent) {
-    e.preventDefault();
-    const move = (ev: MouseEvent) => {
-      colFrac = Math.min(0.8, Math.max(0.2, ev.clientX / window.innerWidth));
+  // Track the active drag's listeners so they never outlive the drag or the
+  // component (a mouseup outside the window, or unmount mid-drag, would otherwise
+  // strand live window listeners writing to dead state).
+  let dragCleanup: (() => void) | null = null;
+
+  function startDrag(axis: "col" | "row") {
+    return (e: MouseEvent) => {
+      e.preventDefault();
+      dragCleanup?.(); // end any prior drag that lost its mouseup
+      const move = (ev: MouseEvent) => {
+        if (axis === "col") colFrac = Math.min(0.8, Math.max(0.2, ev.clientX / window.innerWidth));
+        else rowFrac = Math.min(0.8, Math.max(0.2, ev.clientY / window.innerHeight));
+      };
+      const up = () => {
+        window.removeEventListener("mousemove", move);
+        window.removeEventListener("mouseup", up);
+        dragCleanup = null;
+      };
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", up);
+      dragCleanup = up;
     };
-    const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-    };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
   }
 
-  function dragRow(e: MouseEvent) {
-    e.preventDefault();
-    const move = (ev: MouseEvent) => {
-      rowFrac = Math.min(0.8, Math.max(0.2, ev.clientY / window.innerHeight));
-    };
-    const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-    };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-  }
+  const dragCol = startDrag("col");
+  const dragRow = startDrag("row");
+
+  onDestroy(() => dragCleanup?.());
 </script>
 
 <div class="quad-wrap">

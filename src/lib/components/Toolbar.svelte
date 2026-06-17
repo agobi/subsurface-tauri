@@ -3,7 +3,6 @@
   let { onSearch }: { onSearch: (q: string) => void } = $props();
   let query = $state("");
   const actions = ["Add dive", "Download", "Plan", "Statistics", "Filter"];
-  $effect(() => onSearch(query));
 </script>
 
 <div class="toolbar">
@@ -13,7 +12,7 @@
   {/each}
   <div class="search">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-    <input placeholder="Search dives" bind:value={query} />
+    <input placeholder="Search dives" bind:value={query} oninput={(e) => onSearch(e.currentTarget.value)} />
   </div>
 </div>
 

@@ -1,12 +1,13 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
   import type { Dive } from "$lib/types.ts";
+  import { fmtMinSec } from "$lib/format.ts";
   let { dive }: { dive: Dive } = $props();
   const rows = $derived<[string, string][]>([
     ["Max depth", `${dive.maxDepthM?.toFixed(1) ?? "-"} m`],
     ["Mean depth", `${dive.meanDepthM?.toFixed(1) ?? "-"} m`],
     ["Water temp", `${dive.waterTempC ?? "-"} °C`],
-    ["Duration", `${Math.floor(dive.durationSec / 60)}:${String(dive.durationSec % 60).padStart(2, "0")}`],
+    ["Duration", fmtMinSec(dive.durationSec)],
     ["Deco model", dive.decoModel ?? "-"],
   ]);
 </script>
