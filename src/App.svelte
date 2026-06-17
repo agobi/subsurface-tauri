@@ -17,8 +17,8 @@
   <TitleBar fileName="logbook.ssrf" />
   <MenuBar />
   <Toolbar onSearch={(q) => (search = q)} />
-  <QuadrantGrid />
-  <StatusBar diveCount={app.dives.length} decoModel="GF 55/85" synced={true} />
+  <QuadrantGrid query={search} />
+  <StatusBar diveCount={app.dives.length} decoModel={app.selectedDive?.decoModel ?? "-"} synced={true} />
 </div>
 
 <style>
