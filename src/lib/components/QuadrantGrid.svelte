@@ -1,9 +1,18 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
   import { app } from "$lib/stores/app.svelte.ts";
+  import DiveProfile from "$lib/components/DiveProfile.svelte";
+  import InfoPanel from "$lib/components/InfoPanel.svelte";
+  import DiveList from "$lib/components/DiveList.svelte";
+  import MapPanel from "$lib/components/MapPanel.svelte";
+
+  let { query = "" }: { query?: string } = $props();
 
   let colFrac = $state(0.5);
   let rowFrac = $state(0.5);
+
+  let selected = $derived(app.selectedDive);
+  let selectedSite = $derived(app.logbook.sites.find((s) => s.id === selected?.siteId));
 
   function dragCol(e: MouseEvent) {
     e.preventDefault();
@@ -40,25 +49,33 @@
     {#if app.visiblePanels.info}
       <section class="quad" data-testid="quad-info">
         <header class="panel-head"><span class="ttl">Info</span></header>
-        <div class="body">Info panel</div>
+        <div class="body">
+          {#if selected}<InfoPanel dive={selected} />{/if}
+        </div>
       </section>
     {/if}
     {#if app.visiblePanels.profile}
       <section class="quad" data-testid="quad-profile">
         <header class="panel-head"><span class="ttl">Profile</span></header>
-        <div class="body">Dive profile</div>
+        <div class="body">
+          {#if selected}<DiveProfile dive={selected} />{/if}
+        </div>
       </section>
     {/if}
     {#if app.visiblePanels.list}
       <section class="quad" data-testid="quad-list">
         <header class="panel-head"><span class="ttl">Dive List</span></header>
-        <div class="body">Dive list</div>
+        <div class="body">
+          <DiveList dives={app.dives} trips={app.logbook.trips} sites={app.logbook.sites} {query} />
+        </div>
       </section>
     {/if}
     {#if app.visiblePanels.map}
       <section class="quad" data-testid="quad-map">
         <header class="panel-head"><span class="ttl">Map</span></header>
-        <div class="body">Map</div>
+        <div class="body">
+          <MapPanel siteName={selectedSite?.name} gps={selectedSite?.gps} />
+        </div>
       </section>
     {/if}
   </div>
