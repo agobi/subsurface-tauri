@@ -2,6 +2,7 @@
 <script lang="ts">
   import type { Dive, Trip, Site } from "$lib/types.ts";
   import { app } from "$lib/stores/app.svelte.ts";
+  import { fmtMinSec } from "$lib/format.ts";
 
   let { dives, trips, sites, query = "" }: { dives: Dive[]; trips: Trip[]; sites: Site[]; query?: string } = $props();
 
@@ -17,7 +18,6 @@
 
   function stars(n = 0) { return "★".repeat(n) + "☆".repeat(5 - n); }
   function fmtDate(iso: string) { return iso.slice(0, 10); }
-  function fmtDur(sec: number) { return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; }
 
   // Trip grouping: a dive belongs to a trip if its number is in trip.diveNumbers.
   // Dives not in any trip render ungrouped after the trip groups.
@@ -59,7 +59,7 @@
     <span class="tnum">{fmtDate(d.dateTime)}</span>
     <span class="stars" aria-label={`rating ${d.rating ?? 0} of 5`}>{stars(d.rating)}</span>
     <span class="tnum depth">{d.maxDepthM?.toFixed(1) ?? "-"}</span>
-    <span class="tnum">{fmtDur(d.durationSec)}</span>
+    <span class="tnum">{fmtMinSec(d.durationSec)}</span>
     <span class="loc">{siteName(d.siteId)}</span>
   </div>
 {/snippet}

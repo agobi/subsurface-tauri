@@ -2,6 +2,7 @@
 <script lang="ts">
   import type { Dive } from "$lib/types.ts";
   import { timeToX, depthToY, depthAxisMax, ascentRateClass } from "$lib/profile/profile-scale.ts";
+  import { fmtMinSec } from "$lib/format.ts";
 
   let { dive }: { dive: Dive } = $props();
 
@@ -12,7 +13,12 @@
   let series = $state({ depth: true, temp: true, tank: true, ceiling: true, po2: false, mod: false, hr: false });
 
   let maxTime = $derived(dive.samples.length ? dive.samples[dive.samples.length - 1].timeSec : 1);
-  let axisMax = $derived(depthAxisMax(dive.maxDepthM ?? Math.max(0, ...dive.samples.map((s) => s.depthM))));
+  let axisMax = $derived.by(() => {
+    if (dive.maxDepthM != null) return depthAxisMax(dive.maxDepthM);
+    let max = 0;
+    for (const s of dive.samples) if (s.depthM > max) max = s.depthM;
+    return depthAxisMax(max);
+  });
 
   let depthSegments = $derived(
     dive.samples.slice(1).map((s, i) => {
@@ -36,12 +42,16 @@
     cursor = { x: timeToX(nearest.timeSec, maxTime, plot), sample: nearest };
   }
 
-  const toggles: { key: keyof typeof series; label: string }[] = [
-    { key: "temp", label: "Temperature" }, { key: "tank", label: "Tank pressure" },
-    { key: "ceiling", label: "Ceiling" }, { key: "po2", label: "pO2" },
-    { key: "mod", label: "MOD" }, { key: "hr", label: "Heart rate" },
+  // temp and tank are rendered; ceiling/pO2/MOD/HR are not yet implemented in the
+  // prototype, so their toggles are shown disabled rather than misleadingly active.
+  const toggles: { key: keyof typeof series; label: string; implemented: boolean }[] = [
+    { key: "temp", label: "Temperature", implemented: true },
+    { key: "tank", label: "Tank pressure", implemented: true },
+    { key: "ceiling", label: "Ceiling", implemented: false },
+    { key: "po2", label: "pO2", implemented: false },
+    { key: "mod", label: "MOD", implemented: false },
+    { key: "hr", label: "Heart rate", implemented: false },
   ];
-  function fmtTime(sec: number) { return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; }
   function gridLines(max: number) { const out: number[] = []; for (let m = 0; m <= max; m += 5) out.push(m); return out; }
 </script>
 
@@ -49,6 +59,8 @@
   <div class="ptoolbar">
     {#each toggles as t}
       <button class="ptog" class:on={series[t.key]} aria-pressed={series[t.key]}
+        disabled={!t.implemented}
+        title={t.implemented ? undefined : "Not yet implemented in the prototype"}
         onclick={() => (series = { ...series, [t.key]: !series[t.key] })}>{t.label}</button>
     {/each}
   </div>
@@ -90,9 +102,9 @@
       <line x1={cursor.x} y1={plot.y0} x2={cursor.x} y2={plot.y1} stroke="var(--rate-fast)" stroke-width="1" stroke-dasharray="2 2" />
       <g transform={`translate(${Math.min(cursor.x + 8, plot.x1 - 150)}, ${plot.y0 + 8})`}>
         <rect width="150" height="64" rx="6" fill="rgba(0,0,0,.75)" />
-        <text x="8" y="18" fill="#fff" font-size="11" font-family="var(--font-mono)">@ {fmtTime(cursor.sample.timeSec)}</text>
+        <text x="8" y="18" fill="#fff" font-size="11" font-family="var(--font-mono)">@ {fmtMinSec(cursor.sample.timeSec)}</text>
         <text x="8" y="34" fill="#fff" font-size="11" font-family="var(--font-mono)">D {cursor.sample.depthM.toFixed(1)} m</text>
-        <text x="8" y="50" fill="#fff" font-size="11" font-family="var(--font-mono)">{cursor.sample.ndlSec != null ? `NDL ${fmtTime(cursor.sample.ndlSec)}` : ""}</text>
+        <text x="8" y="50" fill="#fff" font-size="11" font-family="var(--font-mono)">{cursor.sample.ndlSec != null ? `NDL ${fmtMinSec(cursor.sample.ndlSec)}` : ""}</text>
       </g>
     {/if}
   </svg>
@@ -109,6 +121,7 @@
   .ptoolbar { display: flex; flex-direction: column; gap: 4px; padding: var(--space-2); border-right: 1px solid var(--hair); }
   .ptog { height: 26px; padding: 0 8px; border: 1px solid var(--hair); border-radius: 5px; background: var(--panel-2); color: var(--txt-3); font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
   .ptog.on { color: var(--txt); border-color: var(--aqua); }
+  .ptog:disabled { opacity: 0.45; cursor: not-allowed; }
   svg { flex: 1; min-width: 0; }
   .legend { position: absolute; right: 24px; bottom: 12px; display: flex; gap: 12px; font-size: 10.5px; color: var(--txt-3); }
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }

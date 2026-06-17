@@ -11,7 +11,7 @@ export function splitKeyword(line: string): { key: string; rest: string } {
 export function unquote(s: string): string {
   const t = s.trim();
   if (t.startsWith('"') && t.endsWith('"') && t.length >= 2) {
-    return t.slice(1, -1).replace(/\\"/g, '"');
+    return t.slice(1, -1).replace(/\\(["\\])/g, "$1");
   }
   return t;
 }
