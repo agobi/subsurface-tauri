@@ -34,3 +34,7 @@ vi.mock("@tauri-apps/plugin-store", () => {
     }),
   };
 });
+
+vi.mock("@tauri-apps/plugin-os", () => ({
+  platform: vi.fn().mockResolvedValue("macos"),
+}));

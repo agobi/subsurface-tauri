@@ -5,6 +5,7 @@ import type { Logbook, Dive } from "$lib/types.ts";
 export type PanelKey = "info" | "profile" | "list" | "map";
 export type Theme = "dark" | "light" | "auto";
 export type VisiblePanels = Record<PanelKey, boolean>;
+export type Platform = "desktop" | "mobile";
 
 const ALL_VISIBLE: VisiblePanels = { info: true, profile: true, list: true, map: true };
 const EMPTY_LOGBOOK: Logbook = { dives: [], trips: [], sites: [], units: "METRIC" };
@@ -14,11 +15,13 @@ class AppStore {
   selectedDiveId = $state<number | null>(null);
   visiblePanels = $state<VisiblePanels>({ ...ALL_VISIBLE });
   theme = $state<Theme>("auto");
+  platform = $state<Platform>("desktop");
 
   get dives(): Dive[] { return this.logbook.dives; }
   get selectedDive(): Dive | undefined {
     return this.logbook.dives.find((d) => d.number === this.selectedDiveId);
   }
+  get isMobile(): boolean { return this.platform === "mobile"; }
 
   async startup(): Promise<void> {
     this.logbook = await invoke<Logbook>("startup_logbook");
@@ -45,11 +48,16 @@ class AppStore {
     this.theme = t;
   }
 
+  setPlatform(p: Platform) {
+    this.platform = p;
+  }
+
   reset() {
     this.logbook = { ...EMPTY_LOGBOOK };
     this.selectedDiveId = null;
     this.visiblePanels = { ...ALL_VISIBLE };
     this.theme = "auto";
+    this.platform = "desktop";
   }
 }
 
