@@ -41,6 +41,10 @@ class AppStore {
     this.visiblePanels = next;
   }
 
+  setPanelVisible(key: PanelKey, visible: boolean) {
+    this.visiblePanels = { ...this.visiblePanels, [key]: visible };
+  }
+
   toggleTheme() {
     this.theme = this.theme === "dark" ? "light" : "dark";
   }
