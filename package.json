@@ -10,8 +10,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "build:fixture": "tsx tools/build-fixture.ts"
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
