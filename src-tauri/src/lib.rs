@@ -9,25 +9,38 @@ use types::Logbook;
 async fn startup_logbook(app: tauri::AppHandle) -> Result<Logbook, String> {
     use tauri::Manager;
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
-    let saved_path = store
-        .get("logbookPath")
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .and_then(|s| {
-            let p = std::path::PathBuf::from(&s);
-            if p.is_dir() { Some(p) } else { None }
-        });
 
-    let root = match saved_path {
-        Some(p) => p,
-        None => {
-            let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-            let default = data_dir.join("logbook");
+    // Retrieve saved path string without touching the filesystem yet.
+    let saved_str = store
+        .get("logbookPath")
+        .and_then(|v| v.as_str().map(str::to_owned));
+
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let default = data_dir.join("logbook");
+
+    // Resolve the logbook root in a blocking thread: is_dir() and create_dir_all()
+    // must not run on the async executor.
+    let (root, created_new) = tauri::async_runtime::spawn_blocking(
+        move || -> Result<(std::path::PathBuf, bool), String> {
+            if let Some(s) = saved_str {
+                let p = std::path::PathBuf::from(&s);
+                if p.is_dir() {
+                    return Ok((p, false));
+                }
+            }
             std::fs::create_dir_all(&default).map_err(|e| e.to_string())?;
-            store.set("logbookPath", serde_json::json!(default.to_string_lossy().as_ref()));
-            store.save().map_err(|e| e.to_string())?;
-            default
-        }
-    };
+            Ok((default, true))
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())??;
+
+    // Persist the new default path; store uses Arc/Mutex so it is safe on the
+    // async thread.
+    if created_new {
+        store.set("logbookPath", serde_json::json!(root.to_string_lossy().as_ref()));
+        store.save().map_err(|e| e.to_string())?;
+    }
 
     tauri::async_runtime::spawn_blocking(move || crate::ssrf_git::parse_logbook(&root))
         .await
@@ -47,14 +60,18 @@ async fn open_logbook(app: tauri::AppHandle, root: String) -> Result<Logbook, St
 
 #[tauri::command]
 async fn new_logbook(app: tauri::AppHandle, root: String) -> Result<Logbook, String> {
-    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    // Store update is non-blocking (Arc/Mutex internals); do it on the async thread.
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     store.set("logbookPath", serde_json::json!(root));
     store.save().map_err(|e| e.to_string())?;
+    // create_dir_all is blocking; merge it into the same spawn_blocking as parse_logbook.
     let path = std::path::PathBuf::from(root);
-    tauri::async_runtime::spawn_blocking(move || crate::ssrf_git::parse_logbook(&path))
-        .await
-        .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+        crate::ssrf_git::parse_logbook(&path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
