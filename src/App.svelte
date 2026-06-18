@@ -5,6 +5,7 @@
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { app, type VisiblePanels } from "$lib/stores/app.svelte.ts";
+  import { loadAppearancePrefs, applyTheme, type AppearancePrefs } from "$lib/prefs.ts";
   import Toolbar from "$lib/components/Toolbar.svelte";
   import StatusBar from "$lib/components/StatusBar.svelte";
   import QuadrantGrid from "$lib/components/QuadrantGrid.svelte";
@@ -47,13 +48,29 @@
       console.error("Startup failed:", e);
     }
 
+    try {
+      const prefs = await loadAppearancePrefs();
+      app.setTheme(prefs.theme);
+    } catch (e) {
+      console.error("Failed to load appearance prefs:", e);
+    }
+
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleColorScheme = () => applyTheme(app.theme);
+    mql.addEventListener("change", handleColorScheme);
+
     unlisteners = await Promise.all([
       listen("menu:file-open", handleOpen),
       listen("menu:file-new", handleNew),
       listen<VisiblePanels>("menu:set-panels", ({ payload }) => {
         app.visiblePanels = payload;
       }),
+      listen<AppearancePrefs>("prefs:appearance-changed", ({ payload }) => {
+        app.setTheme(payload.theme);
+      }),
     ]);
+
+    unlisteners.push(() => mql.removeEventListener("change", handleColorScheme));
   });
 
   onDestroy(() => {
@@ -61,7 +78,7 @@
   });
 
   $effect(() => {
-    document.documentElement.setAttribute("data-theme", app.theme);
+    applyTheme(app.theme);
   });
 </script>
 

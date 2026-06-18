@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Logbook, Dive } from "$lib/types.ts";
 
 export type PanelKey = "info" | "profile" | "list" | "map";
-export type Theme = "dark" | "light";
+export type Theme = "dark" | "light" | "auto";
 export type VisiblePanels = Record<PanelKey, boolean>;
 
 const ALL_VISIBLE: VisiblePanels = { info: true, profile: true, list: true, map: true };
@@ -13,7 +13,7 @@ class AppStore {
   logbook = $state<Logbook>({ ...EMPTY_LOGBOOK });
   selectedDiveId = $state<number | null>(null);
   visiblePanels = $state<VisiblePanels>({ ...ALL_VISIBLE });
-  theme = $state<Theme>("dark");
+  theme = $state<Theme>("auto");
 
   get dives(): Dive[] { return this.logbook.dives; }
   get selectedDive(): Dive | undefined {
@@ -41,15 +41,15 @@ class AppStore {
     this.visiblePanels = next;
   }
 
-  toggleTheme() {
-    this.theme = this.theme === "dark" ? "light" : "dark";
+  setTheme(t: Theme) {
+    this.theme = t;
   }
 
   reset() {
     this.logbook = { ...EMPTY_LOGBOOK };
     this.selectedDiveId = null;
     this.visiblePanels = { ...ALL_VISIBLE };
-    this.theme = "dark";
+    this.theme = "auto";
   }
 }
 

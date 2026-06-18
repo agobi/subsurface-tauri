@@ -1,7 +1,7 @@
 // AI-generated (Claude)
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, Submenu},
-    AppHandle, Emitter, Manager, Runtime,
+    AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder,
 };
 #[cfg(target_os = "macos")]
 use tauri::menu::PredefinedMenuItem;
@@ -45,15 +45,8 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
         map: view_map.clone(),
     });
 
-    let file = Submenu::with_items(
-        app,
-        "File",
-        true,
-        &[
-            &MenuItem::with_id(app, "file-open", "Open Logbook\u{2026}", true, None::<&str>)?,
-            &MenuItem::with_id(app, "file-new", "New Logbook\u{2026}", true, None::<&str>)?,
-        ],
-    )?;
+    let file_open = MenuItem::with_id(app, "file-open", "Open Logbook\u{2026}", true, None::<&str>)?;
+    let file_new = MenuItem::with_id(app, "file-new", "New Logbook\u{2026}", true, None::<&str>)?;
 
     let view = Submenu::with_items(
         app,
@@ -62,19 +55,12 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
         &[&view_all, &view_list, &view_profile, &view_info, &view_map],
     )?;
 
-    let items: &[&dyn tauri::menu::IsMenuItem<R>] = &[
-        &file,
-        &stub_submenu(app, "Edit")?,
-        &stub_submenu(app, "Import")?,
-        &stub_submenu(app, "Log")?,
-        &view,
-        &stub_submenu(app, "Help")?,
-    ];
-
     // On macOS the first submenu becomes the app menu (title overridden by the app
     // name). Prepend a proper app menu so File appears as its own menu in the bar.
     #[cfg(target_os = "macos")]
     {
+        let file = Submenu::with_items(app, "File", true, &[&file_open, &file_new])?;
+
         let app_menu = Submenu::with_items(
             app,
             "Subsurface",
@@ -82,7 +68,7 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
             &[
                 &PredefinedMenuItem::about(app, None, None)?,
                 &PredefinedMenuItem::separator(app)?,
-                &MenuItem::with_id(app, "settings", "Settings\u{2026}", false, Some("cmd+,"))?,
+                &MenuItem::with_id(app, "settings", "Settings\u{2026}", true, Some("cmd+,"))?,
                 &PredefinedMenuItem::separator(app)?,
                 &PredefinedMenuItem::services(app, None)?,
                 &PredefinedMenuItem::separator(app)?,
@@ -93,13 +79,35 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
                 &PredefinedMenuItem::quit(app, None)?,
             ],
         )?;
-        let mut all: Vec<&dyn tauri::menu::IsMenuItem<R>> = vec![&app_menu];
-        all.extend_from_slice(items);
-        return Menu::with_items(app, &all);
+
+        let items: &[&dyn tauri::menu::IsMenuItem<R>] = &[
+            &app_menu,
+            &file,
+            &stub_submenu(app, "Edit")?,
+            &stub_submenu(app, "Import")?,
+            &stub_submenu(app, "Log")?,
+            &view,
+            &stub_submenu(app, "Help")?,
+        ];
+        Menu::with_items(app, items)
     }
 
-    #[allow(unreachable_code)]
-    Menu::with_items(app, items)
+    #[cfg(not(target_os = "macos"))]
+    {
+        let settings_item =
+            MenuItem::with_id(app, "settings", "Preferences\u{2026}", true, None::<&str>)?;
+        let file = Submenu::with_items(app, "File", true, &[&file_open, &file_new, &settings_item])?;
+
+        let items: &[&dyn tauri::menu::IsMenuItem<R>] = &[
+            &file,
+            &stub_submenu(app, "Edit")?,
+            &stub_submenu(app, "Import")?,
+            &stub_submenu(app, "Log")?,
+            &view,
+            &stub_submenu(app, "Help")?,
+        ];
+        Menu::with_items(app, items)
+    }
 }
 
 fn stub_submenu<R: Runtime>(app: &impl Manager<R>, label: &str) -> tauri::Result<Submenu<R>> {
@@ -120,7 +128,22 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEven
             app.emit("menu:file-new", ()).ok();
         }
         "settings" => {
-            app.emit("menu:settings", ()).ok();
+            let label = "preferences";
+            if let Some(win) = app.get_webview_window(label) {
+                win.show().ok();
+                win.set_focus().ok();
+            } else {
+                WebviewWindowBuilder::new(
+                    app,
+                    label,
+                    WebviewUrl::App("prefs.html".into()),
+                )
+                .title("Preferences")
+                .inner_size(720.0, 480.0)
+                .resizable(false)
+                .build()
+                .ok();
+            }
         }
         id @ ("view-all" | "view-list" | "view-profile" | "view-info" | "view-map") => {
             let items = app.state::<ViewItems<R>>();
