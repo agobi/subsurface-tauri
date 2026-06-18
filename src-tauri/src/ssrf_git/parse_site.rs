@@ -12,7 +12,7 @@ pub fn parse_site(file_name: &str, text: &str) -> Site {
             "description" => site.description = Some(unquote(rest)),
             "notes" => site.notes = Some(unquote(rest)),
             "gps" => {
-                let mut parts = rest.trim().split_whitespace();
+                let mut parts = rest.split_whitespace();
                 if let (Some(lat_s), Some(lon_s)) = (parts.next(), parts.next()) {
                     if let (Ok(lat), Ok(lon)) = (lat_s.parse::<f64>(), lon_s.parse::<f64>()) {
                         site.gps = Some(GpsCoord { lat, lon });

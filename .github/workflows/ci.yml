@@ -42,3 +42,7 @@ jobs:
       - name: Cargo tests
         run: cargo test
         working-directory: src-tauri
+
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+        working-directory: src-tauri
