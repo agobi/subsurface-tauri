@@ -25,3 +25,7 @@ dist-ssr
 
 # Generated locally from real (personal) dive data - never commit
 src/lib/fixtures/logbook.json
+
+# Playwright output (never commit — baselines in test/__snapshots__/ ARE committed)
+test-results/
+playwright-report/

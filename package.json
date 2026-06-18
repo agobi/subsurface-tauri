@@ -9,10 +9,14 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "tauri": "tauri",
+    "dev:visual": "VITE_VISUAL_TEST=1 vite",
     "test": "vitest run",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tauri-apps/cli": "^2.11.2",
     "@testing-library/jest-dom": "^6.9.1",
