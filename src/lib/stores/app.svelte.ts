@@ -1,29 +1,43 @@
 // AI-generated (Claude)
+import { invoke } from "@tauri-apps/api/core";
 import type { Logbook, Dive } from "$lib/types.ts";
-import sample from "$lib/fixtures/logbook.sample.json";
-
-// Use the generated (git-ignored) logbook.json if present; otherwise the committed sample.
-const generated = import.meta.glob("../fixtures/logbook.json", { eager: true, import: "default" });
-const initialLogbook = (Object.values(generated)[0] as Logbook | undefined) ?? (sample as Logbook);
 
 export type PanelKey = "info" | "profile" | "list" | "map";
 export type Theme = "dark" | "light";
 export type VisiblePanels = Record<PanelKey, boolean>;
 
 const ALL_VISIBLE: VisiblePanels = { info: true, profile: true, list: true, map: true };
+const EMPTY_LOGBOOK: Logbook = { dives: [], trips: [], sites: [], units: "METRIC" };
 
 class AppStore {
-  logbook = $state<Logbook>(initialLogbook);
-  selectedDiveId = $state<number | null>(initialLogbook.dives[0]?.number ?? null);
+  logbook = $state<Logbook>({ ...EMPTY_LOGBOOK });
+  selectedDiveId = $state<number | null>(null);
   visiblePanels = $state<VisiblePanels>({ ...ALL_VISIBLE });
   theme = $state<Theme>("dark");
 
   get dives(): Dive[] { return this.logbook.dives; }
-  get selectedDive(): Dive | undefined { return this.logbook.dives.find((d) => d.number === this.selectedDiveId); }
+  get selectedDive(): Dive | undefined {
+    return this.logbook.dives.find((d) => d.number === this.selectedDiveId);
+  }
+
+  async startup(): Promise<void> {
+    this.logbook = await invoke<Logbook>("startup_logbook");
+    this.selectedDiveId = this.logbook.dives[0]?.number ?? null;
+  }
+
+  async open(root: string): Promise<void> {
+    this.logbook = await invoke<Logbook>("open_logbook", { root });
+    this.selectedDiveId = this.logbook.dives[0]?.number ?? null;
+  }
+
+  async newLogbook(root: string): Promise<void> {
+    this.logbook = await invoke<Logbook>("new_logbook", { root });
+    this.selectedDiveId = this.logbook.dives[0]?.number ?? null;
+  }
 
   togglePanel(key: PanelKey) {
     const next = { ...this.visiblePanels, [key]: !this.visiblePanels[key] };
-    if (!Object.values(next).some(Boolean)) return; // keep >= 1 visible
+    if (!Object.values(next).some(Boolean)) return;
     this.visiblePanels = next;
   }
 
@@ -32,8 +46,8 @@ class AppStore {
   }
 
   reset() {
-    this.logbook = initialLogbook;
-    this.selectedDiveId = initialLogbook.dives[0]?.number ?? null;
+    this.logbook = { ...EMPTY_LOGBOOK };
+    this.selectedDiveId = null;
     this.visiblePanels = { ...ALL_VISIBLE };
     this.theme = "dark";
   }
