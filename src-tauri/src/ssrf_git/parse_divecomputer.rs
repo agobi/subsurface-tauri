@@ -16,7 +16,7 @@ pub struct DivecomputerData {
 //   "  0:15 2.5m 24.0°C ndl=99:00 cns=5%"
 // Fields absent on a line carry forward from the previous sample.
 fn parse_sample_line(line: &str, carry: &mut Sample) -> Sample {
-    let tokens: Vec<&str> = line.trim().split_whitespace().collect();
+    let tokens: Vec<&str> = line.split_whitespace().collect();
     if tokens.is_empty() {
         return carry.clone();
     }
