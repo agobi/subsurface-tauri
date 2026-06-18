@@ -11,6 +11,7 @@
 
   let colFrac = $state(0.5);
   let rowFrac = $state(0.5);
+  let wrapEl: HTMLDivElement;
 
   let selected = $derived(app.selectedDive);
   let selectedSite = $derived(app.logbook.sites.find((s) => s.id === selected?.siteId));
@@ -20,6 +21,19 @@
   let anyRight  = $derived(app.visiblePanels.profile || app.visiblePanels.map);
   let anyTop    = $derived(app.visiblePanels.info    || app.visiblePanels.profile);
   let anyBottom = $derived(app.visiblePanels.list    || app.visiblePanels.map);
+
+  // Reset splitter positions when a hidden splitter reappears (avoids a panel
+  // being nearly invisible after returning to All from a single-panel view).
+  let prevBothCols = true; // matches the initial "All panels visible" default
+  let prevBothRows = true;
+  $effect(() => {
+    const bothCols = anyLeft && anyRight;
+    const bothRows = anyTop && anyBottom;
+    if (bothCols && !prevBothCols) colFrac = 0.5;
+    if (bothRows && !prevBothRows) rowFrac = 0.5;
+    prevBothCols = bothCols;
+    prevBothRows = bothRows;
+  });
 
   // Collapse to 1fr when the opposite side is empty.
   let gridCols = $derived(anyLeft && anyRight ? `${colFrac}fr ${1 - colFrac}fr` : "1fr");
@@ -46,8 +60,9 @@
       e.preventDefault();
       dragCleanup?.(); // end any prior drag that lost its mouseup
       const move = (ev: MouseEvent) => {
-        if (axis === "col") colFrac = Math.min(0.8, Math.max(0.2, ev.clientX / window.innerWidth));
-        else rowFrac = Math.min(0.8, Math.max(0.2, ev.clientY / window.innerHeight));
+        const rect = wrapEl.getBoundingClientRect();
+        if (axis === "col") colFrac = Math.min(0.8, Math.max(0.2, (ev.clientX - rect.left) / rect.width));
+        else rowFrac = Math.min(0.8, Math.max(0.2, (ev.clientY - rect.top) / rect.height));
       };
       const up = () => {
         window.removeEventListener("mousemove", move);
@@ -66,7 +81,7 @@
   onDestroy(() => dragCleanup?.());
 </script>
 
-<div class="quad-wrap">
+<div class="quad-wrap" bind:this={wrapEl}>
   <div
     class="quad-grid"
     style="grid-template-columns: {gridCols}; grid-template-rows: {gridRows};"
