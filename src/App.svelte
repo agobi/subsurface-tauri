@@ -4,7 +4,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { app, type PanelKey } from "$lib/stores/app.svelte.ts";
+  import { app, type VisiblePanels } from "$lib/stores/app.svelte.ts";
   import Toolbar from "$lib/components/Toolbar.svelte";
   import StatusBar from "$lib/components/StatusBar.svelte";
   import QuadrantGrid from "$lib/components/QuadrantGrid.svelte";
@@ -40,12 +40,9 @@
     );
 
     unlisteners.push(
-      await listen<{ panel: PanelKey; visible: boolean }>(
-        "menu:toggle-panel",
-        ({ payload }) => {
-          app.setPanelVisible(payload.panel, payload.visible);
-        }
-      )
+      await listen<VisiblePanels>("menu:set-panels", ({ payload }) => {
+        app.visiblePanels = payload;
+      })
     );
   });
 
