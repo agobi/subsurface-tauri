@@ -66,15 +66,15 @@
 
 <style>
   .dl { display: flex; flex-direction: column; font-size: 12px; }
-  .dl-head { display: grid; grid-template-columns: 40px 88px 80px 56px 64px 1fr; gap: 8px; align-items: center; height: 28px; padding: 0 var(--space-3); position: sticky; top: 0; z-index: 1; background: var(--panel-2); border-bottom: 1px solid var(--hair); font-size: 10.5px; font-weight: 640; color: var(--txt-3); text-transform: uppercase; letter-spacing: .04em; }
+  .dl-head { display: grid; grid-template-columns: 40px 88px 80px 56px 64px minmax(0, 1fr); gap: 8px; align-items: center; height: 28px; padding: 0 var(--space-3); position: sticky; top: 0; z-index: 1; background: var(--panel-2); border-bottom: 1px solid var(--hair); font-size: 10.5px; font-weight: 640; color: var(--txt-3); text-transform: uppercase; letter-spacing: .04em; }
   .trip { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 var(--space-3); background: var(--panel-2); border: 0; border-bottom: 1px solid var(--hair); border-top: 1px solid var(--hair); font: inherit; font-size: 11.5px; color: var(--txt-2); cursor: pointer; text-align: left; }
   .trip .tw { font-weight: 600; color: var(--txt); }
   .trip .cnt { margin-left: auto; color: var(--txt-3); font-size: 11px; }
-  .dl-row { display: grid; grid-template-columns: 40px 88px 80px 56px 64px 1fr; gap: 8px; align-items: center; height: 40px; padding: 0 var(--space-3); border-bottom: 1px solid var(--hair); cursor: pointer; position: relative; }
+  .dl-row { display: grid; grid-template-columns: 40px 88px 80px 56px 64px minmax(0, 1fr); gap: 8px; align-items: center; height: 40px; padding: 0 var(--space-3); border-bottom: 1px solid var(--hair); cursor: pointer; position: relative; }
   .dl-row.zebra { background: var(--panel-2); }
   .dl-row:hover { background: var(--elev); }
   .dl-row.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--blue); }
   .stars { color: var(--amber); font-size: 11px; letter-spacing: -1px; }
   .depth { text-align: right; }
-  .loc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .loc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
