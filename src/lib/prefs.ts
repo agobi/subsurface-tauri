@@ -19,7 +19,7 @@ export function applyTheme(theme: Theme): void {
 export async function loadAppearancePrefs(): Promise<AppearancePrefs> {
   const store = await load("settings.json");
   const saved = await store.get<AppearancePrefs>("appearance");
-  return saved ?? { theme: "dark" };
+  return saved ?? { theme: "auto" };
 }
 
 export async function saveAndEmitAppearance(prefs: AppearancePrefs): Promise<void> {

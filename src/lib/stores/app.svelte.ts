@@ -13,7 +13,7 @@ class AppStore {
   logbook = $state<Logbook>({ ...EMPTY_LOGBOOK });
   selectedDiveId = $state<number | null>(null);
   visiblePanels = $state<VisiblePanels>({ ...ALL_VISIBLE });
-  theme = $state<Theme>("dark");
+  theme = $state<Theme>("auto");
 
   get dives(): Dive[] { return this.logbook.dives; }
   get selectedDive(): Dive | undefined {
@@ -49,7 +49,7 @@ class AppStore {
     this.logbook = { ...EMPTY_LOGBOOK };
     this.selectedDiveId = null;
     this.visiblePanels = { ...ALL_VISIBLE };
-    this.theme = "dark";
+    this.theme = "auto";
   }
 }
 

@@ -5,9 +5,9 @@ import { app } from "$lib/stores/app.svelte.ts";
 describe("app store", () => {
   beforeEach(() => app.reset());
 
-  it("starts with all four panels visible and dark theme", () => {
+  it("starts with all four panels visible and auto theme", () => {
     expect(app.visiblePanels).toEqual({ info: true, profile: true, list: true, map: true });
-    expect(app.theme).toBe("dark");
+    expect(app.theme).toBe("auto");
   });
 
   it("toggles a panel", () => {

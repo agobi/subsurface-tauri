@@ -56,7 +56,7 @@ describe("loadAppearancePrefs", () => {
       save: vi.fn(),
     } as any);
     const prefs = await loadAppearancePrefs();
-    expect(prefs).toEqual({ theme: "dark" });
+    expect(prefs).toEqual({ theme: "auto" });
   });
 
   it("returns saved theme when present", async () => {
