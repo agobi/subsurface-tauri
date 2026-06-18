@@ -1,4 +1,5 @@
 // AI-generated (Claude)
+#[cfg(desktop)]
 mod menu;
 mod ssrf_git;
 mod types;
@@ -77,7 +78,7 @@ async fn new_logbook(app: tauri::AppHandle, root: String) -> Result<Logbook, Str
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -88,11 +89,18 @@ pub fn run() {
                         .build(),
                 )?;
             }
-            let m = menu::build(app.handle())?;
-            app.set_menu(m)?;
+            #[cfg(desktop)]
+            {
+                let m = menu::build(app.handle())?;
+                app.set_menu(m)?;
+            }
             Ok(())
-        })
-        .on_menu_event(menu::handle_event)
+        });
+
+    #[cfg(desktop)]
+    let builder = builder.on_menu_event(menu::handle_event);
+
+    builder
         .invoke_handler(tauri::generate_handler![
             startup_logbook,
             open_logbook,
