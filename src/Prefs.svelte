@@ -9,9 +9,14 @@
   let cleanupMatchMedia: (() => void) | undefined;
 
   onMount(async () => {
-    const prefs = await loadAppearancePrefs();
-    currentTheme = prefs.theme;
-    applyTheme(prefs.theme);
+    try {
+      const prefs = await loadAppearancePrefs();
+      currentTheme = prefs.theme;
+      applyTheme(prefs.theme);
+    } catch (e) {
+      console.error("Failed to load appearance prefs:", e);
+      applyTheme(currentTheme);
+    }
 
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
     const handleColorScheme = () => applyTheme(currentTheme);

@@ -48,8 +48,12 @@
       console.error("Startup failed:", e);
     }
 
-    const prefs = await loadAppearancePrefs();
-    app.setTheme(prefs.theme);
+    try {
+      const prefs = await loadAppearancePrefs();
+      app.setTheme(prefs.theme);
+    } catch (e) {
+      console.error("Failed to load appearance prefs:", e);
+    }
 
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
     const handleColorScheme = () => applyTheme(app.theme);
