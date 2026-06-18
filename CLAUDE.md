@@ -83,7 +83,7 @@ The logbook path is persisted in `settings.json` via `tauri-plugin-store`.
   `vi.mocked(invoke).mockResolvedValueOnce(sample)`.
 - Rust unit tests are inline (`#[cfg(test)]` blocks in each module).
 - Golden integration tests in `ssrf_git/mod.rs` use `test/fixtures/git-tree/`.
-- Run `cargo test` in `src-tauri/` and `npm test` in `desktop-tauri/` after every change.
+- Run `cargo test` in `src-tauri/` and `npm test` in the project root after every change.
 
 ## AI-Generated Code
 
