@@ -15,4 +15,12 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(import.meta.dirname, 'index.html'),
+        prefs: path.resolve(import.meta.dirname, 'prefs.html'),
+      },
+    },
+  },
 })

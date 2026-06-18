@@ -17,6 +17,15 @@
         "height": 600,
         "resizable": true,
         "fullscreen": false
+      },
+      {
+        "label": "preferences",
+        "url": "prefs.html",
+        "title": "Preferences",
+        "width": 720,
+        "height": 480,
+        "resizable": false,
+        "visible": false
       }
     ],
     "security": {
