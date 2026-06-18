@@ -1,6 +1,7 @@
 // AI-generated (Claude)
-mod types;
+mod menu;
 mod ssrf_git;
+mod types;
 
 use tauri_plugin_store::StoreExt;
 use types::Logbook;
@@ -87,8 +88,11 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            let m = menu::build(app.handle())?;
+            app.set_menu(m)?;
             Ok(())
         })
+        .on_menu_event(menu::handle_event)
         .invoke_handler(tauri::generate_handler![
             startup_logbook,
             open_logbook,
