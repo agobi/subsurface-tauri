@@ -13,13 +13,13 @@ concurrency:
 
 jobs:
   frontend:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
 
       - name: Install npm dependencies
@@ -32,7 +32,7 @@ jobs:
         run: npm test
 
   rust:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +40,7 @@ jobs:
 
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          packages: libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
           version: 1.0
 
       - uses: swatinem/rust-cache@v2
@@ -59,7 +59,7 @@ jobs:
     name: CI Success
     if: always()
     needs: [frontend, rust]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Check all jobs succeeded
         uses: re-actors/alls-green@release/v1
