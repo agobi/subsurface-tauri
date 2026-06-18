@@ -4,11 +4,13 @@
   import { listen } from "@tauri-apps/api/event";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { platform } from "@tauri-apps/plugin-os";
   import { app, type VisiblePanels } from "$lib/stores/app.svelte.ts";
   import { loadAppearancePrefs, applyTheme, type AppearancePrefs } from "$lib/prefs.ts";
   import Toolbar from "$lib/components/Toolbar.svelte";
   import StatusBar from "$lib/components/StatusBar.svelte";
   import QuadrantGrid from "$lib/components/QuadrantGrid.svelte";
+  import MobileLayout from "$lib/components/MobileLayout.svelte";
 
   let search = $state("");
   let unlisteners: (() => void)[] = [];
@@ -43,6 +45,13 @@
 
   onMount(async () => {
     try {
+      const p = await platform();
+      app.setPlatform(p === "android" || p === "ios" ? "mobile" : "desktop");
+    } catch (e) {
+      console.error("Failed to detect platform:", e);
+    }
+
+    try {
       await app.startup();
     } catch (e) {
       console.error("Startup failed:", e);
@@ -59,16 +68,18 @@
     const handleColorScheme = () => applyTheme(app.theme);
     mql.addEventListener("change", handleColorScheme);
 
-    unlisteners = await Promise.all([
-      listen("menu:file-open", handleOpen),
-      listen("menu:file-new", handleNew),
-      listen<VisiblePanels>("menu:set-panels", ({ payload }) => {
-        app.visiblePanels = payload;
-      }),
-      listen<AppearancePrefs>("prefs:appearance-changed", ({ payload }) => {
-        app.setTheme(payload.theme);
-      }),
-    ]);
+    if (!app.isMobile) {
+      unlisteners = await Promise.all([
+        listen("menu:file-open", handleOpen),
+        listen("menu:file-new", handleNew),
+        listen<VisiblePanels>("menu:set-panels", ({ payload }) => {
+          app.visiblePanels = payload;
+        }),
+        listen<AppearancePrefs>("prefs:appearance-changed", ({ payload }) => {
+          app.setTheme(payload.theme);
+        }),
+      ]);
+    }
 
     unlisteners.push(() => mql.removeEventListener("change", handleColorScheme));
   });
@@ -82,11 +93,15 @@
   });
 </script>
 
-<div class="app">
-  <Toolbar onSearch={(q) => (search = q)} />
-  <QuadrantGrid query={search} />
-  <StatusBar diveCount={app.dives.length} decoModel={app.selectedDive?.decoModel ?? "-"} synced={true} />
-</div>
+{#if app.isMobile}
+  <MobileLayout />
+{:else}
+  <div class="app">
+    <Toolbar onSearch={(q) => (search = q)} />
+    <QuadrantGrid query={search} />
+    <StatusBar diveCount={app.dives.length} decoModel={app.selectedDive?.decoModel ?? "-"} synced={true} />
+  </div>
+{/if}
 
 <style>
   .app { display: flex; flex-direction: column; height: 100vh; }
