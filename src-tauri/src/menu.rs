@@ -25,15 +25,15 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
     // View menu — radio group: exactly one item checked at a time.
     // Initial state: "All" checked (all panels visible).
     let view_all =
-        CheckMenuItem::with_id(app, "view-all", "All", true, true, None::<&str>)?;
+        CheckMenuItem::with_id(app, "view-all", "All", true, true, Some("cmd+1"))?;
     let view_list =
-        CheckMenuItem::with_id(app, "view-list", "Dive List", true, false, None::<&str>)?;
+        CheckMenuItem::with_id(app, "view-list", "Dive List", true, false, Some("cmd+2"))?;
     let view_profile =
-        CheckMenuItem::with_id(app, "view-profile", "Dive Profile", true, false, None::<&str>)?;
+        CheckMenuItem::with_id(app, "view-profile", "Dive Profile", true, false, Some("cmd+3"))?;
     let view_info =
-        CheckMenuItem::with_id(app, "view-info", "Info", true, false, None::<&str>)?;
+        CheckMenuItem::with_id(app, "view-info", "Info", true, false, Some("cmd+4"))?;
     let view_map =
-        CheckMenuItem::with_id(app, "view-map", "Map", true, false, None::<&str>)?;
+        CheckMenuItem::with_id(app, "view-map", "Map", true, false, Some("cmd+5"))?;
 
     app.manage(ViewItems {
         all: view_all.clone(),
@@ -80,7 +80,7 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
             &[
                 &PredefinedMenuItem::about(app, None, None)?,
                 &PredefinedMenuItem::separator(app)?,
-                &MenuItem::with_id(app, "settings", "Settings\u{2026}", true, Some("cmd+,"))?,
+                &MenuItem::with_id(app, "settings", "Settings\u{2026}", false, Some("cmd+,"))?,
                 &PredefinedMenuItem::separator(app)?,
                 &PredefinedMenuItem::services(app, None)?,
                 &PredefinedMenuItem::separator(app)?,
@@ -133,7 +133,7 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEven
                 "view-map" => &items.map,
                 _ => return,
             };
-            if !clicked.is_checked().unwrap_or(true) {
+            if !clicked.is_checked().unwrap_or(false) {
                 clicked.set_checked(true).ok();
                 return;
             }

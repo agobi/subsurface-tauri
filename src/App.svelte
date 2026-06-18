@@ -13,37 +13,47 @@
   let unlisteners: (() => void)[] = [];
 
   function basename(path: string): string {
-    return path.split(/[\\/]/).pop() ?? path;
+    return path.split(/[\\/]/).pop() || path;
+  }
+
+  async function handleOpen() {
+    const dir = await openDialog({ directory: true });
+    if (typeof dir === "string") {
+      try {
+        await app.open(dir);
+        await getCurrentWindow().setTitle(`${basename(dir)} — Subsurface`);
+      } catch (e) {
+        console.error("Failed to open logbook:", e);
+      }
+    }
+  }
+
+  async function handleNew() {
+    const dir = await openDialog({ directory: true });
+    if (typeof dir === "string") {
+      try {
+        await app.newLogbook(dir);
+        await getCurrentWindow().setTitle(`${basename(dir)} — Subsurface`);
+      } catch (e) {
+        console.error("Failed to create logbook:", e);
+      }
+    }
   }
 
   onMount(async () => {
-    await app.startup();
+    try {
+      await app.startup();
+    } catch (e) {
+      console.error("Startup failed:", e);
+    }
 
-    unlisteners.push(
-      await listen("menu:file-open", async () => {
-        const dir = await openDialog({ directory: true });
-        if (typeof dir === "string") {
-          await app.open(dir);
-          await getCurrentWindow().setTitle(`${basename(dir)} — Subsurface`);
-        }
-      })
-    );
-
-    unlisteners.push(
-      await listen("menu:file-new", async () => {
-        const dir = await openDialog({ directory: true });
-        if (typeof dir === "string") {
-          await app.newLogbook(dir);
-          await getCurrentWindow().setTitle(`${basename(dir)} — Subsurface`);
-        }
-      })
-    );
-
-    unlisteners.push(
-      await listen<VisiblePanels>("menu:set-panels", ({ payload }) => {
+    unlisteners = await Promise.all([
+      listen("menu:file-open", handleOpen),
+      listen("menu:file-new", handleNew),
+      listen<VisiblePanels>("menu:set-panels", ({ payload }) => {
         app.visiblePanels = payload;
-      })
-    );
+      }),
+    ]);
   });
 
   onDestroy(() => {
