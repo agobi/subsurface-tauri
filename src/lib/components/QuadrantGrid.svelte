@@ -16,39 +16,8 @@
   let selected = $derived(app.selectedDive);
   let selectedSite = $derived(app.logbook.sites.find((s) => s.id === selected?.siteId));
 
-  // Which sides of the 2×2 grid have at least one visible panel.
-  let anyLeft   = $derived(app.visiblePanels.info    || app.visiblePanels.list);
-  let anyRight  = $derived(app.visiblePanels.profile || app.visiblePanels.map);
-  let anyTop    = $derived(app.visiblePanels.info    || app.visiblePanels.profile);
-  let anyBottom = $derived(app.visiblePanels.list    || app.visiblePanels.map);
-
-  // Reset splitter positions when a hidden splitter reappears (avoids a panel
-  // being nearly invisible after returning to All from a single-panel view).
-  let prevBothCols = true; // matches the initial "All panels visible" default
-  let prevBothRows = true;
-  $effect(() => {
-    const bothCols = anyLeft && anyRight;
-    const bothRows = anyTop && anyBottom;
-    if (bothCols && !prevBothCols) colFrac = 0.5;
-    if (bothRows && !prevBothRows) rowFrac = 0.5;
-    prevBothCols = bothCols;
-    prevBothRows = bothRows;
-  });
-
-  // Collapse to 1fr when the opposite side is empty.
-  let gridCols = $derived(anyLeft && anyRight ? `${colFrac}fr ${1 - colFrac}fr` : "1fr");
-  let gridRows = $derived(anyTop && anyBottom ? `${rowFrac}fr ${1 - rowFrac}fr` : "1fr");
-
-  // Explicit grid placement for each panel — collapses to column/row 1 when
-  // the panels that would occupy the other track are all hidden.
-  let infoCol    = $derived(1);
-  let infoRow    = $derived(1);
-  let profileCol = $derived(anyLeft  ? 2 : 1);
-  let profileRow = $derived(1);
-  let listCol    = $derived(1);
-  let listRow    = $derived(anyTop   ? 2 : 1);
-  let mapCol     = $derived(anyLeft  ? 2 : 1);
-  let mapRow     = $derived(anyTop   ? 2 : 1);
+  let p = $derived(app.visiblePanels);
+  let allVisible = $derived(p.info && p.profile && p.list && p.map);
 
   // Track the active drag's listeners so they never outlive the drag or the
   // component (a mouseup outside the window, or unmount mid-drag, would otherwise
@@ -58,7 +27,7 @@
   function startDrag(axis: "col" | "row") {
     return (e: MouseEvent) => {
       e.preventDefault();
-      dragCleanup?.(); // end any prior drag that lost its mouseup
+      dragCleanup?.();
       const move = (ev: MouseEvent) => {
         const rect = wrapEl.getBoundingClientRect();
         if (axis === "col") colFrac = Math.min(0.8, Math.max(0.2, (ev.clientX - rect.left) / rect.width));
@@ -81,73 +50,58 @@
   onDestroy(() => dragCleanup?.());
 </script>
 
+{#snippet infoPanel()}
+  <section class="quad" data-testid="quad-info">
+    <header class="panel-head"><span class="ttl">Info</span></header>
+    <div class="body">{#if selected}<InfoPanel dive={selected} />{/if}</div>
+  </section>
+{/snippet}
+
+{#snippet profilePanel()}
+  <section class="quad" data-testid="quad-profile">
+    <header class="panel-head"><span class="ttl">Profile</span></header>
+    <div class="body">{#if selected}<DiveProfile dive={selected} />{/if}</div>
+  </section>
+{/snippet}
+
+{#snippet listPanel()}
+  <section class="quad" data-testid="quad-list">
+    <header class="panel-head"><span class="ttl">Dive List</span></header>
+    <div class="body">
+      <DiveList dives={app.dives} trips={app.logbook.trips} sites={app.logbook.sites} {query} />
+    </div>
+  </section>
+{/snippet}
+
+{#snippet mapPanel()}
+  <section class="quad" data-testid="quad-map">
+    <header class="panel-head"><span class="ttl">Map</span></header>
+    <div class="body">
+      <MapPanel siteName={selectedSite?.name} gps={selectedSite?.gps} />
+    </div>
+  </section>
+{/snippet}
+
 <div class="quad-wrap" bind:this={wrapEl}>
-  <div
-    class="quad-grid"
-    style="grid-template-columns: {gridCols}; grid-template-rows: {gridRows};"
-  >
-    {#if app.visiblePanels.info}
-      <section class="quad" data-testid="quad-info" style="grid-column:{infoCol};grid-row:{infoRow}">
-        <header class="panel-head"><span class="ttl">Info</span></header>
-        <div class="body">
-          {#if selected}<InfoPanel dive={selected} />{/if}
-        </div>
-      </section>
-    {/if}
-    {#if app.visiblePanels.profile}
-      <section class="quad" data-testid="quad-profile" style="grid-column:{profileCol};grid-row:{profileRow}">
-        <header class="panel-head"><span class="ttl">Profile</span></header>
-        <div class="body">
-          {#if selected}<DiveProfile dive={selected} />{/if}
-        </div>
-      </section>
-    {/if}
-    {#if app.visiblePanels.list}
-      <section class="quad" data-testid="quad-list" style="grid-column:{listCol};grid-row:{listRow}">
-        <header class="panel-head"><span class="ttl">Dive List</span></header>
-        <div class="body">
-          <DiveList dives={app.dives} trips={app.logbook.trips} sites={app.logbook.sites} {query} />
-        </div>
-      </section>
-    {/if}
-    {#if app.visiblePanels.map}
-      <section class="quad" data-testid="quad-map" style="grid-column:{mapCol};grid-row:{mapRow}">
-        <header class="panel-head"><span class="ttl">Map</span></header>
-        <div class="body">
-          <MapPanel siteName={selectedSite?.name} gps={selectedSite?.gps} />
-        </div>
-      </section>
-    {/if}
-  </div>
-
-  {#if anyLeft && anyRight}
-    <!-- Vertical splitter (divides columns) -->
+  {#if allVisible}
+    <div class="quad-grid" style="grid-template-columns: {colFrac}fr {1 - colFrac}fr; grid-template-rows: {rowFrac}fr {1 - rowFrac}fr;">
+      {@render infoPanel()}
+      {@render profilePanel()}
+      {@render listPanel()}
+      {@render mapPanel()}
+    </div>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      class="splitter splitter-v"
-      data-testid="splitter-v"
-      style="left: calc({colFrac * 100}% - 3px);"
-      onmousedown={dragCol}
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize columns"
-      tabindex="0"
-    ></div>
-  {/if}
-
-  {#if anyTop && anyBottom}
-    <!-- Horizontal splitter (divides rows) -->
+    <div class="splitter splitter-v" data-testid="splitter-v" style="left: calc({colFrac * 100}% - 3px);" onmousedown={dragCol} role="separator" aria-orientation="vertical" aria-label="Resize columns" tabindex="0"></div>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      class="splitter splitter-h"
-      data-testid="splitter-h"
-      style="top: calc({rowFrac * 100}% - 3px);"
-      onmousedown={dragRow}
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="Resize rows"
-      tabindex="0"
-    ></div>
+    <div class="splitter splitter-h" data-testid="splitter-h" style="top: calc({rowFrac * 100}% - 3px);" onmousedown={dragRow} role="separator" aria-orientation="horizontal" aria-label="Resize rows" tabindex="0"></div>
+  {:else}
+    <div class="quad-grid" style="grid-template-columns: 1fr; grid-template-rows: 1fr;">
+      {#if p.info}{@render infoPanel()}
+      {:else if p.profile}{@render profilePanel()}
+      {:else if p.list}{@render listPanel()}
+      {:else if p.map}{@render mapPanel()}
+      {/if}
+    </div>
   {/if}
 </div>
 
