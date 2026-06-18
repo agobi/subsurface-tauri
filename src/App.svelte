@@ -1,5 +1,6 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
+  import { onMount } from "svelte";
   import { app } from "$lib/stores/app.svelte.ts";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import MenuBar from "$lib/components/MenuBar.svelte";
@@ -8,6 +9,7 @@
   import QuadrantGrid from "$lib/components/QuadrantGrid.svelte";
 
   let search = $state("");
+  onMount(() => app.startup());
   $effect(() => {
     document.documentElement.setAttribute("data-theme", app.theme);
   });

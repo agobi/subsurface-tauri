@@ -1,7 +1,8 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
+  import { open } from "@tauri-apps/plugin-dialog";
   import { app, type PanelKey } from "$lib/stores/app.svelte.ts";
-  let open = $state<string | null>(null);
+  let activeMenu = $state<string | null>(null);
   const menus = ["File", "Edit", "Import", "Log", "View", "Help"];
   const panels: { key: PanelKey; label: string }[] = [
     { key: "list", label: "Dive List" },
@@ -9,16 +10,31 @@
     { key: "info", label: "Info" },
     { key: "map", label: "Map" },
   ];
-  function toggle(name: string) { open = open === name ? null : name; }
+  function toggle(name: string) { activeMenu = activeMenu === name ? null : name; }
+
+  async function openLogbook() {
+    activeMenu = null;
+    const dir = await open({ directory: true });
+    if (dir) await app.open(dir as string);
+  }
+
+  async function newLogbook() {
+    activeMenu = null;
+    const dir = await open({ directory: true });
+    if (dir) await app.newLogbook(dir as string);
+  }
 </script>
 
 <div class="menubar">
   {#each menus as m}
     <div class="menu-wrap">
       <button class="menu" onclick={() => toggle(m)}>{m}</button>
-      {#if open === m}
+      {#if activeMenu === m}
         <div class="dropdown" role="menu">
-          {#if m === "View"}
+          {#if m === "File"}
+            <button role="menuitem" onclick={openLogbook}>Open Logbook…</button>
+            <button role="menuitem" onclick={newLogbook}>New Logbook…</button>
+          {:else if m === "View"}
             {#each panels as p}
               <button role="menuitem" onclick={() => app.togglePanel(p.key)}>
                 <span class="check">{app.visiblePanels[p.key] ? "X" : ""}</span>{p.label}
