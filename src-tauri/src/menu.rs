@@ -89,7 +89,7 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
             &view,
             &stub_submenu(app, "Help")?,
         ];
-        return Menu::with_items(app, items);
+        Menu::with_items(app, items)
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -106,7 +106,7 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
             &view,
             &stub_submenu(app, "Help")?,
         ];
-        return Menu::with_items(app, items);
+        Menu::with_items(app, items)
     }
 }
 
