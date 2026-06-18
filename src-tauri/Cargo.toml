@@ -1,10 +1,10 @@
 [package]
-name = "app"
+name = "subsurface-prototype"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+description = "Tauri prototype of the Subsurface dive-log application"
+authors = ["Attila Gobi <attila.gobi@gmail.com>"]
+license = "GPL-2.0"
+repository = "https://github.com/agobi/subsurface-tauri"
 edition = "2021"
 rust-version = "1.77.2"
 
