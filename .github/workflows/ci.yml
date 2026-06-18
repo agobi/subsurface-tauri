@@ -7,16 +7,23 @@ on:
   pull_request:
     branches: [main]
 
-jobs:
-  test:
-    runs-on: ubuntu-22.04
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+permissions: {}
+
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
 
       - name: Install npm dependencies
@@ -28,12 +35,19 @@ jobs:
       - name: Vitest unit tests
         run: npm test
 
+  rust:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Linux system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          version: 1.0
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -46,3 +60,15 @@ jobs:
       - name: Clippy
         run: cargo clippy -- -D warnings
         working-directory: src-tauri
+
+  ci-success:
+    name: CI Success
+    if: always()
+    needs: [frontend, rust]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Check all jobs succeeded
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}

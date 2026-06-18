@@ -11,9 +11,13 @@
 
   let colFrac = $state(0.5);
   let rowFrac = $state(0.5);
+  let wrapEl: HTMLDivElement;
 
   let selected = $derived(app.selectedDive);
   let selectedSite = $derived(app.logbook.sites.find((s) => s.id === selected?.siteId));
+
+  let p = $derived(app.visiblePanels);
+  let allVisible = $derived(p.info && p.profile && p.list && p.map);
 
   // Track the active drag's listeners so they never outlive the drag or the
   // component (a mouseup outside the window, or unmount mid-drag, would otherwise
@@ -23,10 +27,11 @@
   function startDrag(axis: "col" | "row") {
     return (e: MouseEvent) => {
       e.preventDefault();
-      dragCleanup?.(); // end any prior drag that lost its mouseup
+      dragCleanup?.();
       const move = (ev: MouseEvent) => {
-        if (axis === "col") colFrac = Math.min(0.8, Math.max(0.2, ev.clientX / window.innerWidth));
-        else rowFrac = Math.min(0.8, Math.max(0.2, ev.clientY / window.innerHeight));
+        const rect = wrapEl.getBoundingClientRect();
+        if (axis === "col") colFrac = Math.min(0.8, Math.max(0.2, (ev.clientX - rect.left) / rect.width));
+        else rowFrac = Math.min(0.8, Math.max(0.2, (ev.clientY - rect.top) / rect.height));
       };
       const up = () => {
         window.removeEventListener("mousemove", move);
@@ -45,70 +50,59 @@
   onDestroy(() => dragCleanup?.());
 </script>
 
-<div class="quad-wrap">
-  <div
-    class="quad-grid"
-    style="grid-template-columns: {colFrac}fr {1 - colFrac}fr; grid-template-rows: {rowFrac}fr {1 - rowFrac}fr;"
-  >
-    {#if app.visiblePanels.info}
-      <section class="quad" data-testid="quad-info">
-        <header class="panel-head"><span class="ttl">Info</span></header>
-        <div class="body">
-          {#if selected}<InfoPanel dive={selected} />{/if}
-        </div>
-      </section>
-    {/if}
-    {#if app.visiblePanels.profile}
-      <section class="quad" data-testid="quad-profile">
-        <header class="panel-head"><span class="ttl">Profile</span></header>
-        <div class="body">
-          {#if selected}<DiveProfile dive={selected} />{/if}
-        </div>
-      </section>
-    {/if}
-    {#if app.visiblePanels.list}
-      <section class="quad" data-testid="quad-list">
-        <header class="panel-head"><span class="ttl">Dive List</span></header>
-        <div class="body">
-          <DiveList dives={app.dives} trips={app.logbook.trips} sites={app.logbook.sites} {query} />
-        </div>
-      </section>
-    {/if}
-    {#if app.visiblePanels.map}
-      <section class="quad" data-testid="quad-map">
-        <header class="panel-head"><span class="ttl">Map</span></header>
-        <div class="body">
-          <MapPanel siteName={selectedSite?.name} gps={selectedSite?.gps} />
-        </div>
-      </section>
-    {/if}
-  </div>
+{#snippet infoPanel()}
+  <section class="quad" data-testid="quad-info">
+    <header class="panel-head"><span class="ttl">Info</span></header>
+    <div class="body">{#if selected}<InfoPanel dive={selected} />{/if}</div>
+  </section>
+{/snippet}
 
-  <!-- Vertical splitter (divides columns) -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div
-    class="splitter splitter-v"
-    data-testid="splitter-v"
-    style="left: calc({colFrac * 100}% - 3px);"
-    onmousedown={dragCol}
-    role="separator"
-    aria-orientation="vertical"
-    aria-label="Resize columns"
-    tabindex="0"
-  ></div>
+{#snippet profilePanel()}
+  <section class="quad" data-testid="quad-profile">
+    <header class="panel-head"><span class="ttl">Profile</span></header>
+    <div class="body">{#if selected}<DiveProfile dive={selected} />{/if}</div>
+  </section>
+{/snippet}
 
-  <!-- Horizontal splitter (divides rows) -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div
-    class="splitter splitter-h"
-    data-testid="splitter-h"
-    style="top: calc({rowFrac * 100}% - 3px);"
-    onmousedown={dragRow}
-    role="separator"
-    aria-orientation="horizontal"
-    aria-label="Resize rows"
-    tabindex="0"
-  ></div>
+{#snippet listPanel()}
+  <section class="quad" data-testid="quad-list">
+    <header class="panel-head"><span class="ttl">Dive List</span></header>
+    <div class="body">
+      <DiveList dives={app.dives} trips={app.logbook.trips} sites={app.logbook.sites} {query} />
+    </div>
+  </section>
+{/snippet}
+
+{#snippet mapPanel()}
+  <section class="quad" data-testid="quad-map">
+    <header class="panel-head"><span class="ttl">Map</span></header>
+    <div class="body">
+      <MapPanel siteName={selectedSite?.name} gps={selectedSite?.gps} />
+    </div>
+  </section>
+{/snippet}
+
+<div class="quad-wrap" bind:this={wrapEl}>
+  {#if allVisible}
+    <div class="quad-grid" style="grid-template-columns: {colFrac}fr {1 - colFrac}fr; grid-template-rows: {rowFrac}fr {1 - rowFrac}fr;">
+      {@render infoPanel()}
+      {@render profilePanel()}
+      {@render listPanel()}
+      {@render mapPanel()}
+    </div>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div class="splitter splitter-v" data-testid="splitter-v" style="left: calc({colFrac * 100}% - 3px);" onmousedown={dragCol} role="separator" aria-orientation="vertical" aria-label="Resize columns" tabindex="0"></div>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div class="splitter splitter-h" data-testid="splitter-h" style="top: calc({rowFrac * 100}% - 3px);" onmousedown={dragRow} role="separator" aria-orientation="horizontal" aria-label="Resize rows" tabindex="0"></div>
+  {:else}
+    <div class="quad-grid" style="grid-template-columns: 1fr; grid-template-rows: 1fr;">
+      {#if p.info}{@render infoPanel()}
+      {:else if p.profile}{@render profilePanel()}
+      {:else if p.list}{@render listPanel()}
+      {:else if p.map}{@render mapPanel()}
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>

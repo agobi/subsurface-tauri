@@ -1,23 +1,71 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { app } from "$lib/stores/app.svelte.ts";
-  import TitleBar from "$lib/components/TitleBar.svelte";
-  import MenuBar from "$lib/components/MenuBar.svelte";
+  import { onMount, onDestroy } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
+  import { open as openDialog } from "@tauri-apps/plugin-dialog";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { app, type VisiblePanels } from "$lib/stores/app.svelte.ts";
   import Toolbar from "$lib/components/Toolbar.svelte";
   import StatusBar from "$lib/components/StatusBar.svelte";
   import QuadrantGrid from "$lib/components/QuadrantGrid.svelte";
 
   let search = $state("");
-  onMount(() => app.startup());
+  let unlisteners: (() => void)[] = [];
+
+  function basename(path: string): string {
+    return path.split(/[\\/]/).pop() || path;
+  }
+
+  async function handleOpen() {
+    const dir = await openDialog({ directory: true });
+    if (typeof dir === "string") {
+      try {
+        await app.open(dir);
+        await getCurrentWindow().setTitle(`${basename(dir)} — Subsurface`);
+      } catch (e) {
+        console.error("Failed to open logbook:", e);
+      }
+    }
+  }
+
+  async function handleNew() {
+    const dir = await openDialog({ directory: true });
+    if (typeof dir === "string") {
+      try {
+        await app.newLogbook(dir);
+        await getCurrentWindow().setTitle(`${basename(dir)} — Subsurface`);
+      } catch (e) {
+        console.error("Failed to create logbook:", e);
+      }
+    }
+  }
+
+  onMount(async () => {
+    try {
+      await app.startup();
+    } catch (e) {
+      console.error("Startup failed:", e);
+    }
+
+    unlisteners = await Promise.all([
+      listen("menu:file-open", handleOpen),
+      listen("menu:file-new", handleNew),
+      listen<VisiblePanels>("menu:set-panels", ({ payload }) => {
+        app.visiblePanels = payload;
+      }),
+    ]);
+  });
+
+  onDestroy(() => {
+    unlisteners.forEach((fn) => fn());
+  });
+
   $effect(() => {
     document.documentElement.setAttribute("data-theme", app.theme);
   });
 </script>
 
 <div class="app">
-  <TitleBar fileName="logbook.ssrf" />
-  <MenuBar />
   <Toolbar onSearch={(q) => (search = q)} />
   <QuadrantGrid query={search} />
   <StatusBar diveCount={app.dives.length} decoModel={app.selectedDive?.decoModel ?? "-"} synced={true} />
