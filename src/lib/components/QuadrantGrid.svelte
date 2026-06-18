@@ -154,7 +154,6 @@
   .body {
     flex: 1;
     overflow: auto;
-    padding: var(--space-4);
     color: var(--txt-2);
   }
 
