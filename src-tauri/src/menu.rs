@@ -1,8 +1,10 @@
 // AI-generated (Claude)
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{CheckMenuItem, Menu, MenuItem, Submenu},
     AppHandle, Emitter, Manager, Runtime,
 };
+#[cfg(target_os = "macos")]
+use tauri::menu::PredefinedMenuItem;
 
 // Holds the five mutually-exclusive View menu items (radio group).
 pub struct ViewItems<R: Runtime> {
