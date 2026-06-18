@@ -119,6 +119,8 @@ pub struct Site {
     pub notes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gps: Option<GpsCoord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]

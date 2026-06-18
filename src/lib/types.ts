@@ -67,6 +67,7 @@ export interface Site {
   description?: string;
   notes?: string;
   gps?: { lat: number; lon: number };
+  country?: string;
 }
 
 export interface Logbook {
