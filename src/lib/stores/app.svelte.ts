@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Logbook, Dive } from "$lib/types.ts";
 
 export type PanelKey = "info" | "profile" | "list" | "map";
-export type Theme = "dark" | "light";
+export type Theme = "dark" | "light" | "auto";
 export type VisiblePanels = Record<PanelKey, boolean>;
 
 const ALL_VISIBLE: VisiblePanels = { info: true, profile: true, list: true, map: true };
@@ -41,8 +41,8 @@ class AppStore {
     this.visiblePanels = next;
   }
 
-  toggleTheme() {
-    this.theme = this.theme === "dark" ? "light" : "dark";
+  setTheme(t: Theme) {
+    this.theme = t;
   }
 
   reset() {

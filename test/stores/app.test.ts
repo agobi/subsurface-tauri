@@ -23,8 +23,13 @@ describe("app store", () => {
     expect(app.visiblePanels.map).toBe(true);
   });
 
-  it("toggles theme", () => {
-    app.toggleTheme();
+  it("sets theme to light", () => {
+    app.setTheme("light");
     expect(app.theme).toBe("light");
+  });
+
+  it("sets theme to auto", () => {
+    app.setTheme("auto");
+    expect(app.theme).toBe("auto");
   });
 });
