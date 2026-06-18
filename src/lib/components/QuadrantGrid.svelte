@@ -15,6 +15,27 @@
   let selected = $derived(app.selectedDive);
   let selectedSite = $derived(app.logbook.sites.find((s) => s.id === selected?.siteId));
 
+  // Which sides of the 2×2 grid have at least one visible panel.
+  let anyLeft   = $derived(app.visiblePanels.info    || app.visiblePanels.list);
+  let anyRight  = $derived(app.visiblePanels.profile || app.visiblePanels.map);
+  let anyTop    = $derived(app.visiblePanels.info    || app.visiblePanels.profile);
+  let anyBottom = $derived(app.visiblePanels.list    || app.visiblePanels.map);
+
+  // Collapse to 1fr when the opposite side is empty.
+  let gridCols = $derived(anyLeft && anyRight ? `${colFrac}fr ${1 - colFrac}fr` : "1fr");
+  let gridRows = $derived(anyTop && anyBottom ? `${rowFrac}fr ${1 - rowFrac}fr` : "1fr");
+
+  // Explicit grid placement for each panel — collapses to column/row 1 when
+  // the panels that would occupy the other track are all hidden.
+  let infoCol    = $derived(1);
+  let infoRow    = $derived(1);
+  let profileCol = $derived(anyLeft  ? 2 : 1);
+  let profileRow = $derived(1);
+  let listCol    = $derived(1);
+  let listRow    = $derived(anyTop   ? 2 : 1);
+  let mapCol     = $derived(anyLeft  ? 2 : 1);
+  let mapRow     = $derived(anyTop   ? 2 : 1);
+
   // Track the active drag's listeners so they never outlive the drag or the
   // component (a mouseup outside the window, or unmount mid-drag, would otherwise
   // strand live window listeners writing to dead state).
@@ -48,10 +69,10 @@
 <div class="quad-wrap">
   <div
     class="quad-grid"
-    style="grid-template-columns: {colFrac}fr {1 - colFrac}fr; grid-template-rows: {rowFrac}fr {1 - rowFrac}fr;"
+    style="grid-template-columns: {gridCols}; grid-template-rows: {gridRows};"
   >
     {#if app.visiblePanels.info}
-      <section class="quad" data-testid="quad-info">
+      <section class="quad" data-testid="quad-info" style="grid-column:{infoCol};grid-row:{infoRow}">
         <header class="panel-head"><span class="ttl">Info</span></header>
         <div class="body">
           {#if selected}<InfoPanel dive={selected} />{/if}
@@ -59,7 +80,7 @@
       </section>
     {/if}
     {#if app.visiblePanels.profile}
-      <section class="quad" data-testid="quad-profile">
+      <section class="quad" data-testid="quad-profile" style="grid-column:{profileCol};grid-row:{profileRow}">
         <header class="panel-head"><span class="ttl">Profile</span></header>
         <div class="body">
           {#if selected}<DiveProfile dive={selected} />{/if}
@@ -67,7 +88,7 @@
       </section>
     {/if}
     {#if app.visiblePanels.list}
-      <section class="quad" data-testid="quad-list">
+      <section class="quad" data-testid="quad-list" style="grid-column:{listCol};grid-row:{listRow}">
         <header class="panel-head"><span class="ttl">Dive List</span></header>
         <div class="body">
           <DiveList dives={app.dives} trips={app.logbook.trips} sites={app.logbook.sites} {query} />
@@ -75,7 +96,7 @@
       </section>
     {/if}
     {#if app.visiblePanels.map}
-      <section class="quad" data-testid="quad-map">
+      <section class="quad" data-testid="quad-map" style="grid-column:{mapCol};grid-row:{mapRow}">
         <header class="panel-head"><span class="ttl">Map</span></header>
         <div class="body">
           <MapPanel siteName={selectedSite?.name} gps={selectedSite?.gps} />
@@ -84,31 +105,35 @@
     {/if}
   </div>
 
-  <!-- Vertical splitter (divides columns) -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div
-    class="splitter splitter-v"
-    data-testid="splitter-v"
-    style="left: calc({colFrac * 100}% - 3px);"
-    onmousedown={dragCol}
-    role="separator"
-    aria-orientation="vertical"
-    aria-label="Resize columns"
-    tabindex="0"
-  ></div>
+  {#if anyLeft && anyRight}
+    <!-- Vertical splitter (divides columns) -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      class="splitter splitter-v"
+      data-testid="splitter-v"
+      style="left: calc({colFrac * 100}% - 3px);"
+      onmousedown={dragCol}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize columns"
+      tabindex="0"
+    ></div>
+  {/if}
 
-  <!-- Horizontal splitter (divides rows) -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div
-    class="splitter splitter-h"
-    data-testid="splitter-h"
-    style="top: calc({rowFrac * 100}% - 3px);"
-    onmousedown={dragRow}
-    role="separator"
-    aria-orientation="horizontal"
-    aria-label="Resize rows"
-    tabindex="0"
-  ></div>
+  {#if anyTop && anyBottom}
+    <!-- Horizontal splitter (divides rows) -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      class="splitter splitter-h"
+      data-testid="splitter-h"
+      style="top: calc({rowFrac * 100}% - 3px);"
+      onmousedown={dragRow}
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Resize rows"
+      tabindex="0"
+    ></div>
+  {/if}
 </div>
 
 <style>

@@ -4,7 +4,9 @@ use tauri::{
     AppHandle, Emitter, Manager, Runtime,
 };
 
-pub struct PanelItems<R: Runtime> {
+// Holds the five mutually-exclusive View menu items (radio group).
+pub struct ViewItems<R: Runtime> {
+    all: CheckMenuItem<R>,
     list: CheckMenuItem<R>,
     profile: CheckMenuItem<R>,
     info: CheckMenuItem<R>,
@@ -12,23 +14,33 @@ pub struct PanelItems<R: Runtime> {
 }
 
 #[derive(Clone, serde::Serialize)]
-struct PanelTogglePayload {
-    panel: String,
-    visible: bool,
+struct SetPanelsPayload {
+    list: bool,
+    profile: bool,
+    info: bool,
+    map: bool,
 }
 
 pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
-    let list = CheckMenuItem::with_id(app, "panel-list", "Dive List", true, true, None::<&str>)?;
-    let profile =
-        CheckMenuItem::with_id(app, "panel-profile", "Dive Profile", true, true, None::<&str>)?;
-    let info = CheckMenuItem::with_id(app, "panel-info", "Info", true, true, None::<&str>)?;
-    let map = CheckMenuItem::with_id(app, "panel-map", "Map", true, true, None::<&str>)?;
+    // View menu — radio group: exactly one item checked at a time.
+    // Initial state: "All" checked (all panels visible).
+    let view_all =
+        CheckMenuItem::with_id(app, "view-all", "All", true, true, None::<&str>)?;
+    let view_list =
+        CheckMenuItem::with_id(app, "view-list", "Dive List", true, false, None::<&str>)?;
+    let view_profile =
+        CheckMenuItem::with_id(app, "view-profile", "Dive Profile", true, false, None::<&str>)?;
+    let view_info =
+        CheckMenuItem::with_id(app, "view-info", "Info", true, false, None::<&str>)?;
+    let view_map =
+        CheckMenuItem::with_id(app, "view-map", "Map", true, false, None::<&str>)?;
 
-    app.manage(PanelItems {
-        list: list.clone(),
-        profile: profile.clone(),
-        info: info.clone(),
-        map: map.clone(),
+    app.manage(ViewItems {
+        all: view_all.clone(),
+        list: view_list.clone(),
+        profile: view_profile.clone(),
+        info: view_info.clone(),
+        map: view_map.clone(),
     });
 
     let file = Submenu::with_items(
@@ -41,7 +53,12 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
-    let view = Submenu::with_items(app, "View", true, &[&list, &profile, &info, &map])?;
+    let view = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[&view_all, &view_list, &view_profile, &view_info, &view_map],
+    )?;
 
     let items: &[&dyn tauri::menu::IsMenuItem<R>] = &[
         &file,
@@ -62,6 +79,8 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
             true,
             &[
                 &PredefinedMenuItem::about(app, None, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &MenuItem::with_id(app, "settings", "Settings\u{2026}", true, Some("cmd+,"))?,
                 &PredefinedMenuItem::separator(app)?,
                 &PredefinedMenuItem::services(app, None)?,
                 &PredefinedMenuItem::separator(app)?,
@@ -98,43 +117,51 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEven
         "file-new" => {
             app.emit("menu:file-new", ()).ok();
         }
-        id => {
-            let panel = match id {
-                "panel-list" => "list",
-                "panel-profile" => "profile",
-                "panel-info" => "info",
-                "panel-map" => "map",
+        "settings" => {
+            app.emit("menu:settings", ()).ok();
+        }
+        id @ ("view-all" | "view-list" | "view-profile" | "view-info" | "view-map") => {
+            let items = app.state::<ViewItems<R>>();
+            // muda auto-toggles before on_menu_event fires. If the item is now
+            // unchecked the user clicked the already-selected item — revert and
+            // ignore (radio buttons can't be deselected).
+            let clicked = match id {
+                "view-all" => &items.all,
+                "view-list" => &items.list,
+                "view-profile" => &items.profile,
+                "view-info" => &items.info,
+                "view-map" => &items.map,
                 _ => return,
             };
-            let items = app.state::<PanelItems<R>>();
-            let clicked = match panel {
-                "list" => &items.list,
-                "profile" => &items.profile,
-                "info" => &items.info,
-                "map" => &items.map,
-                _ => return,
-            };
-            // muda auto-toggles CheckMenuItem before firing on_menu_event, so
-            // is_checked() already reflects the post-click state.
-            let new_state = clicked.is_checked().unwrap_or(true);
-            if !new_state {
-                // User unchecked — revert if this would hide all panels.
-                let any_visible = [&items.list, &items.profile, &items.info, &items.map]
-                    .iter()
-                    .any(|i| i.is_checked().unwrap_or(false));
-                if !any_visible {
-                    clicked.set_checked(true).ok();
-                    return;
+            if !clicked.is_checked().unwrap_or(true) {
+                clicked.set_checked(true).ok();
+                return;
+            }
+            // Uncheck all others, then derive the full panel visibility state.
+            let all_items = [
+                &items.all,
+                &items.list,
+                &items.profile,
+                &items.info,
+                &items.map,
+            ];
+            for item in &all_items {
+                if item.id() != clicked.id() {
+                    item.set_checked(false).ok();
                 }
             }
+            let show_all = id == "view-all";
             app.emit(
-                "menu:toggle-panel",
-                PanelTogglePayload {
-                    panel: panel.to_string(),
-                    visible: new_state,
+                "menu:set-panels",
+                SetPanelsPayload {
+                    list: show_all || id == "view-list",
+                    profile: show_all || id == "view-profile",
+                    info: show_all || id == "view-info",
+                    map: show_all || id == "view-map",
                 },
             )
             .ok();
         }
+        _ => {}
     }
 }
