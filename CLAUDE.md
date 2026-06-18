@@ -1,0 +1,98 @@
+# Claude Guidelines — desktop-tauri
+
+This is the Tauri 2.x + Svelte 5 prototype of the Subsurface dive-log app.
+It lives alongside the existing Qt/C++ codebase and has no build dependency on it.
+
+## Architecture
+
+```
+desktop-tauri/
+  src/                   Svelte 5 + TypeScript frontend
+    lib/
+      stores/
+        app.svelte.ts    Single AppStore (Svelte 5 $state runes)
+      types.ts           Shared type contract — keep in sync with types.rs
+      components/        UI components (TitleBar, MenuBar, QuadrantGrid, …)
+      fixtures/          logbook.sample.json — used in tests only
+  src-tauri/             Rust backend
+    src/
+      types.rs           Serde types mirroring types.ts (camelCase)
+      ssrf_git/          Pure Rust logbook parser
+        mod.rs           parse_logbook() tree-walker
+        tokenize.rs      Lexer helpers
+        parse_header.rs  Units detection
+        parse_site.rs    Site file parser
+        parse_divecomputer.rs  DC data + carry-forward samples
+        parse_dive.rs    Dive overview + cylinders
+      lib.rs             Tauri commands: startup_logbook, open_logbook, new_logbook
+  test/                  Vitest tests (mirrors src/ structure)
+    fixtures/git-tree/   Golden fixture for Rust integration tests
+```
+
+## Commands
+
+```bash
+# Frontend dev server
+npm run dev
+
+# Run all Vitest tests
+npm test
+
+# Type-check (Svelte + TS)
+npm run check
+
+# Run Tauri dev app (builds Rust + serves Vite)
+npm run tauri dev
+
+# Build production app
+npm run tauri build
+
+# Rust tests only (run from src-tauri/)
+cargo test
+
+# Rust type-check without building
+cargo check
+```
+
+## Tauri IPC
+
+Three commands exposed from Rust to the frontend:
+
+| Command | Description |
+|---|---|
+| `startup_logbook` | Opens persisted path (or creates default at app_data_dir/logbook) |
+| `open_logbook { root }` | Saves `root` to store and parses it |
+| `new_logbook { root }` | Creates the dir, saves to store, and parses |
+
+All return `Result<Logbook, String>` and call `spawn_blocking` for all `std::fs` work.
+The logbook path is persisted in `settings.json` via `tauri-plugin-store`.
+
+## Type Contract
+
+`src/lib/types.ts` and `src-tauri/src/types.rs` are a shared contract.
+**Any change to one side must be mirrored on the other.**
+
+- Rust uses `#[serde(rename_all = "camelCase")]` so JSON field names match TypeScript.
+- Reserved Rust keywords use `#[serde(rename = "...")]`: `use` (cylinder), `type` (event).
+
+## Testing
+
+- Vitest tests live in `test/` mirroring `src/` structure.
+- `vitest-setup.ts` provides global mocks for `@tauri-apps/api/core` (invoke) and
+  `@tauri-apps/plugin-dialog` (open). Tests that need real data use
+  `vi.mocked(invoke).mockResolvedValueOnce(sample)`.
+- Rust unit tests are inline (`#[cfg(test)]` blocks in each module).
+- Golden integration tests in `ssrf_git/mod.rs` use `test/fixtures/git-tree/`.
+- Run `cargo test` in `src-tauri/` and `npm test` in `desktop-tauri/` after every change.
+
+## AI-Generated Code
+
+All AI-generated files contain `// AI-generated (Claude)` (Rust/TS) or
+`<!-- AI-generated (Claude) -->` (Svelte) near the top of the file.
+
+## Known Follow-ups
+
+- `ssrf_git/mod.rs:69/73` — unreadable Dive/Divecomputer files silently drop the dive
+  (`.ok()?` discards it). Should log a warning or surface the error.
+- Sample parsing in `parse_divecomputer.rs` is metric-only (m, bar, °C).
+  Imperial units (ft, psi, °F) in sample lines will be ignored.
