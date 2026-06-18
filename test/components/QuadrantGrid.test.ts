@@ -15,9 +15,12 @@ describe("QuadrantGrid", () => {
     expect(screen.getByTestId("quad-map")).toBeInTheDocument();
   });
 
-  it("omits a hidden panel", () => {
-    app.togglePanel("map");
+  it("shows only the active panel in single-panel mode", () => {
+    app.visiblePanels = { list: true, profile: false, info: false, map: false };
     render(QuadrantGrid);
+    expect(screen.getByTestId("quad-list")).toBeInTheDocument();
+    expect(screen.queryByTestId("quad-info")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("quad-profile")).not.toBeInTheDocument();
     expect(screen.queryByTestId("quad-map")).not.toBeInTheDocument();
   });
 
