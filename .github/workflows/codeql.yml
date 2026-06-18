@@ -8,11 +8,15 @@ on:
   schedule:
     - cron: "0 4 * * 1"
 
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-22.04
     permissions:
+      contents: read
       security-events: write
 
     strategy:
@@ -34,6 +38,8 @@ jobs:
   cargo-audit:
     name: cargo audit
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2
