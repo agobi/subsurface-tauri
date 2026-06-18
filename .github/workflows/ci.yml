@@ -11,9 +11,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   frontend:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
 
@@ -33,6 +37,8 @@ jobs:
 
   rust:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
 
@@ -60,6 +66,7 @@ jobs:
     if: always()
     needs: [frontend, rust]
     runs-on: ubuntu-24.04
+    permissions: {}
     steps:
       - name: Check all jobs succeeded
         uses: re-actors/alls-green@release/v1
