@@ -51,3 +51,14 @@ jobs:
       - name: Clippy
         run: cargo clippy -- -D warnings
         working-directory: src-tauri
+
+  ci-success:
+    name: CI Success
+    if: always()
+    needs: [frontend, rust]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check all jobs succeeded
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
