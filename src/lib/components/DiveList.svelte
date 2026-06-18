@@ -76,4 +76,5 @@
   .dl-row.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--blue); }
   .stars { color: var(--amber); font-size: 11px; letter-spacing: -1px; }
   .depth { text-align: right; }
+  .loc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
