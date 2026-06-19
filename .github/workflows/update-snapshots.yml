@@ -1,0 +1,69 @@
+# AI-generated (Claude)
+name: Update Visual Snapshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Playwright project to update (e.g. android, desktop). Leave empty for all.'
+        required: false
+        default: ''
+        type: string
+      grep:
+        description: 'Filter tests by name pattern (e.g. "prefs"). Leave empty for all.'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  update-snapshots:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Start Vite dev server
+        run: VITE_VISUAL_TEST=1 npx vite &
+
+      - name: Wait for dev server
+        run: until curl -sf http://localhost:1420 > /dev/null 2>&1; do sleep 0.3; done
+
+      - name: Update snapshots
+        env:
+          PROJECT: ${{ inputs.project }}
+          GREP: ${{ inputs.grep }}
+          PLAYWRIGHT_BASE_URL: http://localhost:1420
+        run: |
+          ARGS="--update-snapshots"
+          [ -n "$PROJECT" ] && ARGS="$ARGS --project=$PROJECT"
+          [ -n "$GREP" ]    && ARGS="$ARGS --grep=$GREP"
+          npx playwright test $ARGS
+
+      - name: Commit updated snapshots
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add test/__snapshots__/
+          git diff --staged --quiet && echo "No snapshot changes." || \
+            git commit -m "chore: update visual snapshots [skip ci]" && git push
