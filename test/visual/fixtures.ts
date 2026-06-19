@@ -1,6 +1,15 @@
 // AI-generated (Claude)
+import { test as base, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { Logbook } from '../../src/lib/types.ts';
+
+export { expect };
+
+export const test = base.extend<{ platform: string }>({
+  platform: async ({}, use, testInfo) => {
+    await use(testInfo.project.name === 'android' ? 'android' : 'macos');
+  },
+});
 
 export const sampleLogbook: Logbook = {
   units: 'METRIC',
@@ -45,11 +54,11 @@ export const sampleLogbook: Logbook = {
 
 export async function setupPage(
   page: Page,
-  opts: { logbook?: Logbook | null; theme: 'light' | 'dark'; path?: string },
+  opts: { logbook?: Logbook | null; theme: 'light' | 'dark'; path?: string; platform?: string },
 ): Promise<void> {
-  await page.addInitScript((lb) => {
-    (window as any).__playwright_fixtures__ = { logbook: lb };
-  }, opts.logbook ?? null);
+  await page.addInitScript(([lb, plat]) => {
+    (window as any).__playwright_fixtures__ = { logbook: lb, platform: plat };
+  }, [opts.logbook ?? null, opts.platform ?? 'macos'] as [Logbook | null, string]);
   await page.emulateMedia({ colorScheme: opts.theme });
   await page.goto(opts.path ?? '/');
   await page.waitForLoadState('networkidle');

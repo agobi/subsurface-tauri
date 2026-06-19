@@ -48,3 +48,44 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
           releaseDraft: true
+
+  android:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Android Rust targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Android APKs (debug, all ABIs)
+        run: npm run tauri android build -- --debug
+
+      - name: Upload APKs to release
+        run: |
+          find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | \
+            xargs -I{} gh release upload ${{ github.ref_name }} {} --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

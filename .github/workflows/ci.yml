@@ -95,10 +95,49 @@ jobs:
           name: playwright-diffs
           path: test-results/
 
+  android:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Android Rust target
+        run: rustup target add aarch64-linux-android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Android APK (debug)
+        run: npm run tauri android build -- --debug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-debug
+          path: src-tauri/gen/android/app/build/outputs/apk/arm64-v8a/debug/
+
   ci-success:
     name: CI Success
     if: always()
-    needs: [frontend, rust, visual]
+    needs: [frontend, rust, visual, android]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:

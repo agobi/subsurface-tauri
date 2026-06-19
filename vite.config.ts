@@ -11,6 +11,7 @@ const visualTestAliases: Record<string, string> = process.env.VITE_VISUAL_TEST
       '@tauri-apps/api/event': path.resolve(import.meta.dirname, 'test/visual/tauri-mock.ts'),
       '@tauri-apps/api/window': path.resolve(import.meta.dirname, 'test/visual/tauri-mock.ts'),
       '@tauri-apps/plugin-dialog': path.resolve(import.meta.dirname, 'test/visual/tauri-mock.ts'),
+      '@tauri-apps/plugin-os': path.resolve(import.meta.dirname, 'test/visual/tauri-mock.ts'),
       '@tauri-apps/plugin-store': path.resolve(import.meta.dirname, 'test/visual/tauri-mock.ts'),
     }
   : {};

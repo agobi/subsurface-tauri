@@ -31,3 +31,5 @@ test-results/
 playwright-report/
 *-desktop-darwin.png
 *-desktop-win32.png
+*-android-darwin.png
+*-android-win32.png
