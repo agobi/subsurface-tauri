@@ -90,19 +90,34 @@ The logbook path is persisted in `settings.json` via `tauri-plugin-store`.
 Baselines are Linux/amd64 PNGs committed to `test/__snapshots__/`. They must match the
 `ubuntu-24.04` CI runner exactly — macOS or aarch64 Docker produce 1-2% pixel drift.
 
-To regenerate locally:
+### Regenerating via GitHub Actions (preferred)
+
+Use the **Update Visual Snapshots** `workflow_dispatch` in `.github/workflows/update-snapshots.yml`.
+Trigger it from the Actions tab or via CLI:
+
+```bash
+gh workflow run update-snapshots.yml --ref <branch> \
+  --field project=android   # omit for all projects
+  --field grep="prefs"      # omit for all tests
+```
+
+The workflow runs on `ubuntu-24.04`, writes new PNGs, and commits them back to the branch
+with `[skip ci]`.
+
+### Regenerating locally (x86 Linux only)
+
+`scripts/update-snapshots.sh` starts the Vite dev server on the host, then runs Playwright
+inside `mcr.microsoft.com/playwright:v1.61.0-noble --platform linux/amd64` via Docker.
+**Does not work on Apple Silicon** — QEMU's x86 emulation crashes Chromium. Use the
+workflow above instead.
 
 ```bash
 npm run update-snapshots                     # all tests
 npm run update-snapshots -- --grep "prefs"   # subset
+npm run update-snapshots -- --project=android
 ```
 
-`scripts/update-snapshots.sh` starts the Vite dev server on the host (`$!` captures
-its PID for cleanup), then runs Playwright inside
-`mcr.microsoft.com/playwright:v1.61.0-noble --platform linux/amd64`, connecting to
-the host via `host.docker.internal`. `$@` forwards any extra arguments to Playwright.
-
-Darwin baselines (`*-desktop-darwin.png`) are gitignored — only Linux ones are committed.
+Platform-specific baselines are gitignored — only `*-linux.png` files are committed.
 
 ## AI-Generated Code
 
