@@ -29,3 +29,5 @@ src/lib/fixtures/logbook.json
 # Playwright output (never commit — baselines in test/__snapshots__/ ARE committed)
 test-results/
 playwright-report/
+*-desktop-darwin.png
+*-desktop-win32.png
