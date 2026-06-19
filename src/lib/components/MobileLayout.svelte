@@ -62,7 +62,7 @@
   .mobile-layout {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    height: 100dvh;
     overflow: hidden;
   }
 
@@ -72,6 +72,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    padding-top: env(safe-area-inset-top);
   }
 
   .mobile-panel {
@@ -86,6 +87,7 @@
     align-items: stretch;
     background: var(--panel);
     border-top: 1px solid var(--hair);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .tab-btn {
