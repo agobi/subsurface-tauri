@@ -61,10 +61,38 @@ jobs:
         run: cargo clippy -- -D warnings
         working-directory: src-tauri
 
+  visual:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Visual regression tests
+        run: npm run test:visual
+
+      - name: Upload diff artifacts
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-diffs
+          path: test-results/
+
   ci-success:
     name: CI Success
     if: always()
-    needs: [frontend, rust]
+    needs: [frontend, rust, visual]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
