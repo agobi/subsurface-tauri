@@ -85,6 +85,25 @@ The logbook path is persisted in `settings.json` via `tauri-plugin-store`.
 - Golden integration tests in `ssrf_git/mod.rs` use `test/fixtures/git-tree/`.
 - Run `cargo test` in `src-tauri/` and `npm test` in the project root after every change.
 
+## Visual Regression Baselines
+
+Baselines are Linux/amd64 PNGs committed to `test/__snapshots__/`. They must match the
+`ubuntu-24.04` CI runner exactly — macOS or aarch64 Docker produce 1-2% pixel drift.
+
+To regenerate locally:
+
+```bash
+npm run update-snapshots                     # all tests
+npm run update-snapshots -- --grep "prefs"   # subset
+```
+
+`scripts/update-snapshots.sh` starts the Vite dev server on the host (`$!` captures
+its PID for cleanup), then runs Playwright inside
+`mcr.microsoft.com/playwright:v1.61.0-noble --platform linux/amd64`, connecting to
+the host via `host.docker.internal`. `$@` forwards any extra arguments to Playwright.
+
+Darwin baselines (`*-desktop-darwin.png`) are gitignored — only Linux ones are committed.
+
 ## AI-Generated Code
 
 All AI-generated files contain `// AI-generated (Claude)` (Rust/TS) or
