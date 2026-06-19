@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
+    "update-snapshots": "sh scripts/update-snapshots.sh",
     "test:watch": "vitest"
   },
   "devDependencies": {
