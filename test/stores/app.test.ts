@@ -32,4 +32,23 @@ describe("app store", () => {
     app.setTheme("auto");
     expect(app.theme).toBe("auto");
   });
+
+  describe("platform", () => {
+    it("defaults to desktop", () => {
+      expect(app.platform).toBe("desktop");
+      expect(app.isMobile).toBe(false);
+    });
+
+    it("setPlatform('mobile') sets isMobile to true", () => {
+      app.setPlatform("mobile");
+      expect(app.platform).toBe("mobile");
+      expect(app.isMobile).toBe(true);
+    });
+
+    it("reset() restores platform to desktop", () => {
+      app.setPlatform("mobile");
+      app.reset();
+      expect(app.platform).toBe("desktop");
+    });
+  });
 });

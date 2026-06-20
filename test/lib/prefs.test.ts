@@ -48,7 +48,7 @@ describe("loadAppearancePrefs", () => {
     vi.resetAllMocks();
   });
 
-  it("returns default dark theme when settings.json has no appearance key", async () => {
+  it("returns default auto theme when settings.json has no appearance key", async () => {
     const mockGet = vi.fn().mockResolvedValue(null);
     vi.mocked(store.load).mockResolvedValueOnce({
       get: mockGet,

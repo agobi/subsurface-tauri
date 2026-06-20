@@ -14,7 +14,9 @@
 </script>
 
 <div class="shell">
-  <PrefsSidebar {activeSection} onSelect={(id) => (activeSection = id)} />
+  <div class="sidebar-wrap">
+    <PrefsSidebar {activeSection} onSelect={(id) => (activeSection = id)} />
+  </div>
   <div class="content">
     {#if activeSection === "appearance"}
       <AppearanceSection {currentTheme} {onThemeChange} />
@@ -25,4 +27,8 @@
 <style>
   .shell { display: flex; height: 100vh; background: var(--bg); color: var(--txt); }
   .content { flex: 1; padding: var(--space-4); }
+
+  @media (max-width: 600px) {
+    .sidebar-wrap { display: none; }
+  }
 </style>

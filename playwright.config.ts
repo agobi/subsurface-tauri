@@ -17,6 +17,10 @@ export default defineConfig({
       name: 'desktop',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'android',
+      use: { ...devices['Pixel 7'] },
+    },
   ],
   webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
     command: 'npm run dev:visual',

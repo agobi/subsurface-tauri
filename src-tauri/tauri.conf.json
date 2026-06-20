@@ -25,7 +25,8 @@
         "width": 720,
         "height": 480,
         "resizable": false,
-        "visible": false
+        "visible": false,
+        "create": false
       }
     ],
     "security": {

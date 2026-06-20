@@ -38,6 +38,11 @@ export async function open(_opts?: unknown): Promise<null> {
   return null;
 }
 
+// @tauri-apps/plugin-os
+export async function platform(): Promise<string> {
+  return (window as any).__playwright_fixtures__?.platform ?? 'macos';
+}
+
 // @tauri-apps/plugin-store
 export async function load(_path: string) {
   return {
