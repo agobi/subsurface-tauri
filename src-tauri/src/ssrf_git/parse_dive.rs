@@ -12,6 +12,7 @@ pub struct DiveOverview {
     pub suit: Option<String>,
     pub notes: Option<String>,
     pub cylinders: Vec<Cylinder>,
+    pub total_weight_kg: Option<f64>,
 }
 
 fn parse_cylinder(rest: &str) -> Cylinder {
@@ -40,6 +41,7 @@ pub fn parse_dive(text: &str) -> DiveOverview {
         suit: None,
         notes: None,
         cylinders: vec![],
+        total_weight_kg: None,
     };
     for line in text.lines() {
         let (key, rest) = split_keyword(line);
@@ -59,6 +61,12 @@ pub fn parse_dive(text: &str) -> DiveOverview {
             "suit" => d.suit = Some(unquote(rest)),
             "notes" => d.notes = Some(unquote(rest)),
             "cylinder" => d.cylinders.push(parse_cylinder(rest)),
+            "weightsystem" => {
+                let a = parse_attrs(rest);
+                if let Some(w) = a.get("weight").map(|s| strip_unit(s)).filter(|v| !v.is_nan()) {
+                    d.total_weight_kg = Some(d.total_weight_kg.unwrap_or(0.0) + w);
+                }
+            }
             _ => {}
         }
     }
@@ -104,5 +112,26 @@ cylinder vol=24.0l workpressure=232.0bar description="D12 232 bar" o2=32.0% dept
     fn multi_tags() {
         let d = parse_dive("tags \"cave\",\"night\",\"deep\"\n");
         assert_eq!(d.tags, vec!["cave", "night", "deep"]);
+    }
+
+    #[test]
+    fn parses_single_weightsystem() {
+        let d = parse_dive("weightsystem weight=2.00kg description=\"Lead\"\n");
+        assert!((d.total_weight_kg.unwrap() - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sums_multiple_weightsystems() {
+        let d = parse_dive(
+            "weightsystem weight=2.00kg description=\"Lead\"\n\
+             weightsystem weight=1.50kg description=\"Belt\"\n",
+        );
+        assert!((d.total_weight_kg.unwrap() - 3.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn no_weightsystem_yields_none() {
+        let d = parse_dive("duration 05:00 min\n");
+        assert!(d.total_weight_kg.is_none());
     }
 }

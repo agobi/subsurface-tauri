@@ -14,7 +14,7 @@ for (const theme of ['light', 'dark'] as const) {
 
   test(`sample data second dive clicked — ${theme}`, async ({ page, platform }) => {
     await setupPage(page, { logbook: sampleLogbook, theme, platform });
-    await page.getByText('Fenyes Forras').click();
+    await page.locator('[data-testid="dive-row"]').nth(1).click();
     await page.waitForTimeout(200); // let Svelte reactivity flush
     await expect(page).toHaveScreenshot(`sample-second-${theme}.png`);
   });

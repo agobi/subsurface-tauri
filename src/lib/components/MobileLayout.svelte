@@ -39,7 +39,7 @@
           >⚙</button>
         </div>
         <div class="mobile-panel" data-testid="mobile-panel-dives">
-          <DiveList dives={app.dives} trips={app.logbook.trips} sites={app.logbook.sites} />
+          <DiveList dives={app.sortedDives} trips={app.logbook.trips} sites={app.logbook.sites} />
         </div>
       {:else if activeTab === "profile"}
         <div class="mobile-panel" data-testid="mobile-panel-profile">

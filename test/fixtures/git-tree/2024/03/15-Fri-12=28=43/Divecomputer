@@ -1,4 +1,5 @@
 model "Shearwater Perdix AI"
+dctype OC
 deviceid a790cf6c
 diveid 76b9bc25
 maxdepth 34.7m

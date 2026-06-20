@@ -50,6 +50,8 @@ export interface Dive {
   meanDepthM?: number;
   waterTempC?: number;
   decoModel?: string;    // keyvalue "Deco model", e.g. "GF 55/85"
+  divemode?: string;     // dctype, e.g. "CCR", "OC"
+  totalWeightKg?: number;
   samples: Sample[];
   events: DiveEvent[];
 }
@@ -67,6 +69,7 @@ export interface Site {
   description?: string;
   notes?: string;
   gps?: { lat: number; lon: number };
+  country?: string;
 }
 
 export interface Logbook {

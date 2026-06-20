@@ -46,3 +46,67 @@ describe("DiveList", () => {
     expect(screen.getByText("Fenyes Forras")).toBeInTheDocument(); // ungrouped dive still shown
   });
 });
+
+function dive(overrides: Partial<Dive> = {}): Dive {
+  return { number: 1, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], samples: [], events: [], ...overrides };
+}
+
+describe("DiveList — sorting and columns", () => {
+  beforeEach(() => app.reset());
+
+  it("renders a sortable header button for each visible column", () => {
+    render(DiveList, { props: { dives: [], trips: [], sites: [], query: "" } });
+    expect(screen.getByRole("button", { name: /date/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /depth/i })).toBeInTheDocument();
+  });
+
+  it("clicking a column header updates sortKey in store", async () => {
+    render(DiveList, { props: { dives: [], trips: [], sites: [], query: "" } });
+    await fireEvent.click(screen.getByRole("button", { name: /depth/i }));
+    expect(app.diveListPrefs.sortKey).toBe("depth");
+    expect(app.diveListPrefs.sortDir).toBe("asc");
+  });
+
+  it("clicking the same header twice toggles sort direction", async () => {
+    render(DiveList, { props: { dives: [], trips: [], sites: [], query: "" } });
+    const depthBtn = () => screen.getByRole("button", { name: /depth/i });
+    await fireEvent.click(depthBtn());
+    await fireEvent.click(depthBtn());
+    expect(app.diveListPrefs.sortDir).toBe("desc");
+  });
+
+  it("sorting by non-nr key renders flat list — trip header disappears", async () => {
+    const tDives = [dive({ number: 1, siteId: "s1" }), dive({ number: 2, siteId: "s2" })];
+    const tTrips = [{ label: "Trip A", diveNumbers: [1, 2] }];
+    const tSites = [{ id: "s1", name: "Site One" }, { id: "s2", name: "Site Two" }];
+    render(DiveList, { props: { dives: tDives, trips: tTrips, sites: tSites, query: "" } });
+    expect(screen.getByText(/Trip A/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: /depth/i }));
+    expect(screen.queryByText(/Trip A/)).not.toBeInTheDocument();
+    expect(screen.getByText("Site One")).toBeInTheDocument();
+    expect(screen.getByText("Site Two")).toBeInTheDocument();
+  });
+
+  it("sorting by depth asc shows shallower dive first", async () => {
+    const tDives = [
+      dive({ number: 1, maxDepthM: 30, siteId: "s1" }),
+      dive({ number: 2, maxDepthM: 10, siteId: "s2" }),
+    ];
+    const tSites = [{ id: "s1", name: "Deep Site" }, { id: "s2", name: "Shallow Site" }];
+    app.logbook = { dives: tDives, trips: [], sites: tSites, units: "METRIC" };
+    const { container, rerender } = render(DiveList, { props: { dives: app.sortedDives, trips: [], sites: tSites, query: "" } });
+    await fireEvent.click(screen.getByRole("button", { name: /depth/i }));
+    await rerender({ dives: app.sortedDives });
+    const rows = container.querySelectorAll("[data-testid='dive-row']");
+    expect(rows[0].textContent).toContain("10.0");
+    expect(rows[1].textContent).toContain("30.0");
+  });
+
+  it("opening ColumnPicker and unchecking Buddy hides the Buddy header", async () => {
+    render(DiveList, { props: { dives: [], trips: [], sites: [], query: "" } });
+    expect(screen.getByRole("button", { name: /buddy/i })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: /column options/i }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: /buddy/i }));
+    expect(screen.queryByRole("button", { name: /buddy/i })).not.toBeInTheDocument();
+  });
+});

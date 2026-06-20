@@ -5,3 +5,4 @@ tags "cave"
 divesiteid 04782ed8
 divemaster "Test Diver"
 cylinder vol=24.0l workpressure=232.0bar description="D12 232 bar" o2=32.0% depth=39.845m
+weightsystem weight=2.00kg description="Lead"

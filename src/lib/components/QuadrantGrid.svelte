@@ -68,7 +68,7 @@
   <section class="quad" data-testid="quad-list">
     <header class="panel-head"><span class="ttl">Dive List</span></header>
     <div class="body">
-      <DiveList dives={app.dives} trips={app.logbook.trips} sites={app.logbook.sites} {query} />
+      <DiveList dives={app.sortedDives} trips={app.logbook.trips} sites={app.logbook.sites} {query} />
     </div>
   </section>
 {/snippet}
