@@ -89,6 +89,8 @@ pub struct Dive {
     pub deco_model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub divemode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_weight_kg: Option<f64>,
     pub samples: Vec<Sample>,
     pub events: Vec<DiveEvent>,
 }

@@ -93,6 +93,7 @@ fn parse_dive_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
         water_temp_c: dc.water_temp_c,
         deco_model: dc.deco_model,
         divemode: dc.divemode,
+        total_weight_kg: overview.total_weight_kg,
         samples: dc.samples,
         events: dc.events,
     })

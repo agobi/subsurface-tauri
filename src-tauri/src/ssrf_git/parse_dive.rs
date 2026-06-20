@@ -12,6 +12,7 @@ pub struct DiveOverview {
     pub suit: Option<String>,
     pub notes: Option<String>,
     pub cylinders: Vec<Cylinder>,
+    pub total_weight_kg: Option<f64>,
 }
 
 fn parse_cylinder(rest: &str) -> Cylinder {
@@ -40,6 +41,7 @@ pub fn parse_dive(text: &str) -> DiveOverview {
         suit: None,
         notes: None,
         cylinders: vec![],
+        total_weight_kg: None,
     };
     for line in text.lines() {
         let (key, rest) = split_keyword(line);
@@ -59,6 +61,12 @@ pub fn parse_dive(text: &str) -> DiveOverview {
             "suit" => d.suit = Some(unquote(rest)),
             "notes" => d.notes = Some(unquote(rest)),
             "cylinder" => d.cylinders.push(parse_cylinder(rest)),
+            "weightsystem" => {
+                let a = parse_attrs(rest);
+                if let Some(w) = a.get("weight").map(|s| strip_unit(s)).filter(|v| !v.is_nan()) {
+                    d.total_weight_kg = Some(d.total_weight_kg.unwrap_or(0.0) + w);
+                }
+            }
             _ => {}
         }
     }
