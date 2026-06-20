@@ -20,10 +20,15 @@ pub fn parse_site(file_name: &str, text: &str) -> Site {
                 }
             }
             "geo" => {
-                if let Some(last) = rest.split_whitespace().last() {
-                    let c = unquote(last);
-                    if !c.is_empty() {
-                        site.country = Some(c);
+                let parts: Vec<&str> = rest.split_whitespace().collect();
+                if let Some(pos) = parts.iter().position(|&s| s == "cat") {
+                    if parts.get(pos + 1).map_or(false, |&v| v == "2") {
+                        if let Some(last) = parts.last() {
+                            let c = unquote(last);
+                            if !c.is_empty() {
+                                site.country = Some(c);
+                            }
+                        }
                     }
                 }
             }
@@ -68,6 +73,20 @@ mod tests {
     #[test]
     fn no_geo_line_yields_no_country() {
         let site = parse_site("Site-aabbccdd", "name \"Deep Blue\"\n");
+        assert!(site.country.is_none());
+    }
+
+    #[test]
+    fn cat2_wins_when_multiple_geo_lines() {
+        let text = "name \"Test Spring\"\ngps 47.668408 18.307076\ngeo cat 1 origin 1 \"Europe\"\ngeo cat 2 origin 2 \"Hungary\"\ngeo cat 3 origin 3 \"Budapest\"\n";
+        let site = parse_site("Site-04782ed8", text);
+        assert_eq!(site.country.as_deref(), Some("Hungary"));
+    }
+
+    #[test]
+    fn non_cat2_geo_line_yields_no_country() {
+        let text = "name \"Deep Blue\"\ngeo cat 3 origin 3 \"Budapest\"\n";
+        let site = parse_site("Site-aabbccdd", text);
         assert!(site.country.is_none());
     }
 }

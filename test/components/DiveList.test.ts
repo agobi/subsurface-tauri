@@ -93,8 +93,10 @@ describe("DiveList — sorting and columns", () => {
       dive({ number: 2, maxDepthM: 10, siteId: "s2" }),
     ];
     const tSites = [{ id: "s1", name: "Deep Site" }, { id: "s2", name: "Shallow Site" }];
-    const { container } = render(DiveList, { props: { dives: tDives, trips: [], sites: tSites, query: "" } });
+    app.logbook = { dives: tDives, trips: [], sites: tSites, units: "METRIC" };
+    const { container, rerender } = render(DiveList, { props: { dives: app.sortedDives, trips: [], sites: tSites, query: "" } });
     await fireEvent.click(screen.getByRole("button", { name: /depth/i }));
+    await rerender({ dives: app.sortedDives });
     const rows = container.querySelectorAll("[data-testid='dive-row']");
     expect(rows[0].textContent).toContain("10.0");
     expect(rows[1].textContent).toContain("30.0");
@@ -103,7 +105,7 @@ describe("DiveList — sorting and columns", () => {
   it("opening ColumnPicker and unchecking Buddy hides the Buddy header", async () => {
     render(DiveList, { props: { dives: [], trips: [], sites: [], query: "" } });
     expect(screen.getByRole("button", { name: /buddy/i })).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole("button", { name: "⋮" }));
+    await fireEvent.click(screen.getByRole("button", { name: /column options/i }));
     await fireEvent.click(screen.getByRole("checkbox", { name: /buddy/i }));
     expect(screen.queryByRole("button", { name: /buddy/i })).not.toBeInTheDocument();
   });

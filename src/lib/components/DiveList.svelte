@@ -19,27 +19,8 @@
   let ctx: RenderCtx = $derived({ sites });
   let pickerOpen = $state(false);
 
-  // Sort the dives prop using the active column definition
-  let sorted = $derived(
-    (() => {
-      const { sortKey, sortDir } = prefs;
-      if (sortKey === "nr") return dives;
-      const col = ALL_COLS.find(c => c.id === sortKey);
-      if (!col) return dives;
-      return [...dives].sort((a, b) => {
-        const ae = col.render(a, ctx) === "—";
-        const be = col.render(b, ctx) === "—";
-        if (ae && be) return 0;
-        if (ae) return 1;
-        if (be) return -1;
-        const cmp = col.compare(a, b, ctx);
-        return sortDir === "asc" ? cmp : -cmp;
-      });
-    })()
-  );
-
   let filtered = $derived(
-    sorted.filter((d) => {
+    dives.filter((d) => {
       if (!query.trim()) return true;
       const q = query.toLowerCase();
       const loc = sites.find(s => s.id === d.siteId)?.name ?? "";
@@ -72,7 +53,7 @@
     <div class="col-menu">
       <button
         class="dots"
-        aria-label="⋮"
+        aria-label="Column options"
         onclick={(e) => { e.stopPropagation(); pickerOpen = !pickerOpen; }}>⋮</button>
       {#if pickerOpen}
         <ColumnPicker bind:open={pickerOpen} />
@@ -218,6 +199,12 @@
     left: 0; top: 0; bottom: 0;
     width: 3px;
     background: var(--blue);
+  }
+
+  .dl-row span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .stars { color: var(--amber); font-size: 11px; letter-spacing: -1px; }

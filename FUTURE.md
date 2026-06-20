@@ -28,7 +28,7 @@ array in `settings.json` alongside `visibleCols`. The column definitions module 
 the right structure; rendering just needs to respect order. Hold off until drag-and-drop
 UX patterns are established in the app.
 
-- [ ] Persist `colOrder` in `diveList` settings key
+- [x] Persist `colOrder` in `diveList` settings key
 - [ ] Drag-handle on column headers (or drag the header itself)
 - [ ] Update grid-template-columns dynamically from order
 
