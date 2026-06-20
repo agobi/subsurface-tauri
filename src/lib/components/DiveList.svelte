@@ -139,6 +139,7 @@
     padding: 0 var(--space-3);
     position: sticky;
     top: 0;
+    z-index: 1;
     background: var(--panel-2);
     border-bottom: 1px solid var(--hair);
     font-size: 10.5px;
