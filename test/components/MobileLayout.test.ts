@@ -47,4 +47,23 @@ describe("MobileLayout", () => {
     expect(divesTab).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: /profile/i })).toHaveAttribute("aria-selected", "true");
   });
+
+  it("shows a gear button in the dives panel header", () => {
+    render(MobileLayout);
+    expect(screen.getByRole("button", { name: /settings/i })).toBeInTheDocument();
+  });
+
+  it("shows settings screen when gear button is clicked", async () => {
+    render(MobileLayout);
+    await fireEvent.click(screen.getByRole("button", { name: /settings/i }));
+    expect(screen.getByTestId("mobile-settings-screen")).toBeInTheDocument();
+  });
+
+  it("returns to main view when back button is clicked in settings", async () => {
+    render(MobileLayout);
+    await fireEvent.click(screen.getByRole("button", { name: /settings/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /back/i }));
+    expect(screen.queryByTestId("mobile-settings-screen")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mobile-panel-dives")).toBeInTheDocument();
+  });
 });
