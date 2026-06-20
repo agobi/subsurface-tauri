@@ -7,6 +7,10 @@ import {
   applyTheme,
   loadAppearancePrefs,
   saveAndEmitAppearance,
+  loadDiveListPrefs,
+  saveDiveListPrefs,
+  DEFAULT_DIVE_LIST_PREFS,
+  type DiveListPrefs,
 } from "$lib/prefs.ts";
 
 describe("resolveTheme", () => {
@@ -90,5 +94,48 @@ describe("saveAndEmitAppearance", () => {
     expect(mockSet).toHaveBeenCalledWith("appearance", { theme: "auto" });
     expect(mockSave).toHaveBeenCalled();
     expect(vi.mocked(event.emit)).toHaveBeenCalledWith("prefs:appearance-changed", { theme: "auto" });
+  });
+});
+
+describe("loadDiveListPrefs", () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it("returns defaults when settings.json has no diveList key", async () => {
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    const prefs = await loadDiveListPrefs();
+    expect(prefs).toEqual(DEFAULT_DIVE_LIST_PREFS);
+  });
+
+  it("returns saved prefs when present", async () => {
+    const saved: DiveListPrefs = { sortKey: "depth", sortDir: "desc", colOrder: ["nr", "depth"] };
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: vi.fn().mockResolvedValue(saved),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    const prefs = await loadDiveListPrefs();
+    expect(prefs).toEqual(saved);
+  });
+});
+
+describe("saveDiveListPrefs", () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it("writes diveList key and saves", async () => {
+    const mockSet = vi.fn();
+    const mockSave = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: vi.fn(),
+      set: mockSet,
+      save: mockSave,
+    } as any);
+    const prefs: DiveListPrefs = { sortKey: "depth", sortDir: "asc", colOrder: ["nr", "depth"] };
+    await saveDiveListPrefs(prefs);
+    expect(mockSet).toHaveBeenCalledWith("diveList", prefs);
+    expect(mockSave).toHaveBeenCalled();
   });
 });
