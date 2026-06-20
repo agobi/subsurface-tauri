@@ -50,6 +50,7 @@ export interface Dive {
   meanDepthM?: number;
   waterTempC?: number;
   decoModel?: string;    // keyvalue "Deco model", e.g. "GF 55/85"
+  divemode?: string;     // dctype, e.g. "CCR", "OC"
   samples: Sample[];
   events: DiveEvent[];
 }

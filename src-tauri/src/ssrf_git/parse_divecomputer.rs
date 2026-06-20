@@ -8,6 +8,7 @@ pub struct DivecomputerData {
     pub mean_depth_m: Option<f64>,
     pub water_temp_c: Option<f64>,
     pub deco_model: Option<String>,
+    pub divemode: Option<String>,
     pub events: Vec<DiveEvent>,
     pub samples: Vec<Sample>,
 }
@@ -67,6 +68,7 @@ pub fn parse_divecomputer(text: &str) -> DivecomputerData {
         mean_depth_m: None,
         water_temp_c: None,
         deco_model: None,
+        divemode: None,
         events: vec![],
         samples: vec![],
     };
@@ -102,6 +104,7 @@ pub fn parse_divecomputer(text: &str) -> DivecomputerData {
                     }
                 }
             }
+            "dctype" => dc.divemode = Some(rest.trim().to_owned()),
             _ => {}
         }
     }
@@ -164,5 +167,17 @@ mod tests {
         assert_eq!(s3.depth_m, 15.0);
         assert_eq!(s3.temp_c, Some(24.0));
         assert_eq!(s3.ndl_sec, Some(99 * 60));
+    }
+
+    #[test]
+    fn parses_dctype() {
+        let dc = parse_divecomputer("model \"Test DC\"\ndctype CCR\n");
+        assert_eq!(dc.divemode.as_deref(), Some("CCR"));
+    }
+
+    #[test]
+    fn no_dctype_yields_no_divemode() {
+        let dc = parse_divecomputer("model \"Test DC\"\n");
+        assert!(dc.divemode.is_none());
     }
 }

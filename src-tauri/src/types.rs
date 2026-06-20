@@ -87,6 +87,8 @@ pub struct Dive {
     pub water_temp_c: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deco_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub divemode: Option<String>,
     pub samples: Vec<Sample>,
     pub events: Vec<DiveEvent>,
 }
