@@ -166,6 +166,7 @@ mod tests {
         let gps = s.gps.as_ref().unwrap();
         assert!((gps.lat - 47.668408).abs() < 1e-6);
         assert!((gps.lon - 18.307076).abs() < 1e-6);
+        assert_eq!(s.country.as_deref(), Some("Testland"));
     }
 
     #[test]
@@ -183,6 +184,8 @@ mod tests {
         assert!((d.max_depth_m.unwrap() - 34.7).abs() < 1e-6);
         assert_eq!(d.deco_model.as_deref(), Some("GF 55/85"));
         assert_eq!(d.cylinders[0].description, "D12 232 bar");
+        assert_eq!(d.divemode.as_deref(), Some("OC"));
+        assert!((d.total_weight_kg.unwrap() - 2.0).abs() < 1e-6);
     }
 
     #[test]
