@@ -69,5 +69,6 @@
     flex: 1;
     overflow: auto;
     padding: var(--space-4);
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
   }
 </style>
