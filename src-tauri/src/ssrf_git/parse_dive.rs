@@ -105,4 +105,25 @@ cylinder vol=24.0l workpressure=232.0bar description="D12 232 bar" o2=32.0% dept
         let d = parse_dive("tags \"cave\",\"night\",\"deep\"\n");
         assert_eq!(d.tags, vec!["cave", "night", "deep"]);
     }
+
+    #[test]
+    fn parses_single_weightsystem() {
+        let d = parse_dive("weightsystem weight=2.00kg description=\"Lead\"\n");
+        assert!((d.total_weight_kg.unwrap() - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sums_multiple_weightsystems() {
+        let d = parse_dive(
+            "weightsystem weight=2.00kg description=\"Lead\"\n\
+             weightsystem weight=1.50kg description=\"Belt\"\n",
+        );
+        assert!((d.total_weight_kg.unwrap() - 3.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn no_weightsystem_yields_none() {
+        let d = parse_dive("duration 05:00 min\n");
+        assert!(d.total_weight_kg.is_none());
+    }
 }
