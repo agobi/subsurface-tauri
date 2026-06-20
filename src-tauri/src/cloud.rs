@@ -83,20 +83,33 @@ pub async fn open_cloud_logbook(
     email: String,
     password: String,
 ) -> Result<Logbook, String> {
-    let store = app.store("settings.json").map_err(|e| e.to_string())?;
-    store.set("cloudEmail", serde_json::json!(email));
-    store.save().map_err(|e| e.to_string())?;
-
-    let entry = Entry::new(KEYRING_SERVICE, &email).map_err(|e| e.to_string())?;
-    entry.set_password(&password).map_err(|e| e.to_string())?;
-
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let cache_dir = data_dir.join("cloud").join(&email);
     let url = cloud_url(&email);
 
+    // Clone credentials so we can persist them after a successful clone/fetch
+    let email_for_creds = email.clone();
+    let password_for_creds = password.clone();
+    let cache_dir_for_parse = cache_dir.clone();
+
+    // Step 1: Attempt clone/fetch first — credentials are NOT saved until this succeeds
     tauri::async_runtime::spawn_blocking(move || {
-        clone_or_fetch(&url, &cache_dir, &email, &password)?;
-        crate::ssrf_git::parse_logbook(&cache_dir)
+        clone_or_fetch(&url, &cache_dir, &email, &password)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    // Step 2: Clone/fetch succeeded — persist credentials
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    store.set("cloudEmail", serde_json::json!(email_for_creds));
+    store.save().map_err(|e| e.to_string())?;
+
+    let entry = Entry::new(KEYRING_SERVICE, &email_for_creds).map_err(|e| e.to_string())?;
+    entry.set_password(&password_for_creds).map_err(|e| e.to_string())?;
+
+    // Step 3: Parse and return the logbook
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::ssrf_git::parse_logbook(&cache_dir_for_parse)
     })
     .await
     .map_err(|e| e.to_string())?
