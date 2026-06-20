@@ -22,7 +22,7 @@ pub fn parse_site(file_name: &str, text: &str) -> Site {
             "geo" => {
                 let parts: Vec<&str> = rest.split_whitespace().collect();
                 if let Some(pos) = parts.iter().position(|&s| s == "cat") {
-                    if parts.get(pos + 1).map_or(false, |&v| v == "2") {
+                    if parts.get(pos + 1).is_some_and(|&v| v == "2") {
                         if let Some(last) = parts.last() {
                             let c = unquote(last);
                             if !c.is_empty() {
