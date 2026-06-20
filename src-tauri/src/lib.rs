@@ -1,6 +1,7 @@
 // AI-generated (Claude)
 #[cfg(desktop)]
 mod menu;
+mod cloud;
 mod ssrf_git;
 mod types;
 
@@ -106,6 +107,9 @@ pub fn run() {
             startup_logbook,
             open_logbook,
             new_logbook,
+            cloud::get_cloud_credentials,
+            cloud::open_cloud_logbook,
+            cloud::sync_cloud_logbook,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

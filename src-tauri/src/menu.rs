@@ -47,6 +47,13 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
 
     let file_open = MenuItem::with_id(app, "file-open", "Open Logbook\u{2026}", true, None::<&str>)?;
     let file_new = MenuItem::with_id(app, "file-new", "New Logbook\u{2026}", true, None::<&str>)?;
+    let file_cloud_open = MenuItem::with_id(
+        app,
+        "file-cloud-open",
+        "Open Cloud Notebook\u{2026}",
+        true,
+        None::<&str>,
+    )?;
 
     let view = Submenu::with_items(
         app,
@@ -59,7 +66,7 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
     // name). Prepend a proper app menu so File appears as its own menu in the bar.
     #[cfg(target_os = "macos")]
     {
-        let file = Submenu::with_items(app, "File", true, &[&file_open, &file_new])?;
+        let file = Submenu::with_items(app, "File", true, &[&file_open, &file_new, &file_cloud_open])?;
 
         let app_menu = Submenu::with_items(
             app,
@@ -96,7 +103,7 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
     {
         let settings_item =
             MenuItem::with_id(app, "settings", "Preferences\u{2026}", true, None::<&str>)?;
-        let file = Submenu::with_items(app, "File", true, &[&file_open, &file_new, &settings_item])?;
+        let file = Submenu::with_items(app, "File", true, &[&file_open, &file_new, &file_cloud_open, &settings_item])?;
 
         let items: &[&dyn tauri::menu::IsMenuItem<R>] = &[
             &file,
@@ -126,6 +133,9 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEven
         }
         "file-new" => {
             app.emit("menu:file-new", ()).ok();
+        }
+        "file-cloud-open" => {
+            app.emit("menu:cloud-open", ()).ok();
         }
         "settings" => {
             let label = "preferences";
