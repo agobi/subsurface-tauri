@@ -22,6 +22,7 @@ export const sampleLogbook: Logbook = {
       tags: ['cave'],
       rating: 4,
       maxDepthM: 34.7,
+      buddy: 'Barnabás Králik',
       cylinders: [],
       samples: [
         { timeSec: 0, depthM: 0 },
@@ -40,6 +41,7 @@ export const sampleLogbook: Logbook = {
       tags: ['reef'],
       rating: 5,
       maxDepthM: 18.2,
+      buddy: 'Test Buddy',
       cylinders: [],
       samples: [],
       events: [],
@@ -47,8 +49,8 @@ export const sampleLogbook: Logbook = {
   ],
   trips: [{ label: 'March 2024', diveNumbers: [269] }],
   sites: [
-    { id: 'c171f112', name: 'Molnar Janos' },
-    { id: '04782ed8', name: 'Fenyes Forras' },
+    { id: 'c171f112', name: 'Molnar Janos', country: 'Hungary' },
+    { id: '04782ed8', name: 'Fenyes Forras', country: 'Greece' },
   ],
 };
 
