@@ -45,7 +45,9 @@ class AppStore {
 
   get sortedDives(): Dive[] {
     const { sortKey, sortDir } = this.diveListPrefs;
-    if (sortKey === "nr") return this.logbook.dives;
+    if (sortKey === "nr") {
+      return sortDir === "asc" ? this.logbook.dives : [...this.logbook.dives].reverse();
+    }
     const col = ALL_COLS.find(c => c.id === sortKey);
     if (!col) return this.logbook.dives;
     const ctx: RenderCtx = { sites: this.logbook.sites };
