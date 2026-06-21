@@ -12,7 +12,8 @@
     if (entry.kind === "Local") {
       return entry.path.split(/[\\/]/).pop() || entry.path;
     }
-    return entry.url;
+    const host = entry.url.replace(/^https?:\/\//, "");
+    return `${entry.email}@${host}`;
   }
 
   async function handleThemeChange(theme: Theme) {
@@ -20,9 +21,21 @@
     await saveAndEmitAppearance({ theme });
   }
 
-  function handleRecentTap(entry: RecentEntry) {
-    app.openRecent(entry);
-    if (entry.kind === "Local") onBack();
+  async function handleRecentTap(entry: RecentEntry) {
+    if (entry.kind === "Cloud") {
+      try {
+        await app.openRecentCloud(entry.email);
+        onBack();
+      } catch {
+        app.showCloudDialog = {
+          email: entry.email,
+          message: "Saved credentials could not be loaded. Please sign in again.",
+        };
+      }
+    } else {
+      app.openRecent(entry);
+      onBack();
+    }
   }
 </script>
 

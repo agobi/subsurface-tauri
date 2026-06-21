@@ -58,7 +58,15 @@
 
   async function handleOpenRecent(entry: RecentEntry) {
     if (entry.kind === "Cloud") {
-      app.showCloudDialog = true;
+      try {
+        await app.openRecentCloud(entry.email);
+        await setWindowTitle();
+      } catch {
+        app.showCloudDialog = {
+          email: entry.email,
+          message: "Saved credentials could not be loaded. Please sign in again.",
+        };
+      }
     } else {
       try {
         await app.open(entry.path);
@@ -92,7 +100,7 @@
       unlisteners = await Promise.all([
         listen("menu:file-open", handleOpen),
         listen("menu:file-new", handleNew),
-        listen("menu:cloud-open", () => { app.showCloudDialog = true; }),
+        listen("menu:cloud-open", () => { app.showCloudDialog = { email: "" }; }),
         listen<VisiblePanels>("menu:set-panels", ({ payload }) => {
           app.visiblePanels = payload;
         }),
@@ -133,8 +141,10 @@
     </div>
   {/if}
 
-  {#if app.showCloudDialog}
+  {#if app.showCloudDialog !== false}
     <CloudLoginDialog
+      initialEmail={app.showCloudDialog.email}
+      message={app.showCloudDialog.message}
       onClose={() => { app.showCloudDialog = false; }}
       onSuccess={handleCloudSuccess}
     />

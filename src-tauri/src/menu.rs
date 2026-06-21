@@ -47,7 +47,10 @@ fn build_recent_submenu<R: Runtime>(
                     .next()
                     .unwrap_or(path)
                     .to_owned(),
-                RecentEntry::Cloud { url, .. } => url.clone(),
+                RecentEntry::Cloud { email, url } => {
+                    let host = url.trim_start_matches("https://").trim_start_matches("http://");
+                    format!("{email}@{host}")
+                }
             };
             MenuItem::with_id(app, format!("recent-{i}"), label, true, None::<&str>)
         })

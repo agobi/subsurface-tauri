@@ -78,7 +78,7 @@ async fn startup_logbook(app: tauri::AppHandle) -> Result<OpenResult, String> {
             .and_then(|v| v.as_str().map(str::to_owned))
             .unwrap_or_default();
         let url = cloud::CLOUD_BASE.to_owned();
-        let name = email.clone();
+        let name = cloud::cloud_display_name(&email, &url);
         (RecentEntry::Cloud { email, url }, name)
     } else {
         let path = root.to_string_lossy().to_string();
@@ -157,6 +157,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        .manage(cloud::PasswordCache::new())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -184,6 +185,7 @@ pub fn run() {
             get_recents,
             cloud::get_cloud_credentials,
             cloud::open_cloud_logbook,
+            cloud::open_recent_cloud_logbook,
             cloud::sync_cloud_logbook,
         ])
         .run(tauri::generate_context!())

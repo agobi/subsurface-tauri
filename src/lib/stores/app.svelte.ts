@@ -23,7 +23,7 @@ class AppStore {
   get isCloudLogbook(): boolean { return this.recents[0]?.kind === "Cloud"; }
   displayName = $state("");
   recents = $state<RecentEntry[]>([]);
-  showCloudDialog = $state(false);
+  showCloudDialog = $state<{ email: string; message?: string } | false>(false);
   diveListPrefs = $state<DiveListPrefs>({
     ...DEFAULT_DIVE_LIST_PREFS,
     colOrder: [...DEFAULT_DIVE_LIST_PREFS.colOrder],
@@ -85,6 +85,14 @@ class AppStore {
     this.selectedDiveId = result.logbook.dives[0]?.number ?? null;
   }
 
+  async openRecentCloud(email: string): Promise<void> {
+    const result = await invoke<OpenResult>("open_recent_cloud_logbook", { email });
+    this.logbook = result.logbook;
+    this.displayName = result.displayName;
+    this.recents = result.recents;
+    this.selectedDiveId = result.logbook.dives[0]?.number ?? null;
+  }
+
   async openCloud(email: string, password: string): Promise<void> {
     const result = await invoke<OpenResult>("open_cloud_logbook", { email, password });
     this.logbook = result.logbook;
@@ -107,7 +115,7 @@ class AppStore {
     if (entry.kind === "Local") {
       this.open(entry.path);
     } else {
-      this.showCloudDialog = true;
+      this.showCloudDialog = { email: entry.email };
     }
   }
 
