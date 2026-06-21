@@ -11,8 +11,11 @@
   import StatusBar from "$lib/components/StatusBar.svelte";
   import QuadrantGrid from "$lib/components/QuadrantGrid.svelte";
   import MobileLayout from "$lib/components/MobileLayout.svelte";
+  import CloudLoginDialog from "$lib/components/CloudLoginDialog.svelte";
 
   let search = $state("");
+  let showCloudDialog = $state(false);
+  let initialized = $state(false);
   let unlisteners: (() => void)[] = [];
 
   function basename(path: string): string {
@@ -41,6 +44,15 @@
         console.error("Failed to create logbook:", e);
       }
     }
+  }
+
+  async function handleSync() {
+    await app.syncCloud();
+  }
+
+  async function handleCloudSuccess(email: string) {
+    showCloudDialog = false;
+    await getCurrentWindow().setTitle(`${email} — Subsurface`);
   }
 
   onMount(async () => {
@@ -72,6 +84,7 @@
       unlisteners = await Promise.all([
         listen("menu:file-open", handleOpen),
         listen("menu:file-new", handleNew),
+        listen("menu:cloud-open", () => { showCloudDialog = true; }),
         listen<VisiblePanels>("menu:set-panels", ({ payload }) => {
           app.visiblePanels = payload;
         }),
@@ -82,6 +95,7 @@
     }
 
     unlisteners.push(() => mql.removeEventListener("change", handleColorScheme));
+    initialized = true;
   });
 
   onDestroy(() => {
@@ -93,14 +107,27 @@
   });
 </script>
 
-{#if app.isMobile}
-  <MobileLayout />
-{:else}
-  <div class="app">
-    <Toolbar onSearch={(q) => (search = q)} />
-    <QuadrantGrid query={search} />
-    <StatusBar diveCount={app.dives.length} decoModel={app.selectedDive?.decoModel ?? "-"} synced={true} />
-  </div>
+{#if initialized}
+  {#if app.isMobile}
+    <MobileLayout />
+  {:else}
+    <div class="app">
+      <Toolbar
+        onSearch={(q) => (search = q)}
+        isCloud={app.isCloudLogbook}
+        onSync={handleSync}
+      />
+      <QuadrantGrid query={search} />
+      <StatusBar diveCount={app.dives.length} decoModel={app.selectedDive?.decoModel ?? "-"} synced={true} />
+    </div>
+  {/if}
+
+  {#if showCloudDialog}
+    <CloudLoginDialog
+      onClose={() => { showCloudDialog = false; }}
+      onSuccess={handleCloudSuccess}
+    />
+  {/if}
 {/if}
 
 <style>
