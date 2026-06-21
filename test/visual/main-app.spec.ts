@@ -18,4 +18,18 @@ for (const theme of ['light', 'dark'] as const) {
     await page.waitForTimeout(200); // let Svelte reactivity flush
     await expect(page).toHaveScreenshot(`sample-second-${theme}.png`);
   });
+
+  test(`dive list scrolled to country column — ${theme}`, async ({ page, platform }) => {
+    await setupPage(page, { logbook: sampleLogbook, theme, platform });
+    const isAndroid = platform === 'android';
+    const scrollContainer = isAndroid
+      ? page.locator('[data-testid="mobile-panel-dives"]')
+      : page.locator('[data-testid="quad-list"]').locator('.body');
+    const screenshotTarget = isAndroid
+      ? page.locator('[data-testid="mobile-panel-dives"]')
+      : page.locator('[data-testid="quad-list"]');
+    await scrollContainer.evaluate((el: HTMLElement) => { el.scrollLeft = 300; });
+    await page.waitForTimeout(100);
+    await expect(screenshotTarget).toHaveScreenshot(`dive-list-scrolled-${theme}.png`);
+  });
 }

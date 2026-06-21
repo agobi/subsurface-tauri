@@ -67,7 +67,7 @@
       {#if tds.length}
         <button class="trip" onclick={() => toggleTrip(t.label)}>
           <span class="tw">{collapsed[t.label] ? "+" : "−"} {t.label}</span>
-          <span class="cnt">{tds.length} dives</span>
+          <span class="cnt">{tds.length} {tds.length === 1 ? "dive" : "dives"}</span>
         </button>
         {#if !collapsed[t.label]}
           {#each tds as d, i (d.number)}
@@ -110,7 +110,7 @@
 {/snippet}
 
 <style>
-  .dl { display: flex; flex-direction: column; font-size: 12px; }
+  .dl { display: flex; flex-direction: column; font-size: 12px; min-width: max-content; }
 
   .dl-head {
     display: grid;
