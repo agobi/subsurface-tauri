@@ -45,6 +45,17 @@ describe("DiveList", () => {
     expect(screen.queryByText("Molnar Janos")).not.toBeInTheDocument(); // collapsed hides the trip's dive
     expect(screen.getByText("Fenyes Forras")).toBeInTheDocument(); // ungrouped dive still shown
   });
+
+  it("trip count uses singular 'dive' for 1, plural 'dives' for many", () => {
+    const tDives = [
+      { number: 1, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], samples: [], events: [] },
+      { number: 2, dateTime: "2024-01-02T00:00:00", durationSec: 300, tags: [], cylinders: [], samples: [], events: [] },
+    ] satisfies Dive[];
+    render(DiveList, { props: { dives: tDives, trips: [{ label: "Solo trip", diveNumbers: [1] }], sites: [], query: "" } });
+    expect(screen.getByText("1 dive")).toBeInTheDocument();
+    render(DiveList, { props: { dives: tDives, trips: [{ label: "Buddy trip", diveNumbers: [1, 2] }], sites: [], query: "" } });
+    expect(screen.getByText("2 dives")).toBeInTheDocument();
+  });
 });
 
 function dive(overrides: Partial<Dive> = {}): Dive {
