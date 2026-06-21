@@ -10,7 +10,7 @@ use parse_header::parse_header;
 use parse_site::parse_site;
 use parse_dive::parse_dive;
 use parse_divecomputer::parse_divecomputer;
-use crate::types::{Dive, Logbook, Site};
+use crate::types::{Dive, Logbook, Site, Trip};
 
 fn is_year(s: &str) -> bool { s.len() == 4 && s.chars().all(|c| c.is_ascii_digit()) }
 fn is_month(s: &str) -> bool { s.len() == 2 && s.chars().all(|c| c.is_ascii_digit()) }
@@ -25,6 +25,12 @@ fn is_dive_dir(s: &str) -> bool {
     let time_part = &rest[time_start..]; // "12=28=43"
     let tparts: Vec<&str> = time_part.split('=').collect();
     tparts.len() == 3 && tparts.iter().all(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_digit()))
+}
+
+// Trip dirs start with two digits + '-' but are not dive dirs (e.g. "15-Egypt", "01-trip").
+fn is_trip_dir(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() >= 3 && b[0].is_ascii_digit() && b[1].is_ascii_digit() && b[2] == b'-' && !is_dive_dir(s)
 }
 
 fn read_file(path: &Path) -> Result<String, String> {
@@ -99,6 +105,52 @@ fn parse_dive_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
     })
 }
 
+// Derives a display label from the trip directory name, e.g. "15-Egypt" → "Egypt".
+fn dir_name_label(dir_name: &str) -> String {
+    dir_name.splitn(2, '-').nth(1).unwrap_or(dir_name).replace('-', " ")
+}
+
+// Parses the 00-Trip metadata file: "location …" → label, "notes …" → notes.
+fn parse_trip_file(text: &str, dir_name: &str) -> (String, Option<String>) {
+    let mut label = None;
+    let mut notes = None;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("location ") {
+            label = Some(rest.trim().to_owned());
+        } else if let Some(rest) = line.strip_prefix("notes ") {
+            notes = Some(rest.trim().to_owned());
+        }
+    }
+    (label.unwrap_or_else(|| dir_name_label(dir_name)), notes)
+}
+
+// Parses a trip directory: reads 00-Trip for metadata and collects all dive subdirs.
+fn parse_trip_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option<(Trip, Vec<Dive>)> {
+    let trip_file = dir.join("00-Trip");
+    let (label, notes) = if trip_file.exists() {
+        let text = read_file(&trip_file).ok()?;
+        parse_trip_file(&text, dir_name)
+    } else {
+        (dir_name_label(dir_name), None)
+    };
+
+    let Ok(entries) = std::fs::read_dir(dir) else { return None; };
+    let mut trip_dives: Vec<Dive> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir() && is_dive_dir(&e.file_name().to_string_lossy()))
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            parse_dive_dir(&e.path(), year, month, &name)
+        })
+        .collect();
+
+    if trip_dives.is_empty() { return None; }
+    trip_dives.sort_by(|a, b| a.date_time.cmp(&b.date_time));
+
+    let dive_numbers: Vec<i32> = trip_dives.iter().map(|d| d.number).collect();
+    Some((Trip { label, area: None, notes, dive_numbers }, trip_dives))
+}
+
 pub fn parse_logbook(root: &Path) -> Result<Logbook, String> {
     let header_path = root.join("00-Subsurface");
     let units = if header_path.exists() {
@@ -109,6 +161,7 @@ pub fn parse_logbook(root: &Path) -> Result<Logbook, String> {
 
     let sites = parse_sites(root);
     let mut dives: Vec<Dive> = vec![];
+    let mut trips: Vec<Trip> = vec![];
 
     let year_entries = std::fs::read_dir(root)
         .map_err(|e| format!("cannot read {}: {}", root.display(), e))?;
@@ -124,15 +177,21 @@ pub fn parse_logbook(root: &Path) -> Result<Logbook, String> {
             if !is_month(&month) { continue; }
             let month_dir = month_entry.path();
 
-            let Ok(dive_entries) = std::fs::read_dir(&month_dir) else { continue; };
-            for dive_entry in dive_entries.filter_map(|e| e.ok()) {
-                let name = dive_entry.file_name().to_string_lossy().to_string();
-                let path = dive_entry.path();
+            let Ok(slot_entries) = std::fs::read_dir(&month_dir) else { continue; };
+            for slot_entry in slot_entries.filter_map(|e| e.ok()) {
+                let name = slot_entry.file_name().to_string_lossy().to_string();
+                let path = slot_entry.path();
                 if !path.is_dir() { continue; }
-                if name.ends_with("trip") || name.starts_with('-') { continue; }
-                if !is_dive_dir(&name) { continue; }
-                if let Some(dive) = parse_dive_dir(&path, &year, &month, &name) {
-                    dives.push(dive);
+
+                if is_dive_dir(&name) {
+                    if let Some(dive) = parse_dive_dir(&path, &year, &month, &name) {
+                        dives.push(dive);
+                    }
+                } else if is_trip_dir(&name) {
+                    if let Some((trip, trip_dives)) = parse_trip_dir(&path, &year, &month, &name) {
+                        dives.extend(trip_dives);
+                        trips.push(trip);
+                    }
                 }
             }
         }
@@ -140,7 +199,7 @@ pub fn parse_logbook(root: &Path) -> Result<Logbook, String> {
 
     dives.sort_by(|a, b| a.date_time.cmp(&b.date_time));
 
-    Ok(Logbook { dives, trips: vec![], sites, units })
+    Ok(Logbook { dives, trips, sites, units })
 }
 
 #[cfg(test)]
@@ -153,6 +212,12 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent().unwrap()        // desktop-tauri
             .join("test/fixtures/git-tree")
+    }
+
+    fn fixture_trips() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent().unwrap()
+            .join("test/fixtures/git-tree-trips")
     }
 
     #[test]
@@ -219,5 +284,42 @@ mod tests {
         assert_eq!(lb.dives.len(), 0);
         assert_eq!(lb.units, "METRIC");
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn trip_dives_grouped_and_standalone_separate() {
+        let lb = parse_logbook(&fixture_trips()).unwrap();
+        // Fixture has 2 dives in a trip + 1 standalone
+        assert_eq!(lb.dives.len(), 3);
+        assert_eq!(lb.trips.len(), 1);
+        let t = &lb.trips[0];
+        assert_eq!(t.label, "Egypt");
+        assert_eq!(t.notes.as_deref(), Some("Great trip"));
+        assert_eq!(t.dive_numbers.len(), 2);
+        // Dive numbers in trip come before standalone
+        assert!(t.dive_numbers.contains(&2));
+        assert!(t.dive_numbers.contains(&3));
+        // Standalone dive 1 is not in any trip
+        let ungrouped: Vec<i32> = lb.dives.iter()
+            .map(|d| d.number)
+            .filter(|n| !t.dive_numbers.contains(n))
+            .collect();
+        assert_eq!(ungrouped, vec![1]);
+    }
+
+    #[test]
+    fn trip_dir_label_from_dir_name_when_no_trip_file() {
+        assert_eq!(dir_name_label("15-Egypt"), "Egypt");
+        assert_eq!(dir_name_label("01-trip"), "trip");
+        assert_eq!(dir_name_label("08-Red-Sea"), "Red Sea");
+    }
+
+    #[test]
+    fn is_trip_dir_distinguishes_from_dive_dir() {
+        assert!(is_trip_dir("15-Egypt"));
+        assert!(is_trip_dir("01-trip"));
+        assert!(!is_trip_dir("15-Fri-12=28=43"));
+        assert!(!is_trip_dir("2024"));
+        assert!(!is_trip_dir("03"));
     }
 }
