@@ -1,67 +1,40 @@
 # Subsurface — Tauri Prototype
 
-A cross-platform desktop dive-log viewer built with [Tauri 2](https://tauri.app) (Rust backend) and [Svelte 5](https://svelte.dev) (TypeScript frontend).
+A dive-log viewer for [Subsurface](https://subsurface-divelog.org)'s git-based logbook format, built with [Tauri 2](https://tauri.app) and [Svelte 5](https://svelte.dev).
 
-This is a prototype that reads the same git-based logbook format used by [Subsurface](https://subsurface-divelog.org). It lives alongside the existing Qt/C++ codebase and has no build dependency on it.
+> **Early prototype.** Expect missing features and rough edges. The existing [Subsurface Qt app](https://subsurface-divelog.org) remains the full-featured reference implementation.
 
-## Prerequisites
+## Download
 
-- [Node.js](https://nodejs.org) 24+
-- [Rust](https://rustup.rs) (stable)
-- Linux: `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf`
+Get the latest pre-release from the [Releases](../../releases) page:
 
-## Development
+| Platform | File |
+|---|---|
+| macOS (Apple Silicon) | `subsurface-prototype_*_aarch64.dmg` |
+| Linux (Debian/Ubuntu) | `subsurface-prototype_*_amd64.deb` |
+| Linux (AppImage) | `subsurface-prototype_*_amd64.AppImage` |
+| Linux (RPM) | `subsurface-prototype_*_x86_64.rpm` |
+| Windows | `subsurface-prototype_*_x64-setup.exe` |
+| Android (debug APK) | `app-universal-debug.apk` |
 
-```bash
-# Install JS dependencies
-npm install
+## What it does
 
-# Frontend dev server only
-npm run dev
+- **Opens Subsurface logbooks** — local git-based logbooks or cloud notebooks
+- **Dive list** — sortable by any column, dives grouped into trips
+- **Customizable columns** — show or hide: date, rating, depth, duration, buddy, guide, country, location, water temp, suit, gas mix, SAC, tags, notes, dive mode, weight
+- **Dive profile** — depth-over-time chart from dive computer data
+- **Map** — dive site locations
+- **Desktop + Android** — native app on macOS, Windows, Linux, and Android
 
-# Full Tauri dev app (Rust + Vite)
-npm run tauri dev
-```
+## Opening a logbook
 
-## Testing
+On first launch you can:
 
-```bash
-# Vitest unit tests (frontend)
-npm test
+- **Open Logbook** — point to an existing Subsurface git logbook directory on disk
+- **Open Cloud Notebook** — enter your Subsurface cloud credentials
+- **New Logbook** — create a fresh empty logbook
 
-# TypeScript + Svelte type-check
-npm run check
-
-# Rust unit + integration tests
-cd src-tauri && cargo test
-
-# Rust lint
-cd src-tauri && cargo clippy -- -D warnings
-```
-
-## Building
-
-```bash
-npm run tauri build
-```
-
-Produces platform-native bundles (`.dmg`, `.AppImage`, `.msi`) in `src-tauri/target/release/bundle/`.
-
-## Architecture
-
-```
-src/                        Svelte 5 + TypeScript frontend
-  lib/
-    stores/app.svelte.ts    Single AppStore ($state runes)
-    types.ts                Shared type contract — keep in sync with types.rs
-    components/             TitleBar, MenuBar, QuadrantGrid, …
-src-tauri/src/              Rust backend
-  types.rs                  Serde types mirroring types.ts
-  ssrf_git/                 Pure-Rust logbook parser
-  lib.rs                    Tauri IPC commands
-test/                       Vitest tests (mirrors src/)
-  fixtures/git-tree/        Golden fixture for Rust integration tests
-```
+The last-used logbook reopens automatically on the next launch.
 
 ## License
 
