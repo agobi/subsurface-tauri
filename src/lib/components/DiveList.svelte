@@ -201,7 +201,7 @@
     cursor: pointer;
     position: relative;
   }
-  .dl-row.in-trip { padding-left: calc(var(--space-3) + 16px); }
+  .dl-row.in-trip span:first-child { padding-left: 16px; }
   .dl-row.zebra { background: var(--panel-2); }
   .dl-row:hover { background: var(--elev); }
   .dl-row.sel::before {
