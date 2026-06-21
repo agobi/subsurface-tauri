@@ -50,12 +50,14 @@ describe("CloudLoginDialog", () => {
     vi.mocked(invoke).mockResolvedValueOnce(null); // get_cloud_credentials
     vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook); // open_cloud_logbook
     const onSuccess = vi.fn();
-    render(CloudLoginDialog, { props: { onClose: vi.fn(), onSuccess } });
+    const onClose = vi.fn();
+    render(CloudLoginDialog, { props: { onClose, onSuccess } });
     await waitFor(() => screen.getByLabelText(/email/i));
     await fireEvent.input(screen.getByLabelText(/email/i), { target: { value: "user@example.com" } });
     await fireEvent.input(screen.getByLabelText(/password/i), { target: { value: "secret" } });
     await fireEvent.click(screen.getByRole("button", { name: /open cloud/i }));
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user@example.com"));
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("shows error message when open_cloud_logbook fails", async () => {
