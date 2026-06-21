@@ -5,12 +5,45 @@ use tauri_plugin_store::StoreExt;
 use crate::types::Logbook;
 
 const KEYRING_SERVICE: &str = "subsurface-tauri";
+// Default to the EU server, matching Qt's default (cloud_base_url in pref.cpp).
+const CLOUD_BASE: &str = "https://ssrf-cloud-eu.subsurface-divelog.org";
 
-fn cloud_url(email: &str) -> String {
-    format!(
-        "https://cloud.subsurface-divelog.org/git/{email}[{email}]",
-        email = email
-    )
+fn cloud_remote_url(email: &str) -> String {
+    format!("{CLOUD_BASE}/git/{email}")
+}
+
+// The Subsurface cloud server uses the email address as the git branch name.
+fn cloud_branch(email: &str) -> &str {
+    email
+}
+
+/// Calls the Subsurface cloud /storage REST endpoint to validate credentials.
+/// This also initializes the git repo on the server for new accounts.
+/// Returns Ok(()) for [OK] or [VERIFIED], Err with a human-readable message otherwise.
+async fn rest_authenticate(email: &str, password: &str) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let body = format!("{email} {password}");
+    let resp = client
+        .post(format!("{CLOUD_BASE}/storage"))
+        .header("Content-Type", "text/plain")
+        .header("Accept", "text/xml, text/plain")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_connect() || e.is_timeout() {
+                "Could not reach Subsurface Cloud. Check your connection.".to_string()
+            } else {
+                e.to_string()
+            }
+        })?;
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    match text.trim() {
+        "[OK]" | "[VERIFIED]" => Ok(()),
+        "[VERIFY]" => Err("Email not yet verified. Check your inbox for a PIN.".to_string()),
+        "Invalid PIN" => Err("Invalid PIN.".to_string()),
+        other => Err(format!("Cloud authentication failed: {other}")),
+    }
 }
 
 fn map_error_message(msg: &str) -> String {
@@ -24,12 +57,22 @@ fn map_error_message(msg: &str) -> String {
 }
 
 fn map_git_error(e: git2::Error) -> String {
+    log::warn!("git2 error (class={:?}): {}", e.class(), e.message());
     map_error_message(e.message())
 }
 
 fn make_fetch_opts<'a>(email: &'a str, password: &'a str) -> git2::FetchOptions<'a> {
     let mut callbacks = git2::RemoteCallbacks::new();
-    callbacks.credentials(move |_, _, _| git2::Cred::userpass_plaintext(email, password));
+    // Only provide credentials once — replaying the same credentials triggers libgit2's
+    // "too many redirects or authentication replays" error (mirrors Qt's exceeded_auth_attempts).
+    let mut attempt = 0u32;
+    callbacks.credentials(move |_, _, _| {
+        attempt += 1;
+        if attempt > 1 {
+            return Err(git2::Error::from_str("credentials rejected by server"));
+        }
+        git2::Cred::userpass_plaintext(email, password)
+    });
     let mut opts = git2::FetchOptions::new();
     opts.remote_callbacks(callbacks);
     opts
@@ -37,31 +80,37 @@ fn make_fetch_opts<'a>(email: &'a str, password: &'a str) -> git2::FetchOptions<
 
 fn clone_or_fetch(
     url: &str,
+    branch: &str,
     cache_dir: &std::path::Path,
     email: &str,
     password: &str,
 ) -> Result<(), String> {
     if cache_dir.is_dir() {
         let repo = git2::Repository::open(cache_dir).map_err(|e| e.to_string())?;
+        // Always sync the remote URL — the cache may have been written by an older version
+        // of this code that stored a different URL format (e.g. with [branch] brackets).
+        repo.remote_set_url("origin", url).map_err(|e| e.to_string())?;
         let mut remote = repo.find_remote("origin").map_err(|e| e.to_string())?;
         let mut opts = make_fetch_opts(email, password);
+        // Fetch using the configured refspec (maps refs/heads/* → refs/remotes/origin/*).
         remote
             .fetch(&[] as &[&str], Some(&mut opts), None)
             .map_err(map_git_error)?;
-        let remote_head = repo
-            .find_reference("refs/remotes/origin/HEAD")
-            .or_else(|_| repo.find_reference("refs/remotes/origin/master"))
-            .map_err(|_| "Cannot determine remote branch after fetch".to_string())?;
-        let resolved = remote_head.resolve().map_err(|e| e.to_string())?;
+        let refname = format!("refs/remotes/origin/{branch}");
+        let remote_ref = repo
+            .find_reference(&refname)
+            .map_err(|_| format!("Remote branch '{branch}' not found after fetch — is the account empty?"))?;
+        let resolved = remote_ref.resolve().map_err(|e| e.to_string())?;
         let oid = resolved
             .target()
-            .ok_or_else(|| "Unborn remote HEAD".to_string())?;
+            .ok_or_else(|| "Unborn remote branch".to_string())?;
         let obj = repo.find_object(oid, None).map_err(|e| e.to_string())?;
         repo.reset(&obj, git2::ResetType::Hard, None)
             .map_err(|e| e.to_string())?;
     } else {
         let mut builder = git2::build::RepoBuilder::new();
         builder.fetch_options(make_fetch_opts(email, password));
+        builder.branch(branch);
         builder.clone(url, cache_dir).map_err(map_git_error)?;
     }
     Ok(())
@@ -83,23 +132,30 @@ pub async fn open_cloud_logbook(
     email: String,
     password: String,
 ) -> Result<Logbook, String> {
+    // Qt lowercases the email before all cloud operations (preferences_cloud.cpp::syncSettings).
+    let email = email.to_lowercase();
+
+    // Step 1: Validate credentials via REST (also initialises git repo for new accounts).
+    rest_authenticate(&email, &password).await?;
+
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let cache_dir = data_dir.join("cloud").join(&email);
-    let url = cloud_url(&email);
+    let url = cloud_remote_url(&email);
+    let branch = cloud_branch(&email).to_owned();
 
     // Clone credentials so we can persist them after a successful clone/fetch
     let email_for_creds = email.clone();
     let password_for_creds = password.clone();
     let cache_dir_for_parse = cache_dir.clone();
 
-    // Step 1: Attempt clone/fetch first — credentials are NOT saved until this succeeds
+    // Step 2: Attempt clone/fetch — credentials are NOT saved until this succeeds
     tauri::async_runtime::spawn_blocking(move || {
-        clone_or_fetch(&url, &cache_dir, &email, &password)
+        clone_or_fetch(&url, &branch, &cache_dir, &email, &password)
     })
     .await
     .map_err(|e| e.to_string())??;
 
-    // Step 2+3: Save credentials and parse in one blocking call to avoid stalling the async runtime
+    // Step 3: Save credentials and parse in one blocking call to avoid stalling the async runtime
     let app_clone = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         // Save email to settings.json (fast in-memory + file flush)
@@ -131,10 +187,11 @@ pub async fn sync_cloud_logbook(app: tauri::AppHandle) -> Result<Logbook, String
 
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let cache_dir = data_dir.join("cloud").join(&email);
-    let url = cloud_url(&email);
+    let url = cloud_remote_url(&email);
+    let branch = cloud_branch(&email).to_owned();
 
     tauri::async_runtime::spawn_blocking(move || {
-        clone_or_fetch(&url, &cache_dir, &email, &password)?;
+        clone_or_fetch(&url, &branch, &cache_dir, &email, &password)?;
         crate::ssrf_git::parse_logbook(&cache_dir)
     })
     .await
@@ -146,11 +203,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cloud_url_format() {
+    fn cloud_remote_url_format() {
         assert_eq!(
-            cloud_url("user@example.com"),
-            "https://cloud.subsurface-divelog.org/git/user@example.com[user@example.com]"
+            cloud_remote_url("user@example.com"),
+            "https://ssrf-cloud-eu.subsurface-divelog.org/git/user@example.com"
         );
+    }
+
+    #[test]
+    fn cloud_branch_is_email() {
+        assert_eq!(cloud_branch("user@example.com"), "user@example.com");
     }
 
     #[test]
