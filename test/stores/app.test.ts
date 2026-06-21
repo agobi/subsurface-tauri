@@ -2,9 +2,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { app } from "$lib/stores/app.svelte.ts";
-import type { Dive } from "$lib/types.ts";
+import type { Dive, Logbook } from "$lib/types.ts";
 import sample from "$lib/fixtures/logbook.sample.json";
-import type { Logbook } from "$lib/types.ts";
 
 describe("app store", () => {
   beforeEach(() => app.reset());
