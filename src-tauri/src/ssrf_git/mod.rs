@@ -10,6 +10,7 @@ use parse_header::parse_header;
 use parse_site::parse_site;
 use parse_dive::parse_dive;
 use parse_divecomputer::parse_divecomputer;
+use tokenize::unquote;
 use crate::types::{Dive, Logbook, Site, Trip};
 
 fn is_year(s: &str) -> bool { s.len() == 4 && s.chars().all(|c| c.is_ascii_digit()) }
@@ -131,9 +132,9 @@ fn parse_trip_file(text: &str, dir_name: &str) -> (String, Option<String>) {
     let mut notes = None;
     for line in text.lines() {
         if let Some(rest) = line.strip_prefix("location ") {
-            label = Some(rest.trim().to_owned());
+            label = Some(unquote(rest.trim()));
         } else if let Some(rest) = line.strip_prefix("notes ") {
-            notes = Some(rest.trim().to_owned());
+            notes = Some(unquote(rest.trim()));
         }
     }
     (label.unwrap_or_else(|| dir_name_label(dir_name)), notes)

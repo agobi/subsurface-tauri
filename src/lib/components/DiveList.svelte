@@ -34,8 +34,16 @@
   function tripDives(t: Trip) { return filtered.filter(d => t.diveNumbers.includes(d.number)); }
   let groupedNumbers = $derived(new Set(trips.flatMap(t => t.diveNumbers)));
   let ungrouped = $derived(filtered.filter(d => !groupedNumbers.has(d.number)));
-  let collapsed = $state<Record<string, boolean>>({});
-  function toggleTrip(label: string) { collapsed = { ...collapsed, [label]: !collapsed[label] }; }
+  // Order trips by position of their first dive in filtered (inherits sortDir from sortedDives).
+  let sortedTrips = $derived(
+    [...trips].sort((a, b) => {
+      const ai = filtered.findIndex(d => a.diveNumbers.includes(d.number));
+      const bi = filtered.findIndex(d => b.diveNumbers.includes(d.number));
+      return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
+    })
+  );
+  let collapsed = $state<Record<number, boolean>>({});
+  function toggleTrip(key: number) { collapsed = { ...collapsed, [key]: !collapsed[key] }; }
 
   const numericCols = new Set(["nr", "date", "depth", "duration", "temp", "sac", "weight"]);
 </script>
@@ -62,16 +70,17 @@
   </div>
 
   {#if prefs.sortKey === "nr"}
-    {#each trips as t}
+    {#each sortedTrips as t}
       {@const tds = tripDives(t)}
+      {@const tripKey = t.diveNumbers[0]}
       {#if tds.length}
-        <button class="trip" onclick={() => toggleTrip(t.label)}>
-          <span class="tw">{collapsed[t.label] ? "+" : "−"} {t.label}</span>
+        <button class="trip" onclick={() => toggleTrip(tripKey)}>
+          <span class="tw">{collapsed[tripKey] ? "+" : "−"} {t.label}</span>
           <span class="cnt">{tds.length} {tds.length === 1 ? "dive" : "dives"}</span>
         </button>
-        {#if !collapsed[t.label]}
+        {#if !collapsed[tripKey]}
           {#each tds as d, i (d.number)}
-            {@render row(d, i)}
+            {@render row(d, i, true)}
           {/each}
         {/if}
       {/if}
@@ -86,12 +95,13 @@
   {/if}
 </div>
 
-{#snippet row(d: Dive, i: number)}
+{#snippet row(d: Dive, i: number, inTrip = false)}
   <div
     class="dl-row"
     data-testid="dive-row"
     style="grid-template-columns: {gridCols}"
     class:zebra={i % 2 === 1}
+    class:in-trip={inTrip}
     class:sel={app.selectedDiveId === d.number}
     role="button"
     tabindex="0"
@@ -191,6 +201,7 @@
     cursor: pointer;
     position: relative;
   }
+  .dl-row.in-trip { padding-left: calc(var(--space-3) + 16px); }
   .dl-row.zebra { background: var(--panel-2); }
   .dl-row:hover { background: var(--elev); }
   .dl-row.sel::before {
