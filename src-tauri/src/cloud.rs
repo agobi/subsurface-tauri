@@ -115,7 +115,14 @@ mod macos_keychain {
         drop(pw_str); // only needed if used; suppress warning
 
         let status: OSStatus = unsafe { SecItemAdd(add.0 as _, std::ptr::null_mut()) };
-        if status == errSecSuccess { Ok(()) } else { Err(format!("SecItemAdd: {status}")) }
+        if status == errSecSuccess {
+            Ok(())
+        } else if status == -34018 {
+            // errSecMissingEntitlement: keychain-access-groups entitlement absent (dev builds).
+            Err("MISSING_ENTITLEMENT".to_string())
+        } else {
+            Err(format!("SecItemAdd: {status}"))
+        }
     }
 
     pub fn keychain_get(service: &str, account: &str) -> Result<String, String> {
@@ -130,6 +137,10 @@ mod macos_keychain {
 
         let mut result: CFTypeRef = std::ptr::null();
         let status: OSStatus = unsafe { SecItemCopyMatching(q.0 as _, &mut result) };
+        if status == -34018 {
+            // errSecMissingEntitlement: entitlement absent, caller may try login keychain.
+            return Err("MISSING_ENTITLEMENT".to_string());
+        }
         if status != errSecSuccess || result.is_null() {
             return Err("NO_SAVED_CREDENTIALS".to_string());
         }
@@ -142,31 +153,26 @@ mod macos_keychain {
     }
 }
 
-// On macOS, prefer the DataProtection keychain (no lock prompt). If the entitlement is
-// absent (dev builds without a signed certificate), fall back to the legacy login keychain
-// via the keyring crate so credentials are still persisted across restarts.
+// On macOS, use only the DataProtection keychain (auto-unlocks with login, never prompts).
+// If the keychain-access-groups entitlement is absent (dev builds), credentials are kept
+// in the session cache only — they won't survive a restart, but no system dialog appears.
 
 #[cfg(target_os = "macos")]
 fn keychain_set(service: &str, account: &str, password: &str) -> Result<(), String> {
     match macos_keychain::keychain_set(service, account, password) {
         Ok(()) => {
-            log::info!("keychain_set: stored in DataProtection keychain (account={account})");
-            return Ok(());
+            log::info!("keychain_set: stored (account={account})");
+            Ok(())
+        }
+        Err(e) if e == "MISSING_ENTITLEMENT" => {
+            log::warn!("keychain_set: entitlement absent, credentials not persisted (account={account})");
+            Ok(()) // non-fatal: PasswordCache covers the current session
         }
         Err(e) => {
-            log::warn!("keychain_set: DataProtection keychain failed ({e}), falling back to login keychain");
+            log::error!("keychain_set: {e} (account={account})");
+            Err(e)
         }
     }
-    use keyring::Entry;
-    let result = Entry::new(service, account)
-        .map_err(|e| e.to_string())?
-        .set_password(password)
-        .map_err(|e| e.to_string());
-    match &result {
-        Ok(()) => log::info!("keychain_set: stored in login keychain (account={account})"),
-        Err(e) => log::error!("keychain_set: login keychain also failed: {e}"),
-    }
-    result
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -182,23 +188,14 @@ fn keychain_set(service: &str, account: &str, password: &str) -> Result<(), Stri
 fn keychain_get(service: &str, account: &str) -> Result<String, String> {
     match macos_keychain::keychain_get(service, account) {
         Ok(pw) => {
-            log::info!("keychain_get: found in DataProtection keychain (account={account})");
-            return Ok(pw);
+            log::info!("keychain_get: found (account={account})");
+            Ok(pw)
         }
         Err(e) => {
-            log::warn!("keychain_get: DataProtection keychain failed ({e}), falling back to login keychain");
+            log::warn!("keychain_get: {e} (account={account})");
+            Err("NO_SAVED_CREDENTIALS".to_string())
         }
     }
-    use keyring::Entry;
-    let result = Entry::new(service, account)
-        .map_err(|e| e.to_string())?
-        .get_password()
-        .map_err(|_| "NO_SAVED_CREDENTIALS".to_string());
-    match &result {
-        Ok(_) => log::info!("keychain_get: found in login keychain (account={account})"),
-        Err(_) => log::warn!("keychain_get: no credentials found in either keychain (account={account})"),
-    }
-    result
 }
 
 #[cfg(not(target_os = "macos"))]
