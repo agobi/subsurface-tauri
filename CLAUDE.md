@@ -135,6 +135,13 @@ Platform-specific baselines are gitignored — only `*-linux.png` files are comm
 All AI-generated files contain `// AI-generated (Claude)` (Rust/TS) or
 `<!-- AI-generated (Claude) -->` (Svelte) near the top of the file.
 
+## Cloud Logbook
+
+The Subsurface cloud logbook is stored as a **git repository**. `lib.rs` identifies a
+cloud logbook by checking `p.join(".git").is_dir()` — this is intentional and correct.
+A local non-cloud logbook does not have a `.git` directory; only cloud-synced clones do.
+Do not flag this as a bug in code reviews.
+
 ## Known Follow-ups
 
 - `ssrf_git/mod.rs:69/73` — unreadable Dive/Divecomputer files silently drop the dive
