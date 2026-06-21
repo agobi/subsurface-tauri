@@ -1,6 +1,4 @@
 // AI-generated (Claude)
-use std::collections::HashMap;
-use std::sync::Mutex;
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
 use crate::types::{Logbook, OpenResult, RecentEntry};
@@ -115,7 +113,14 @@ mod macos_keychain {
         drop(pw_str); // only needed if used; suppress warning
 
         let status: OSStatus = unsafe { SecItemAdd(add.0 as _, std::ptr::null_mut()) };
-        if status == errSecSuccess { Ok(()) } else { Err(format!("SecItemAdd: {status}")) }
+        if status == errSecSuccess {
+            Ok(())
+        } else if status == -34018 {
+            // errSecMissingEntitlement: keychain-access-groups entitlement absent (dev builds).
+            Err("MISSING_ENTITLEMENT".to_string())
+        } else {
+            Err(format!("SecItemAdd: {status}"))
+        }
     }
 
     pub fn keychain_get(service: &str, account: &str) -> Result<String, String> {
@@ -130,6 +135,10 @@ mod macos_keychain {
 
         let mut result: CFTypeRef = std::ptr::null();
         let status: OSStatus = unsafe { SecItemCopyMatching(q.0 as _, &mut result) };
+        if status == -34018 {
+            // errSecMissingEntitlement: entitlement absent, caller may try login keychain.
+            return Err("MISSING_ENTITLEMENT".to_string());
+        }
         if status != errSecSuccess || result.is_null() {
             return Err("NO_SAVED_CREDENTIALS".to_string());
         }
@@ -142,31 +151,26 @@ mod macos_keychain {
     }
 }
 
-// On macOS, prefer the DataProtection keychain (no lock prompt). If the entitlement is
-// absent (dev builds without a signed certificate), fall back to the legacy login keychain
-// via the keyring crate so credentials are still persisted across restarts.
+// On macOS, use only the DataProtection keychain (auto-unlocks with login, never prompts).
+// If the keychain-access-groups entitlement is absent (dev builds), credentials are kept
+// in the session cache only — they won't survive a restart, but no system dialog appears.
 
 #[cfg(target_os = "macos")]
 fn keychain_set(service: &str, account: &str, password: &str) -> Result<(), String> {
     match macos_keychain::keychain_set(service, account, password) {
         Ok(()) => {
-            log::info!("keychain_set: stored in DataProtection keychain (account={account})");
-            return Ok(());
+            log::info!("keychain_set: stored (account={account})");
+            Ok(())
+        }
+        Err(e) if e == "MISSING_ENTITLEMENT" => {
+            log::warn!("keychain_set: entitlement absent, credentials not persisted (account={account})");
+            Ok(()) // non-fatal: credentials won't survive restart in dev builds
         }
         Err(e) => {
-            log::warn!("keychain_set: DataProtection keychain failed ({e}), falling back to login keychain");
+            log::error!("keychain_set: {e} (account={account})");
+            Err(e)
         }
     }
-    use keyring::Entry;
-    let result = Entry::new(service, account)
-        .map_err(|e| e.to_string())?
-        .set_password(password)
-        .map_err(|e| e.to_string());
-    match &result {
-        Ok(()) => log::info!("keychain_set: stored in login keychain (account={account})"),
-        Err(e) => log::error!("keychain_set: login keychain also failed: {e}"),
-    }
-    result
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -182,23 +186,14 @@ fn keychain_set(service: &str, account: &str, password: &str) -> Result<(), Stri
 fn keychain_get(service: &str, account: &str) -> Result<String, String> {
     match macos_keychain::keychain_get(service, account) {
         Ok(pw) => {
-            log::info!("keychain_get: found in DataProtection keychain (account={account})");
-            return Ok(pw);
+            log::info!("keychain_get: found (account={account})");
+            Ok(pw)
         }
         Err(e) => {
-            log::warn!("keychain_get: DataProtection keychain failed ({e}), falling back to login keychain");
+            log::warn!("keychain_get: {e} (account={account})");
+            Err("NO_SAVED_CREDENTIALS".to_string())
         }
     }
-    use keyring::Entry;
-    let result = Entry::new(service, account)
-        .map_err(|e| e.to_string())?
-        .get_password()
-        .map_err(|_| "NO_SAVED_CREDENTIALS".to_string());
-    match &result {
-        Ok(_) => log::info!("keychain_get: found in login keychain (account={account})"),
-        Err(_) => log::warn!("keychain_get: no credentials found in either keychain (account={account})"),
-    }
-    result
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -210,37 +205,8 @@ fn keychain_get(service: &str, account: &str) -> Result<String, String> {
         .map_err(|_| "NO_SAVED_CREDENTIALS".to_string())
 }
 
-/// In-memory cache of cloud passwords for the current session (email → password).
-/// Populated on login so that subsequent fetches within the same session do not
-/// trigger a keychain access prompt.
-pub(crate) struct PasswordCache(pub Mutex<HashMap<String, String>>);
-
-impl PasswordCache {
-    pub fn new() -> Self {
-        PasswordCache(Mutex::new(HashMap::new()))
-    }
-
-    fn get(&self, email: &str) -> Option<String> {
-        self.0.lock().unwrap().get(email).cloned()
-    }
-
-    fn set(&self, email: &str, password: &str) {
-        self.0.lock().unwrap().insert(email.to_owned(), password.to_owned());
-    }
-}
-
-/// Retrieves the password for `email`+`url`: session cache first, then keychain.
-/// The cache and keychain are both keyed by the display name (`email@host`) so that
-/// the same email address on two different servers is stored separately.
-fn get_password(app: &tauri::AppHandle, email: &str, url: &str) -> Result<String, String> {
-    let key = cloud_display_name(email, url);
-    let cache = app.state::<PasswordCache>();
-    if let Some(pw) = cache.get(&key) {
-        return Ok(pw);
-    }
-    let pw = keychain_get(KEYRING_SERVICE, &key)?;
-    cache.set(&key, &pw);
-    Ok(pw)
+fn get_password(email: &str, url: &str) -> Result<String, String> {
+    keychain_get(KEYRING_SERVICE, &cloud_display_name(email, url))
 }
 
 fn cloud_remote_url(email: &str) -> String {
@@ -395,14 +361,9 @@ pub async fn open_cloud_logbook(
     let branch = cloud_branch(&email).to_owned();
 
     let display_name = cloud_display_name(&email, CLOUD_BASE);
-    let email_for_creds = email.clone();
-    let password_for_creds = password.clone();
-    let cache_dir_for_parse = cache_dir.clone();
-
-    // Populate session cache so subsequent fetches within this session skip the keychain.
-    // Key is the display name (email@host) so two servers with the same email are distinct.
-    let creds_key = cloud_display_name(&email_for_creds, CLOUD_BASE);
-    app.state::<PasswordCache>().set(&creds_key, &password_for_creds);
+    let email2 = email.clone();
+    let password2 = password.clone();
+    let cache_dir2 = cache_dir.clone();
 
     // Step 2: Attempt clone/fetch — credentials are NOT saved until this succeeds
     tauri::async_runtime::spawn_blocking(move || {
@@ -416,16 +377,16 @@ pub async fn open_cloud_logbook(
     let cloud_url = CLOUD_BASE.to_owned();
     let (logbook, recents) = tauri::async_runtime::spawn_blocking(move || -> Result<(Logbook, Vec<RecentEntry>), String> {
         let store = app_clone.store("settings.json").map_err(|e| e.to_string())?;
-        store.set("cloudEmail", serde_json::json!(email_for_creds));
-        store.set("logbookPath", serde_json::json!(cache_dir_for_parse.to_string_lossy().as_ref()));
+        store.set("cloudEmail", serde_json::json!(email2));
+        store.set("logbookPath", serde_json::json!(cache_dir2.to_string_lossy().as_ref()));
         store.save().map_err(|e| e.to_string())?;
-        let kc_key = cloud_display_name(&email_for_creds, CLOUD_BASE);
-        keychain_set(KEYRING_SERVICE, &kc_key, &password_for_creds)?;
+        let kc_key = cloud_display_name(&email2, CLOUD_BASE);
+        keychain_set(KEYRING_SERVICE, &kc_key, &password2)?;
         let recents = crate::update_recents(
             &store,
-            RecentEntry::Cloud { email: email_for_creds.clone(), url: cloud_url },
+            RecentEntry::Cloud { email: email2.clone(), url: cloud_url },
         )?;
-        let logbook = crate::ssrf_git::parse_logbook(&cache_dir_for_parse)?;
+        let logbook = crate::ssrf_git::parse_logbook(&cache_dir2)?;
         Ok((logbook, recents))
     })
     .await
@@ -449,7 +410,7 @@ pub async fn open_recent_cloud_logbook(
     use tauri::Manager;
 
     let email = email.to_lowercase();
-    let password = get_password(&app, &email, CLOUD_BASE)?;
+    let password = get_password(&email, CLOUD_BASE)?;
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let cache_dir = cloud_cache_dir(&data_dir, CLOUD_BASE, &email);
     let url = cloud_remote_url(&email);
@@ -503,7 +464,7 @@ pub async fn sync_cloud_logbook(app: tauri::AppHandle) -> Result<OpenResult, Str
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
-    let password = get_password(&app, &email, CLOUD_BASE).map_err(|_| {
+    let password = get_password(&email, CLOUD_BASE).map_err(|_| {
         "No saved credentials found. Please open the cloud logbook again.".to_string()
     })?;
 
