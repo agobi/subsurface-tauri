@@ -110,7 +110,7 @@
 {/snippet}
 
 <style>
-  .dl { display: flex; flex-direction: column; font-size: 12px; }
+  .dl { display: flex; flex-direction: column; font-size: 12px; min-width: max-content; }
 
   .dl-head {
     display: grid;

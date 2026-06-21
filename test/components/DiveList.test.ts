@@ -109,4 +109,15 @@ describe("DiveList — sorting and columns", () => {
     await fireEvent.click(screen.getByRole("checkbox", { name: /buddy/i }));
     expect(screen.queryByRole("button", { name: /buddy/i })).not.toBeInTheDocument();
   });
+
+  it("country value renders inside its dl-row, not outside it", () => {
+    // Regression: the .dl container lacked min-width:max-content, causing grid cells
+    // to overflow the row's background box when columns exceeded the panel width.
+    const tDives = [dive({ number: 1, siteId: "s1" })];
+    const tSites = [{ id: "s1", name: "Blue Hole", country: "Austria" }];
+    const { container } = render(DiveList, { props: { dives: tDives, trips: [], sites: tSites, query: "" } });
+    const row = container.querySelector("[data-testid='dive-row']");
+    expect(row).not.toBeNull();
+    expect(row!.textContent).toContain("Austria");
+  });
 });
