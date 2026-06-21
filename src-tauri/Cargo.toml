@@ -26,6 +26,9 @@ tauri-plugin-log = "2"
 tauri-plugin-store = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-os = "2"
-git2 = { version = "0.20", default-features = false, features = ["https", "vendored-openssl"] }
+git2 = { version = "0.20", default-features = false, features = ["https"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+git2 = { version = "0.20", default-features = false, features = ["vendored-openssl"] }
