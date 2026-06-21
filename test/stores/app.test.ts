@@ -1,7 +1,9 @@
 // AI-generated (Claude)
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import { app } from "$lib/stores/app.svelte.ts";
-import type { Dive } from "$lib/types.ts";
+import type { Dive, Logbook } from "$lib/types.ts";
+import sample from "$lib/fixtures/logbook.sample.json";
 
 describe("app store", () => {
   beforeEach(() => app.reset());
@@ -148,5 +150,83 @@ describe("sortedDives", () => {
     expect(app.sortedDives[2].number).toBe(2);
     app.setSortCol("depth"); // desc
     expect(app.sortedDives[2].number).toBe(2);
+  });
+});
+
+describe("cloud logbook", () => {
+  beforeEach(() => app.reset());
+
+  it("isCloudLogbook starts false", () => {
+    expect(app.isCloudLogbook).toBe(false);
+  });
+
+  it("reset() sets isCloudLogbook to false", () => {
+    app.isCloudLogbook = true; // force it
+    app.reset();
+    expect(app.isCloudLogbook).toBe(false);
+  });
+
+  it("openCloud() invokes open_cloud_logbook and sets isCloudLogbook to true", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    await app.openCloud("user@example.com", "secret");
+    expect(invoke).toHaveBeenCalledWith("open_cloud_logbook", {
+      email: "user@example.com",
+      password: "secret",
+    });
+    expect(app.isCloudLogbook).toBe(true);
+    expect(app.logbook.dives.length).toBeGreaterThan(0);
+  });
+
+  it("openCloud() selects the first dive", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    await app.openCloud("user@example.com", "secret");
+    expect(app.selectedDiveId).toBe(app.logbook.dives[0]?.number ?? null);
+  });
+
+  it("openCloud() propagates errors without setting isCloudLogbook", async () => {
+    vi.mocked(invoke).mockRejectedValueOnce("Authentication failed. Check your email and password.");
+    await expect(app.openCloud("user@example.com", "wrong")).rejects.toBe(
+      "Authentication failed. Check your email and password."
+    );
+    expect(app.isCloudLogbook).toBe(false);
+  });
+
+  it("syncCloud() updates logbook and retains selectedDiveId when dive still exists", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    await app.openCloud("user@example.com", "secret");
+    const firstId = app.selectedDiveId;
+
+    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    await app.syncCloud();
+    expect(app.selectedDiveId).toBe(firstId);
+  });
+
+  it("syncCloud() resets selectedDiveId to first dive when previous dive no longer exists", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    await app.openCloud("user@example.com", "secret");
+    app.selectedDiveId = 999999; // a dive that won't exist after sync
+
+    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    await app.syncCloud();
+    expect(app.selectedDiveId).toBe(app.logbook.dives[0]?.number ?? null);
+  });
+
+  it("open() sets isCloudLogbook to false", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    await app.openCloud("user@example.com", "secret");
+    expect(app.isCloudLogbook).toBe(true);
+
+    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    await app.open("/some/local/path");
+    expect(app.isCloudLogbook).toBe(false);
+  });
+
+  it("newLogbook() sets isCloudLogbook to false", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    await app.openCloud("user@example.com", "secret");
+
+    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    await app.newLogbook("/some/new/path");
+    expect(app.isCloudLogbook).toBe(false);
   });
 });

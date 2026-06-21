@@ -26,3 +26,12 @@ tauri-plugin-log = "2"
 tauri-plugin-store = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-os = "2"
+git2 = { version = "0.20", default-features = false, features = ["https"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+# openssl-sys 0.9.x build script is incompatible with mkinstallvars.pl changes
+# introduced in OpenSSL 3.6 — pin to 3.5.x until openssl-sys is updated
+openssl-src = ">=300.0.14, <300.6"
+
+[target.'cfg(target_os = "android")'.dependencies]
+git2 = { version = "0.20", default-features = false, features = ["vendored-openssl"] }

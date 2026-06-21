@@ -20,6 +20,7 @@ class AppStore {
   visiblePanels = $state<VisiblePanels>({ ...ALL_VISIBLE });
   theme = $state<Theme>("auto");
   platform = $state<Platform>("desktop");
+  isCloudLogbook = $state(false);
   diveListPrefs = $state<DiveListPrefs>({
     ...DEFAULT_DIVE_LIST_PREFS,
     colOrder: [...DEFAULT_DIVE_LIST_PREFS.colOrder],
@@ -65,11 +66,27 @@ class AppStore {
   async open(root: string): Promise<void> {
     this.logbook = await invoke<Logbook>("open_logbook", { root });
     this.selectedDiveId = this.logbook.dives[0]?.number ?? null;
+    this.isCloudLogbook = false;
   }
 
   async newLogbook(root: string): Promise<void> {
     this.logbook = await invoke<Logbook>("new_logbook", { root });
     this.selectedDiveId = this.logbook.dives[0]?.number ?? null;
+    this.isCloudLogbook = false;
+  }
+
+  async openCloud(email: string, password: string): Promise<void> {
+    this.logbook = await invoke<Logbook>("open_cloud_logbook", { email, password });
+    this.selectedDiveId = this.logbook.dives[0]?.number ?? null;
+    this.isCloudLogbook = true;
+  }
+
+  async syncCloud(): Promise<void> {
+    const newLogbook = await invoke<Logbook>("sync_cloud_logbook");
+    const currentId = this.selectedDiveId;
+    this.logbook = newLogbook;
+    const stillExists = newLogbook.dives.some((d) => d.number === currentId);
+    this.selectedDiveId = stillExists ? currentId : (newLogbook.dives[0]?.number ?? null);
   }
 
   togglePanel(key: PanelKey) {
@@ -104,6 +121,7 @@ class AppStore {
     this.visiblePanels = { ...ALL_VISIBLE };
     this.theme = "auto";
     this.platform = "desktop";
+    this.isCloudLogbook = false;
     this.diveListPrefs = { ...DEFAULT_DIVE_LIST_PREFS, colOrder: [...DEFAULT_DIVE_LIST_PREFS.colOrder] };
   }
 }
