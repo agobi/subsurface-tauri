@@ -126,8 +126,14 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Export ANDROID_NDK_HOME
-        run: echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/$(ls $ANDROID_SDK_ROOT/ndk | sort -V | tail -1)" >> $GITHUB_ENV
+      - name: Export ANDROID_NDK_HOME and add NDK tools to PATH
+        run: |
+          NDK=$ANDROID_SDK_ROOT/ndk/$(ls $ANDROID_SDK_ROOT/ndk | sort -V | tail -1)
+          echo "ANDROID_NDK_HOME=$NDK" >> $GITHUB_ENV
+          NDK_BIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin
+          echo "$NDK_BIN" >> $GITHUB_PATH
+          # NDK r23+ removed arch-prefixed ranlib; OpenSSL's Makefile still uses it
+          ln -sf $NDK_BIN/llvm-ranlib $NDK_BIN/aarch64-linux-android-ranlib
 
       - name: Build Android APK (debug)
         run: npm run tauri android build -- --debug
