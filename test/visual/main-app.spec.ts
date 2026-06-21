@@ -20,12 +20,16 @@ for (const theme of ['light', 'dark'] as const) {
   });
 
   test(`dive list scrolled to country column — ${theme}`, async ({ page, platform }) => {
-    test.skip(platform === 'android', 'no quad-list panel on mobile');
     await setupPage(page, { logbook: sampleLogbook, theme, platform });
-    await page.locator('[data-testid="quad-list"]').locator('.body').evaluate(
-      (el: HTMLElement) => { el.scrollLeft = 300; },
-    );
+    const isAndroid = platform === 'android';
+    const scrollContainer = isAndroid
+      ? page.locator('[data-testid="mobile-panel-dives"]')
+      : page.locator('[data-testid="quad-list"]').locator('.body');
+    const screenshotTarget = isAndroid
+      ? page.locator('[data-testid="mobile-panel-dives"]')
+      : page.locator('[data-testid="quad-list"]');
+    await scrollContainer.evaluate((el: HTMLElement) => { el.scrollLeft = 300; });
     await page.waitForTimeout(100);
-    await expect(page.locator('[data-testid="quad-list"]')).toHaveScreenshot(`dive-list-scrolled-${theme}.png`);
+    await expect(screenshotTarget).toHaveScreenshot(`dive-list-scrolled-${theme}.png`);
   });
 }
