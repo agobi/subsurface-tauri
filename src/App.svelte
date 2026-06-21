@@ -16,6 +16,7 @@
   let search = $state("");
   let showCloudDialog = $state(false);
   let initialized = $state(false);
+  let startupError = $state<string | null>(null);
   let unlisteners: (() => void)[] = [];
 
   function basename(path: string): string {
@@ -59,21 +60,14 @@
     try {
       const p = await platform();
       app.setPlatform(p === "android" || p === "ios" ? "mobile" : "desktop");
-    } catch (e) {
-      console.error("Failed to detect platform:", e);
-    }
 
-    try {
       await app.startup();
-    } catch (e) {
-      console.error("Startup failed:", e);
-    }
 
-    try {
       const prefs = await loadAppearancePrefs();
       app.setTheme(prefs.theme);
     } catch (e) {
-      console.error("Failed to load appearance prefs:", e);
+      startupError = e instanceof Error ? e.message : String(e);
+      return;
     }
 
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
@@ -130,6 +124,11 @@
   {/if}
 {/if}
 
+{#if startupError}
+  <div class="startup-error">{startupError}</div>
+{/if}
+
 <style>
   .app { display: flex; flex-direction: column; height: 100vh; }
+  .startup-error { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--txt-2); font-size: 13px; }
 </style>

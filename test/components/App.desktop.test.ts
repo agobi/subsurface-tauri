@@ -8,6 +8,7 @@ import { app } from "$lib/stores/app.svelte.ts";
 
 describe("App — desktop cloud wiring", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     app.reset();
     window.matchMedia = vi.fn().mockReturnValue({
       matches: false,
