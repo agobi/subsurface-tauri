@@ -2,8 +2,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { app } from "$lib/stores/app.svelte.ts";
-import type { Dive, Logbook } from "$lib/types.ts";
+import type { Dive, OpenResult } from "$lib/types.ts";
 import sample from "$lib/fixtures/logbook.sample.json";
+
+function openResult(overrides: Partial<OpenResult> = {}): OpenResult {
+  return { logbook: sample as any, displayName: "test", recents: [], ...overrides };
+}
 
 describe("app store", () => {
   beforeEach(() => app.reset());
@@ -167,7 +171,7 @@ describe("cloud logbook", () => {
   });
 
   it("openCloud() invokes open_cloud_logbook and sets isCloudLogbook to true", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    vi.mocked(invoke).mockResolvedValueOnce(openResult());
     await app.openCloud("user@example.com", "secret");
     expect(invoke).toHaveBeenCalledWith("open_cloud_logbook", {
       email: "user@example.com",
@@ -178,7 +182,7 @@ describe("cloud logbook", () => {
   });
 
   it("openCloud() selects the first dive", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    vi.mocked(invoke).mockResolvedValueOnce(openResult());
     await app.openCloud("user@example.com", "secret");
     expect(app.selectedDiveId).toBe(app.logbook.dives[0]?.number ?? null);
   });
@@ -192,40 +196,40 @@ describe("cloud logbook", () => {
   });
 
   it("syncCloud() updates logbook and retains selectedDiveId when dive still exists", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    vi.mocked(invoke).mockResolvedValueOnce(openResult());
     await app.openCloud("user@example.com", "secret");
     const firstId = app.selectedDiveId;
 
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    vi.mocked(invoke).mockResolvedValueOnce(openResult());
     await app.syncCloud();
     expect(app.selectedDiveId).toBe(firstId);
   });
 
   it("syncCloud() resets selectedDiveId to first dive when previous dive no longer exists", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    vi.mocked(invoke).mockResolvedValueOnce(openResult());
     await app.openCloud("user@example.com", "secret");
     app.selectedDiveId = 999999; // a dive that won't exist after sync
 
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    vi.mocked(invoke).mockResolvedValueOnce(openResult());
     await app.syncCloud();
     expect(app.selectedDiveId).toBe(app.logbook.dives[0]?.number ?? null);
   });
 
   it("open() sets isCloudLogbook to false", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    vi.mocked(invoke).mockResolvedValueOnce(openResult());
     await app.openCloud("user@example.com", "secret");
     expect(app.isCloudLogbook).toBe(true);
 
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    vi.mocked(invoke).mockResolvedValueOnce(openResult());
     await app.open("/some/local/path");
     expect(app.isCloudLogbook).toBe(false);
   });
 
   it("newLogbook() sets isCloudLogbook to false", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    vi.mocked(invoke).mockResolvedValueOnce(openResult());
     await app.openCloud("user@example.com", "secret");
 
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    vi.mocked(invoke).mockResolvedValueOnce(openResult());
     await app.newLogbook("/some/new/path");
     expect(app.isCloudLogbook).toBe(false);
   });

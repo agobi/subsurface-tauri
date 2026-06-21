@@ -7,6 +7,7 @@
   import { platform } from "@tauri-apps/plugin-os";
   import { app, type VisiblePanels } from "$lib/stores/app.svelte.ts";
   import { loadAppearancePrefs, applyTheme, type AppearancePrefs } from "$lib/prefs.ts";
+  import type { RecentEntry } from "$lib/types.ts";
   import Toolbar from "$lib/components/Toolbar.svelte";
   import StatusBar from "$lib/components/StatusBar.svelte";
   import QuadrantGrid from "$lib/components/QuadrantGrid.svelte";
@@ -14,13 +15,12 @@
   import CloudLoginDialog from "$lib/components/CloudLoginDialog.svelte";
 
   let search = $state("");
-  let showCloudDialog = $state(false);
   let initialized = $state(false);
   let startupError = $state<string | null>(null);
   let unlisteners: (() => void)[] = [];
 
-  function basename(path: string): string {
-    return path.split(/[\\/]/).pop() || path;
+  async function setWindowTitle() {
+    await getCurrentWindow().setTitle(`${app.displayName} — Subsurface`);
   }
 
   async function handleOpen() {
@@ -28,7 +28,7 @@
     if (typeof dir === "string") {
       try {
         await app.open(dir);
-        await getCurrentWindow().setTitle(`${basename(dir)} — Subsurface`);
+        await setWindowTitle();
       } catch (e) {
         console.error("Failed to open logbook:", e);
       }
@@ -40,7 +40,7 @@
     if (typeof dir === "string") {
       try {
         await app.newLogbook(dir);
-        await getCurrentWindow().setTitle(`${basename(dir)} — Subsurface`);
+        await setWindowTitle();
       } catch (e) {
         console.error("Failed to create logbook:", e);
       }
@@ -51,9 +51,22 @@
     await app.syncCloud();
   }
 
-  async function handleCloudSuccess(email: string) {
-    showCloudDialog = false;
-    await getCurrentWindow().setTitle(`${email} — Subsurface`);
+  async function handleCloudSuccess(_email: string) {
+    app.showCloudDialog = false;
+    await setWindowTitle();
+  }
+
+  async function handleOpenRecent(entry: RecentEntry) {
+    if (entry.kind === "Cloud") {
+      app.showCloudDialog = true;
+    } else {
+      try {
+        await app.open(entry.path);
+        await setWindowTitle();
+      } catch (e) {
+        console.error("Failed to open recent logbook:", e);
+      }
+    }
   }
 
   onMount(async () => {
@@ -62,6 +75,7 @@
       app.setPlatform(p === "android" || p === "ios" ? "mobile" : "desktop");
 
       await app.startup();
+      await setWindowTitle();
 
       const prefs = await loadAppearancePrefs();
       app.setTheme(prefs.theme);
@@ -78,12 +92,15 @@
       unlisteners = await Promise.all([
         listen("menu:file-open", handleOpen),
         listen("menu:file-new", handleNew),
-        listen("menu:cloud-open", () => { showCloudDialog = true; }),
+        listen("menu:cloud-open", () => { app.showCloudDialog = true; }),
         listen<VisiblePanels>("menu:set-panels", ({ payload }) => {
           app.visiblePanels = payload;
         }),
         listen<AppearancePrefs>("prefs:appearance-changed", ({ payload }) => {
           app.setTheme(payload.theme);
+        }),
+        listen<RecentEntry>("menu:open-recent", ({ payload }) => {
+          handleOpenRecent(payload);
         }),
       ]);
     }
@@ -116,9 +133,9 @@
     </div>
   {/if}
 
-  {#if showCloudDialog}
+  {#if app.showCloudDialog}
     <CloudLoginDialog
-      onClose={() => { showCloudDialog = false; }}
+      onClose={() => { app.showCloudDialog = false; }}
       onSuccess={handleCloudSuccess}
     />
   {/if}

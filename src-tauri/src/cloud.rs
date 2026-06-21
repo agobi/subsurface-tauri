@@ -2,11 +2,12 @@
 use keyring::Entry;
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
-use crate::types::Logbook;
+use crate::types::{Logbook, OpenResult, RecentEntry};
 
-const KEYRING_SERVICE: &str = "subsurface-tauri";
+pub(crate) const CLOUD_BASE: &str = "https://ssrf-cloud-eu.subsurface-divelog.org";
+
 // Default to the EU server, matching Qt's default (cloud_base_url in pref.cpp).
-const CLOUD_BASE: &str = "https://ssrf-cloud-eu.subsurface-divelog.org";
+const KEYRING_SERVICE: &str = "subsurface-tauri";
 
 fn cloud_remote_url(email: &str) -> String {
     format!("{CLOUD_BASE}/git/{email}")
@@ -131,7 +132,7 @@ pub async fn open_cloud_logbook(
     app: tauri::AppHandle,
     email: String,
     password: String,
-) -> Result<Logbook, String> {
+) -> Result<OpenResult, String> {
     // Qt lowercases the email before all cloud operations (preferences_cloud.cpp::syncSettings).
     let email = email.to_lowercase();
 
@@ -143,7 +144,7 @@ pub async fn open_cloud_logbook(
     let url = cloud_remote_url(&email);
     let branch = cloud_branch(&email).to_owned();
 
-    // Clone credentials so we can persist them after a successful clone/fetch
+    let display_name = email.clone();
     let email_for_creds = email.clone();
     let password_for_creds = password.clone();
     let cache_dir_for_parse = cache_dir.clone();
@@ -155,49 +156,67 @@ pub async fn open_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Step 3: Save credentials and parse in one blocking call to avoid stalling the async runtime
+    // Step 3: Save credentials, persist logbookPath, update recents, and parse
     let app_clone = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        // Save email, cloud cache path, and cloud mode flag so startup_logbook reopens correctly.
+    let cloud_url = CLOUD_BASE.to_owned();
+    let (logbook, recents) = tauri::async_runtime::spawn_blocking(move || -> Result<(Logbook, Vec<RecentEntry>), String> {
         let store = app_clone.store("settings.json").map_err(|e| e.to_string())?;
         store.set("cloudEmail", serde_json::json!(email_for_creds));
+        // Persist path and cloud flag so startup_logbook can reopen this logbook next session.
         store.set("logbookPath", serde_json::json!(cache_dir_for_parse.to_string_lossy().as_ref()));
         store.set("isCloudLogbook", serde_json::json!(true));
         store.save().map_err(|e| e.to_string())?;
-        // Save password to OS keychain (blocks on IPC — must be in spawn_blocking)
         let entry = Entry::new(KEYRING_SERVICE, &email_for_creds).map_err(|e| e.to_string())?;
         entry.set_password(&password_for_creds).map_err(|e| e.to_string())?;
-        // Parse logbook
-        crate::ssrf_git::parse_logbook(&cache_dir_for_parse)
+        let recents = crate::update_recents(
+            &store,
+            RecentEntry::Cloud { email: email_for_creds.clone(), url: cloud_url },
+        )?;
+        let logbook = crate::ssrf_git::parse_logbook(&cache_dir_for_parse)?;
+        Ok((logbook, recents))
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+
+    #[cfg(desktop)]
+    crate::menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
+
+    Ok(OpenResult { logbook, display_name, recents })
 }
 
 #[tauri::command]
-pub async fn sync_cloud_logbook(app: tauri::AppHandle) -> Result<Logbook, String> {
+pub async fn sync_cloud_logbook(app: tauri::AppHandle) -> Result<OpenResult, String> {
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let email = store
         .get("cloudEmail")
         .and_then(|v| v.as_str().map(str::to_owned))
         .ok_or_else(|| "No cloud logbook configured.".to_string())?;
 
+    // Read current recents without modifying them — sync doesn't change the entry.
+    let recents: Vec<RecentEntry> = store
+        .get("recents")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+
     let entry = Entry::new(KEYRING_SERVICE, &email).map_err(|e| e.to_string())?;
     let password = entry.get_password().map_err(|_| {
         "No saved credentials found. Please open the cloud logbook again.".to_string()
     })?;
 
+    let display_name = email.clone();
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let cache_dir = data_dir.join("cloud").join(&email);
     let url = cloud_remote_url(&email);
     let branch = cloud_branch(&email).to_owned();
 
-    tauri::async_runtime::spawn_blocking(move || {
+    let logbook = tauri::async_runtime::spawn_blocking(move || {
         clone_or_fetch(&url, &branch, &cache_dir, &email, &password)?;
         crate::ssrf_git::parse_logbook(&cache_dir)
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+
+    Ok(OpenResult { logbook, display_name, recents })
 }
 
 #[cfg(test)]

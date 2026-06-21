@@ -49,16 +49,6 @@ describe("App — desktop cloud wiring", () => {
     render(App);
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument());
 
-    // Trigger menu:cloud-open
-    const listenCalls = vi.mocked(listen).mock.calls;
-    const cloudOpenCall = listenCalls.find((c) => c[0] === "menu:cloud-open");
-    const callback = cloudOpenCall![1] as (e: { payload: unknown }) => void;
-    callback({ payload: null });
-
-    await waitFor(() =>
-      expect(screen.getByRole("dialog", { name: /open cloud notebook/i })).toBeInTheDocument()
-    );
-
     // Simulate dialog onSuccess being called (internal state change)
     // We call the dialog's success path by setting app state directly
     app.isCloudLogbook = true;

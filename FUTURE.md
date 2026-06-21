@@ -46,6 +46,14 @@ Proposed split:
 
 This is an IPC architecture refactor — keep separate from UI feature work.
 
+## Recents Management
+
+The recents list is currently unbounded and entries can only be added, not removed.
+
+- [ ] **Clear recents** — "Clear Menu" item at the bottom of the "Open Recent" submenu that wipes `settings.json["recents"]` and rebuilds the menu
+- [ ] **Remove individual entry** — right-click / context menu on a recent item to remove just that entry
+- [ ] **Cap list length** — optional: add a preference for max recents count (e.g. 10, 20, unlimited)
+
 ## Backlog
 
 - [ ] Imperial units support in `parse_divecomputer.rs` sample parsing (currently metric-only: m, bar, °C — ft, psi, °F sample lines are silently ignored)

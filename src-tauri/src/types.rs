@@ -1,5 +1,5 @@
 // AI-generated (Claude)
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -134,6 +134,25 @@ pub struct Logbook {
     pub trips: Vec<Trip>,
     pub sites: Vec<Site>,
     pub units: String,
+}
+
+/// A logbook entry in the recents list. Path variants use index-based menu IDs
+/// so paths never appear in menu item identifiers.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(tag = "kind")]
+pub enum RecentEntry {
+    Local { path: String },
+    Cloud { email: String, url: String },
+}
+
+/// Returned by every open command so the frontend can update the window title
+/// and recents list without a second IPC round-trip.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenResult {
+    pub logbook: Logbook,
+    pub display_name: String,
+    pub recents: Vec<RecentEntry>,
 }
 
 #[cfg(test)]

@@ -2,14 +2,27 @@
 <script lang="ts">
   import type { Theme } from "$lib/stores/app.svelte.ts";
   import { app } from "$lib/stores/app.svelte.ts";
+  import type { RecentEntry } from "$lib/types.ts";
   import { saveAndEmitAppearance } from "$lib/prefs.ts";
   import AppearanceSection from "./prefs/AppearanceSection.svelte";
 
   let { onBack }: { onBack: () => void } = $props();
 
+  function recentLabel(entry: RecentEntry): string {
+    if (entry.kind === "Local") {
+      return entry.path.split(/[\\/]/).pop() || entry.path;
+    }
+    return entry.url;
+  }
+
   async function handleThemeChange(theme: Theme) {
     app.setTheme(theme);
     await saveAndEmitAppearance({ theme });
+  }
+
+  function handleRecentTap(entry: RecentEntry) {
+    app.openRecent(entry);
+    if (entry.kind === "Local") onBack();
   }
 </script>
 
@@ -20,6 +33,23 @@
   </header>
   <div class="settings-body">
     <AppearanceSection currentTheme={app.theme} onThemeChange={handleThemeChange} />
+
+    <section class="recents-section">
+      <h3 class="section-label">Recent Logbooks</h3>
+      {#if app.recents.length === 0}
+        <p class="recents-empty">No recent logbooks</p>
+      {:else}
+        <ul class="recents-list">
+          {#each app.recents as entry}
+            <li>
+              <button class="recent-item" onclick={() => handleRecentTap(entry)}>
+                {recentLabel(entry)}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
   </div>
 </div>
 
@@ -70,5 +100,55 @@
     overflow: auto;
     padding: var(--space-4);
     padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  }
+
+  .recents-section {
+    margin-top: var(--space-6, 24px);
+  }
+
+  .section-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--txt-2);
+    margin: 0 0 var(--space-2) 0;
+  }
+
+  .recents-empty {
+    font-size: 0.875rem;
+    color: var(--txt-3);
+    margin: 0;
+  }
+
+  .recents-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .recent-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: var(--panel);
+    border: 1px solid var(--hair);
+    border-radius: var(--r-control, 6px);
+    padding: var(--space-2) var(--space-3);
+    font: inherit;
+    font-size: 0.875rem;
+    color: var(--txt);
+    cursor: pointer;
+    min-height: 44px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .recent-item:active {
+    background: var(--panel-2);
   }
 </style>

@@ -78,3 +78,13 @@ export interface Logbook {
   sites: Site[];
   units: Units;
 }
+
+export type RecentEntry =
+  | { kind: "Local"; path: string }
+  | { kind: "Cloud"; email: string; url: string };
+
+export interface OpenResult {
+  logbook: Logbook;
+  displayName: string;
+  recents: RecentEntry[];
+}
