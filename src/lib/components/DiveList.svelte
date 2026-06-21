@@ -15,9 +15,7 @@
 
   let prefs = $derived(app.diveListPrefs);
   let visibleCols = $derived(app.visibleCols);
-  let gridCols = $derived(
-    visibleCols.map(c => c.width.endsWith("fr") ? `minmax(36px, ${c.width})` : c.width).join(" ") + " 28px"
-  );
+  let gridCols = $derived(visibleCols.map(c => c.width).join(" ") + " 28px");
   let ctx: RenderCtx = $derived({ sites });
   let pickerOpen = $state(false);
 
@@ -112,7 +110,7 @@
 {/snippet}
 
 <style>
-  .dl { display: flex; flex-direction: column; font-size: 12px; min-width: min-content; }
+  .dl { display: flex; flex-direction: column; font-size: 12px; min-width: max-content; }
 
   .dl-head {
     display: grid;
