@@ -24,8 +24,9 @@ export type RateClass = "fast" | "ok" | "normal";
 // Positive value = ascending (getting shallower). Thresholds in m/min.
 // >= 9 m/min is the classic "too fast" ascent warning; gentle ascent is "ok"; everything else "normal".
 export function ascentRate(prev: { timeSec: number; depthM: number }, cur: { timeSec: number; depthM: number }): number {
-  const dtMin = (cur.timeSec - prev.timeSec) / 60 || 0.001;
-  return (prev.depthM - cur.depthM) / dtMin;
+  const dtSec = cur.timeSec - prev.timeSec;
+  if (dtSec <= 0) return 0;
+  return (prev.depthM - cur.depthM) / (dtSec / 60);
 }
 
 export function ascentRateClass(prev: { timeSec: number; depthM: number }, cur: { timeSec: number; depthM: number }): RateClass {

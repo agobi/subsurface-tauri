@@ -24,6 +24,15 @@ describe("QuadrantGrid", () => {
     expect(screen.queryByTestId("quad-map")).not.toBeInTheDocument();
   });
 
+  it("shows all visible panels when one panel is hidden", () => {
+    app.visiblePanels = { info: true, profile: true, list: true, map: false };
+    render(QuadrantGrid);
+    expect(screen.getByTestId("quad-info")).toBeInTheDocument();
+    expect(screen.getByTestId("quad-profile")).toBeInTheDocument();
+    expect(screen.getByTestId("quad-list")).toBeInTheDocument();
+    expect(screen.queryByTestId("quad-map")).not.toBeInTheDocument();
+  });
+
   it("exposes a vertical splitter that updates the column template", async () => {
     app.reset();
     const { container } = render(QuadrantGrid);

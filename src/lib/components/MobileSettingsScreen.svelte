@@ -33,8 +33,12 @@
         };
       }
     } else {
-      app.openRecent(entry);
-      onBack();
+      try {
+        await app.openRecent(entry);
+        onBack();
+      } catch (e) {
+        console.error("Failed to open recent logbook:", e);
+      }
     }
   }
 </script>

@@ -18,6 +18,7 @@
 
   let p = $derived(app.visiblePanels);
   let allVisible = $derived(p.info && p.profile && p.list && p.map);
+  let visibleCount = $derived([p.info, p.profile, p.list, p.map].filter(Boolean).length);
 
   // Track the active drag's listeners so they never outlive the drag or the
   // component (a mouseup outside the window, or unmount mid-drag, would otherwise
@@ -95,12 +96,11 @@
     <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div class="splitter splitter-h" data-testid="splitter-h" style="top: calc({rowFrac * 100}% - 3px);" onmousedown={dragRow} role="separator" aria-orientation="horizontal" aria-label="Resize rows" tabindex="0"></div>
   {:else}
-    <div class="quad-grid" style="grid-template-columns: 1fr; grid-template-rows: 1fr;">
-      {#if p.info}{@render infoPanel()}
-      {:else if p.profile}{@render profilePanel()}
-      {:else if p.list}{@render listPanel()}
-      {:else if p.map}{@render mapPanel()}
-      {/if}
+    <div class="quad-grid" style="grid-template-columns: 1fr; grid-template-rows: repeat({visibleCount}, 1fr);">
+      {#if p.info}{@render infoPanel()}{/if}
+      {#if p.profile}{@render profilePanel()}{/if}
+      {#if p.list}{@render listPanel()}{/if}
+      {#if p.map}{@render mapPanel()}{/if}
     </div>
   {/if}
 </div>

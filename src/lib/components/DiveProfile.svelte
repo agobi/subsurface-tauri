@@ -33,6 +33,7 @@
 
   let cursor = $state<{ x: number; sample: typeof dive.samples[number] } | null>(null);
   function onMove(e: MouseEvent) {
+    if (dive.samples.length === 0) return;
     const svg = e.currentTarget as unknown as SVGSVGElement;
     const r = svg.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width) * VB.w;

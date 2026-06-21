@@ -60,7 +60,7 @@ pub fn parse_attrs(rest: &str) -> HashMap<String, String> {
             // scan to closing unescaped quote
             let mut i = 1;
             while i < s.len() {
-                if s.as_bytes()[i] == b'\\' { i += 2; }
+                if s.as_bytes()[i] == b'\\' { i = (i + 2).min(s.len()); }
                 else if s.as_bytes()[i] == b'"' { i += 1; break; }
                 else { i += 1; }
             }
@@ -113,6 +113,14 @@ mod tests {
         assert_eq!(strip_unit("32.0%"), 32.0);
         assert_eq!(strip_unit("-5.0m"), -5.0);
         assert!(strip_unit("abc").is_nan());
+    }
+
+    #[test]
+    fn parse_attrs_trailing_backslash_does_not_panic() {
+        // A quoted value ending with a bare backslash must not panic.
+        let a = parse_attrs(r#"key="abc\"#);
+        // Value is malformed but we must not crash; key may or may not be present.
+        let _ = a.get("key");
     }
 
     #[test]

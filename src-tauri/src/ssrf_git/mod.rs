@@ -144,7 +144,8 @@ fn parse_trip_file(text: &str, dir_name: &str) -> (String, Option<String>) {
 fn parse_trip_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option<(Trip, Vec<Dive>)> {
     let trip_file = dir.join("00-Trip");
     let (label, notes) = if trip_file.exists() {
-        let text = read_file(&trip_file).ok()?;
+        // An unreadable 00-Trip must not discard all dives — fall back to dir-name label.
+        let text = read_file(&trip_file).unwrap_or_default();
         parse_trip_file(&text, dir_name)
     } else {
         (dir_name_label(dir_name), None)
@@ -321,6 +322,14 @@ mod tests {
             .filter(|n| !t.dive_numbers.contains(n))
             .collect();
         assert_eq!(ungrouped, vec![1]);
+    }
+
+    #[test]
+    fn trip_file_read_error_falls_back_to_dir_name_label() {
+        // parse_trip_file("", ...) simulates an unreadable 00-Trip — must still return a usable label.
+        let (label, notes) = parse_trip_file("", "10-Egypt");
+        assert_eq!(label, "Egypt");
+        assert!(notes.is_none());
     }
 
     #[test]

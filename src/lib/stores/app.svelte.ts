@@ -113,9 +113,9 @@ class AppStore {
     this.selectedDiveId = stillExists ? currentId : (result.logbook.dives[0]?.number ?? null);
   }
 
-  openRecent(entry: RecentEntry): void {
+  async openRecent(entry: RecentEntry): Promise<void> {
     if (entry.kind === "Local") {
-      this.open(entry.path);
+      await this.open(entry.path);
     } else {
       this.showCloudDialog = { email: entry.email };
     }

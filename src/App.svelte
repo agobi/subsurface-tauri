@@ -49,6 +49,7 @@
 
   async function handleSync() {
     await app.syncCloud();
+    await setWindowTitle();
   }
 
   async function handleCloudSuccess(_email: string) {
