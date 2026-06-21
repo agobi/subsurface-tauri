@@ -3,7 +3,7 @@ import { test, expect } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 
 // Toolbar is desktop-only; MobileLayout is used on Android.
-test.skip(({}, testInfo) => testInfo.project.name === 'android', 'desktop-only component');
+test.skip(({ platform }) => platform === 'android', 'desktop-only component');
 
 async function setupToolbarPage(
   page: Page,
