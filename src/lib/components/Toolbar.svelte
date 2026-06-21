@@ -57,7 +57,7 @@
 <style>
   .toolbar-wrap { display: flex; flex-direction: column; flex: 0 0 auto; }
   .toolbar { height: 46px; display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); background: var(--panel); border-bottom: 1px solid var(--hair); }
-  .tbtn { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: var(--r-control); border: 1px solid transparent; background: transparent; color: var(--txt-2); font: inherit; cursor: pointer; }
+  .tbtn { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: var(--r-control); border: 1px solid transparent; background: transparent; color: var(--txt-2); font: inherit; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
   .tbtn:hover { background: var(--elev); color: var(--txt); }
   .tbtn.primary { background: var(--blue); color: #fff; font-weight: 560; }
   .tb-div { width: 1px; height: 22px; background: var(--hair); margin: 0 2px; }
