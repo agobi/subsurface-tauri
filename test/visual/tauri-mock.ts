@@ -1,7 +1,7 @@
 // AI-generated (Claude)
 // Vite alias target for all @tauri-apps/* modules when VITE_VISUAL_TEST=1.
 // Playwright seeds window.__playwright_fixtures__ via page.addInitScript() before page load.
-import type { Logbook } from '../../src/lib/types.ts';
+import type { Logbook, OpenResult } from '../../src/lib/types.ts';
 
 const EMPTY: Logbook = { dives: [], trips: [], sites: [], units: 'METRIC' };
 
@@ -9,14 +9,21 @@ function fixtureLogbook(): Logbook {
   return (window as any).__playwright_fixtures__?.logbook ?? EMPTY;
 }
 
+function fixtureResult(): OpenResult {
+  return { logbook: fixtureLogbook(), displayName: 'Test Logbook', recents: [] };
+}
+
 // @tauri-apps/api/core
 export async function invoke<T>(cmd: string, _args?: unknown): Promise<T> {
   switch (cmd) {
     case 'startup_logbook':
     case 'open_logbook':
-      return fixtureLogbook() as T;
+    case 'open_recent_cloud_logbook':
+    case 'open_cloud_logbook':
+    case 'sync_cloud_logbook':
+      return fixtureResult() as T;
     case 'new_logbook':
-      return EMPTY as T;
+      return { logbook: EMPTY, displayName: '', recents: [] } as T;
     default:
       return null as T;
   }
