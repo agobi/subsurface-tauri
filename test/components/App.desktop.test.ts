@@ -49,9 +49,8 @@ describe("App — desktop cloud wiring", () => {
     render(App);
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument());
 
-    // Simulate dialog onSuccess being called (internal state change)
-    // We call the dialog's success path by setting app state directly
-    app.isCloudLogbook = true;
+    // Simulate a successful cloud login by placing a Cloud entry at the top of recents.
+    app.recents = [{ kind: "Cloud", email: "user@example.com", url: "https://ssrf-cloud-eu.subsurface-divelog.org" }];
     // The title update happens via App.svelte's onSuccess handler when the dialog
     // reports success. Since we can't easily drive through the full dialog in this
     // integration test, we verify the Sync button appears when isCloudLogbook is true.

@@ -1,6 +1,5 @@
 // AI-generated (Claude)
 import { invoke } from "@tauri-apps/api/core";
-import { load } from "@tauri-apps/plugin-store";
 import type { Logbook, Dive, OpenResult, RecentEntry } from "$lib/types.ts";
 import type { DiveListPrefs } from "$lib/prefs.ts";
 import { DEFAULT_DIVE_LIST_PREFS, loadDiveListPrefs, saveDiveListPrefs } from "$lib/prefs.ts";
@@ -21,7 +20,7 @@ class AppStore {
   visiblePanels = $state<VisiblePanels>({ ...ALL_VISIBLE });
   theme = $state<Theme>("auto");
   platform = $state<Platform>("desktop");
-  isCloudLogbook = $state(false);
+  get isCloudLogbook(): boolean { return this.recents[0]?.kind === "Cloud"; }
   displayName = $state("");
   recents = $state<RecentEntry[]>([]);
   showCloudDialog = $state(false);
@@ -66,11 +65,8 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
-    this.isCloudLogbook = result.recents[0]?.kind === "Cloud";
     this.selectedDiveId = result.logbook.dives[0]?.number ?? null;
     this.diveListPrefs = await loadDiveListPrefs();
-    const store = await load("settings.json");
-    this.isCloudLogbook = (await store.get<boolean>("isCloudLogbook")) ?? false;
   }
 
   async open(root: string): Promise<void> {
@@ -79,7 +75,6 @@ class AppStore {
     this.displayName = result.displayName;
     this.recents = result.recents;
     this.selectedDiveId = result.logbook.dives[0]?.number ?? null;
-    this.isCloudLogbook = false;
   }
 
   async newLogbook(root: string): Promise<void> {
@@ -88,7 +83,6 @@ class AppStore {
     this.displayName = result.displayName;
     this.recents = result.recents;
     this.selectedDiveId = result.logbook.dives[0]?.number ?? null;
-    this.isCloudLogbook = false;
   }
 
   async openCloud(email: string, password: string): Promise<void> {
@@ -97,7 +91,6 @@ class AppStore {
     this.displayName = result.displayName;
     this.recents = result.recents;
     this.selectedDiveId = result.logbook.dives[0]?.number ?? null;
-    this.isCloudLogbook = true;
   }
 
   async syncCloud(): Promise<void> {
@@ -150,7 +143,6 @@ class AppStore {
     this.visiblePanels = { ...ALL_VISIBLE };
     this.theme = "auto";
     this.platform = "desktop";
-    this.isCloudLogbook = false;
     this.displayName = "";
     this.recents = [];
     this.showCloudDialog = false;

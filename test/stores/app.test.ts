@@ -9,6 +9,9 @@ function openResult(overrides: Partial<OpenResult> = {}): OpenResult {
   return { logbook: sample as any, displayName: "test", recents: [], ...overrides };
 }
 
+const cloudRecents = [{ kind: "Cloud" as const, email: "user@example.com", url: "https://ssrf-cloud-eu.subsurface-divelog.org" }];
+const localRecents = [{ kind: "Local" as const, path: "/some/local/path" }];
+
 describe("app store", () => {
   beforeEach(() => app.reset());
 
@@ -165,13 +168,13 @@ describe("cloud logbook", () => {
   });
 
   it("reset() sets isCloudLogbook to false", () => {
-    app.isCloudLogbook = true; // force it
+    app.recents = cloudRecents;
     app.reset();
     expect(app.isCloudLogbook).toBe(false);
   });
 
   it("openCloud() invokes open_cloud_logbook and sets isCloudLogbook to true", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(openResult());
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ recents: cloudRecents }));
     await app.openCloud("user@example.com", "secret");
     expect(invoke).toHaveBeenCalledWith("open_cloud_logbook", {
       email: "user@example.com",
@@ -216,20 +219,20 @@ describe("cloud logbook", () => {
   });
 
   it("open() sets isCloudLogbook to false", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(openResult());
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ recents: cloudRecents }));
     await app.openCloud("user@example.com", "secret");
     expect(app.isCloudLogbook).toBe(true);
 
-    vi.mocked(invoke).mockResolvedValueOnce(openResult());
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ recents: localRecents }));
     await app.open("/some/local/path");
     expect(app.isCloudLogbook).toBe(false);
   });
 
   it("newLogbook() sets isCloudLogbook to false", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(openResult());
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ recents: cloudRecents }));
     await app.openCloud("user@example.com", "secret");
 
-    vi.mocked(invoke).mockResolvedValueOnce(openResult());
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ recents: localRecents }));
     await app.newLogbook("/some/new/path");
     expect(app.isCloudLogbook).toBe(false);
   });

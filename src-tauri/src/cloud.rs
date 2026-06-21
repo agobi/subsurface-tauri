@@ -162,9 +162,7 @@ pub async fn open_cloud_logbook(
     let (logbook, recents) = tauri::async_runtime::spawn_blocking(move || -> Result<(Logbook, Vec<RecentEntry>), String> {
         let store = app_clone.store("settings.json").map_err(|e| e.to_string())?;
         store.set("cloudEmail", serde_json::json!(email_for_creds));
-        // Persist path and cloud flag so startup_logbook can reopen this logbook next session.
         store.set("logbookPath", serde_json::json!(cache_dir_for_parse.to_string_lossy().as_ref()));
-        store.set("isCloudLogbook", serde_json::json!(true));
         store.save().map_err(|e| e.to_string())?;
         let entry = Entry::new(KEYRING_SERVICE, &email_for_creds).map_err(|e| e.to_string())?;
         entry.set_password(&password_for_creds).map_err(|e| e.to_string())?;
