@@ -113,8 +113,7 @@ gh workflow run update-snapshots.yml --ref <branch> \
   --field grep="prefs"      # omit for all tests
 ```
 
-The workflow runs on `ubuntu-24.04`, writes new PNGs, and commits them back to the branch
-with `[skip ci]`.
+The workflow runs on `ubuntu-24.04`, writes new PNGs, and commits them back to the branch.
 
 ### Regenerating locally (x86 Linux only)
 
