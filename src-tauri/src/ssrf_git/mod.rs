@@ -16,15 +16,11 @@ fn is_year(s: &str) -> bool { s.len() == 4 && s.chars().all(|c| c.is_ascii_digit
 fn is_month(s: &str) -> bool { s.len() == 2 && s.chars().all(|c| c.is_ascii_digit()) }
 
 fn is_dive_dir(s: &str) -> bool {
-    // Matches DD-Day-HH=MM=SS (e.g. "15-Fri-12=28=43")
-    let parts: Vec<&str> = s.splitn(2, '-').collect();
-    if parts.len() < 2 { return false; }
-    if parts[0].len() != 2 || !parts[0].chars().all(|c| c.is_ascii_digit()) { return false; }
-    let rest = parts[1]; // "Fri-12=28=43"
-    let time_start = rest.find('-').map(|i| i + 1).unwrap_or(rest.len());
-    let time_part = &rest[time_start..]; // "12=28=43"
-    let tparts: Vec<&str> = time_part.split('=').collect();
-    tparts.len() == 3 && tparts.iter().all(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_digit()))
+    // Handles [[yyyy-]mm-]nn-ddd-hh=mm=ss[~hex] (= or : as time separator).
+    // The distinguishing marker is '=' or ':' at position len-3 of the base name.
+    let base = s.split('~').next().unwrap_or(s);
+    let b = base.as_bytes();
+    b.len() >= 8 && (b[b.len() - 3] == b'=' || b[b.len() - 3] == b':')
 }
 
 // Trip dirs start with two digits + '-' but are not dive dirs (e.g. "15-Egypt", "01-trip").
@@ -52,15 +48,34 @@ fn parse_sites(root: &Path) -> Vec<Site> {
 }
 
 fn parse_dive_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option<Dive> {
-    // Extract DD, HH, MM, SS from "DD-Day-HH=MM=SS"
-    let dash1 = dir_name.find('-')?;
-    let day = &dir_name[..dash1];
-    let rest = &dir_name[dash1 + 1..];
-    let dash2 = rest.find('-')?;
-    let time_part = &rest[dash2 + 1..]; // "HH=MM=SS"
-    let tparts: Vec<&str> = time_part.split('=').collect();
-    if tparts.len() != 3 { return None; }
+    // Handles [[yyyy-]mm-]nn-ddd-hh=mm=ss[~hex] (= or : as time separator).
+    // Strip optional ~hex uniqueness suffix first.
+    let base = dir_name.split('~').next().unwrap_or(dir_name);
+    if base.len() < 8 { return None; }
+
+    // Last 8 chars are the time: HH=MM=SS or HH:MM:SS.
+    let time_str = &base[base.len() - 8..];
+    let sep = time_str.as_bytes()[2];
+    let sep_char = if sep == b'=' { '=' } else { ':' };
+    let tparts: Vec<&str> = time_str.split(sep_char).collect();
+    if tparts.len() != 3 || !tparts.iter().all(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_digit())) {
+        return None;
+    }
     let (hh, mm, ss) = (tparts[0], tparts[1], tparts[2]);
+
+    // Strip the trailing '-HH=MM=SS' (9 chars) then strip the day-name after the last '-'.
+    // What remains is the date prefix: "nn", "mm-nn", or "yyyy-mm-nn".
+    let before_time = &base[..base.len() - 9];
+    let day_name_sep = before_time.rfind('-')?;
+    let date_prefix = &before_time[..day_name_sep];
+    let parts: Vec<&str> = date_prefix.split('-').collect();
+    let (dd, month_out, year_out) = match parts.len() {
+        1 => (parts[0], month, year),
+        2 => (parts[1], parts[0], year),
+        3 => (parts[2], parts[1], parts[0]),
+        _ => return None,
+    };
+    if dd.len() != 2 || !dd.chars().all(|c| c.is_ascii_digit()) { return None; }
 
     // Find "Dive-NNN" file
     let entries = std::fs::read_dir(dir).ok()?;
@@ -83,7 +98,7 @@ fn parse_dive_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
 
     Some(Dive {
         number,
-        date_time: format!("{year}-{month}-{day}T{hh}:{mm}:{ss}"),
+        date_time: format!("{year_out}-{month_out}-{dd}T{hh}:{mm}:{ss}"),
         duration_sec: overview.duration_sec,
         site_id: overview.site_id,
         tags: overview.tags,
@@ -315,10 +330,29 @@ mod tests {
     }
 
     #[test]
+    fn is_dive_dir_handles_extended_formats() {
+        // Simple format
+        assert!(is_dive_dir("15-Fri-12=28=43"));
+        // MM-DD format (trip spanning month boundary)
+        assert!(is_dive_dir("08-30-Thu-09=00=30"));
+        assert!(is_dive_dir("09-01-Sat-09=00=32"));
+        // Old colon separator
+        assert!(is_dive_dir("15-Fri-12:28:43"));
+        // With ~hex uniqueness suffix
+        assert!(is_dive_dir("15-Fri-12=28=43~a1b2c3"));
+        // Trip dirs must not match
+        assert!(!is_dive_dir("30-KRK"));
+        assert!(!is_dive_dir("15-Egypt"));
+        assert!(!is_dive_dir("01-trip"));
+    }
+
+    #[test]
     fn is_trip_dir_distinguishes_from_dive_dir() {
         assert!(is_trip_dir("15-Egypt"));
         assert!(is_trip_dir("01-trip"));
+        assert!(is_trip_dir("30-KRK"));
         assert!(!is_trip_dir("15-Fri-12=28=43"));
+        assert!(!is_trip_dir("08-30-Thu-09=00=30"));
         assert!(!is_trip_dir("2024"));
         assert!(!is_trip_dir("03"));
     }
