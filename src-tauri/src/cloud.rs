@@ -99,16 +99,17 @@ pub async fn open_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Step 2: Clone/fetch succeeded — persist credentials
-    let store = app.store("settings.json").map_err(|e| e.to_string())?;
-    store.set("cloudEmail", serde_json::json!(email_for_creds));
-    store.save().map_err(|e| e.to_string())?;
-
-    let entry = Entry::new(KEYRING_SERVICE, &email_for_creds).map_err(|e| e.to_string())?;
-    entry.set_password(&password_for_creds).map_err(|e| e.to_string())?;
-
-    // Step 3: Parse and return the logbook
+    // Step 2+3: Save credentials and parse in one blocking call to avoid stalling the async runtime
+    let app_clone = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        // Save email to settings.json (fast in-memory + file flush)
+        let store = app_clone.store("settings.json").map_err(|e| e.to_string())?;
+        store.set("cloudEmail", serde_json::json!(email_for_creds));
+        store.save().map_err(|e| e.to_string())?;
+        // Save password to OS keychain (blocks on IPC — must be in spawn_blocking)
+        let entry = Entry::new(KEYRING_SERVICE, &email_for_creds).map_err(|e| e.to_string())?;
+        entry.set_password(&password_for_creds).map_err(|e| e.to_string())?;
+        // Parse logbook
         crate::ssrf_git::parse_logbook(&cache_dir_for_parse)
     })
     .await

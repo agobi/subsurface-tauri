@@ -45,9 +45,7 @@ describe("App — desktop cloud wiring", () => {
     expect(screen.queryByRole("button", { name: /sync/i })).not.toBeInTheDocument();
   });
 
-  it("updates window title after successful cloud open", async () => {
-    const setTitle = vi.fn();
-    vi.mocked(getCurrentWindow).mockReturnValue({ setTitle } as any);
+  it("shows Sync button when isCloudLogbook is true", async () => {
     render(App);
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument());
 

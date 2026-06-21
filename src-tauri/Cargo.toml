@@ -27,4 +27,4 @@ tauri-plugin-store = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-os = "2"
 git2 = { version = "0.20", default-features = false, features = ["https"] }
-keyring = "3"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
