@@ -54,6 +54,7 @@ async fn startup_logbook(app: tauri::AppHandle) -> Result<Logbook, String> {
 async fn open_logbook(app: tauri::AppHandle, root: String) -> Result<Logbook, String> {
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     store.set("logbookPath", serde_json::json!(root));
+    store.set("isCloudLogbook", serde_json::json!(false));
     store.save().map_err(|e| e.to_string())?;
     let path = std::path::PathBuf::from(root);
     tauri::async_runtime::spawn_blocking(move || crate::ssrf_git::parse_logbook(&path))
@@ -66,6 +67,7 @@ async fn new_logbook(app: tauri::AppHandle, root: String) -> Result<Logbook, Str
     // Store update is non-blocking (Arc/Mutex internals); do it on the async thread.
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     store.set("logbookPath", serde_json::json!(root));
+    store.set("isCloudLogbook", serde_json::json!(false));
     store.save().map_err(|e| e.to_string())?;
     // create_dir_all is blocking; merge it into the same spawn_blocking as parse_logbook.
     let path = std::path::PathBuf::from(root);

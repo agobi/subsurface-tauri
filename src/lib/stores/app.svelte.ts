@@ -1,5 +1,6 @@
 // AI-generated (Claude)
 import { invoke } from "@tauri-apps/api/core";
+import { load } from "@tauri-apps/plugin-store";
 import type { Logbook, Dive } from "$lib/types.ts";
 import type { DiveListPrefs } from "$lib/prefs.ts";
 import { DEFAULT_DIVE_LIST_PREFS, loadDiveListPrefs, saveDiveListPrefs } from "$lib/prefs.ts";
@@ -61,6 +62,8 @@ class AppStore {
     this.logbook = await invoke<Logbook>("startup_logbook");
     this.selectedDiveId = this.logbook.dives[0]?.number ?? null;
     this.diveListPrefs = await loadDiveListPrefs();
+    const store = await load("settings.json");
+    this.isCloudLogbook = (await store.get<boolean>("isCloudLogbook")) ?? false;
   }
 
   async open(root: string): Promise<void> {
