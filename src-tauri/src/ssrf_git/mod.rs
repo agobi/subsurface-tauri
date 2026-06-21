@@ -107,7 +107,7 @@ fn parse_dive_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
 
 // Derives a display label from the trip directory name, e.g. "15-Egypt" → "Egypt".
 fn dir_name_label(dir_name: &str) -> String {
-    dir_name.splitn(2, '-').nth(1).unwrap_or(dir_name).replace('-', " ")
+    dir_name.split_once('-').map(|x| x.1).unwrap_or(dir_name).replace('-', " ")
 }
 
 // Parses the 00-Trip metadata file: "location …" → label, "notes …" → notes.
