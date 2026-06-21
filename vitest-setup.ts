@@ -2,10 +2,14 @@
 import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
 
-const emptyLogbook = { dives: [], trips: [], sites: [], units: "METRIC" };
+const emptyOpenResult = {
+  logbook: { dives: [], trips: [], sites: [], units: "METRIC" },
+  displayName: "",
+  recents: [],
+};
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn().mockResolvedValue(emptyLogbook),
+  invoke: vi.fn().mockResolvedValue(emptyOpenResult),
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({

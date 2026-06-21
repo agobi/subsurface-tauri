@@ -29,6 +29,12 @@ tauri-plugin-os = "2"
 git2 = { version = "0.20", default-features = false, features = ["https"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+security-framework-sys = "2"
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
 # openssl-sys 0.9.x build script is incompatible with mkinstallvars.pl changes
 # introduced in OpenSSL 3.6 — pin to 3.5.x until openssl-sys is updated
 openssl-src = ">=300.0.14, <300.6"

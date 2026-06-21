@@ -4,12 +4,12 @@ import { render, screen } from "@testing-library/svelte";
 import QuadrantGrid from "$lib/components/QuadrantGrid.svelte";
 import { app } from "$lib/stores/app.svelte.ts";
 import { invoke } from "@tauri-apps/api/core";
-import type { Logbook } from "$lib/types.ts";
+import type { OpenResult } from "$lib/types.ts";
 import sample from "$lib/fixtures/logbook.sample.json";
 
 describe("QuadrantGrid wired to data", () => {
   beforeEach(async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook);
+    vi.mocked(invoke).mockResolvedValueOnce({ logbook: sample, displayName: "test", recents: [] } as unknown as OpenResult);
     await app.startup();
   });
 

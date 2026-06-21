@@ -1,12 +1,14 @@
 // AI-generated (Claude)
+use std::sync::Mutex;
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, Submenu},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder,
 };
-#[cfg(target_os = "macos")]
-use tauri::menu::PredefinedMenuItem;
+
+use crate::types::RecentEntry;
 
 // Holds the five mutually-exclusive View menu items (radio group).
+// Wrapped in Mutex so rebuild() can replace handles atomically.
 pub struct ViewItems<R: Runtime> {
     all: CheckMenuItem<R>,
     list: CheckMenuItem<R>,
@@ -14,6 +16,9 @@ pub struct ViewItems<R: Runtime> {
     info: CheckMenuItem<R>,
     map: CheckMenuItem<R>,
 }
+
+// Holds the current recents list for index-based menu item resolution.
+pub struct RecentList(pub Vec<RecentEntry>);
 
 #[derive(Clone, serde::Serialize)]
 struct SetPanelsPayload {
@@ -23,30 +28,63 @@ struct SetPanelsPayload {
     map: bool,
 }
 
-pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
-    // View menu — radio group: exactly one item checked at a time.
-    // Initial state: "All" checked (all panels visible).
-    let view_all =
-        CheckMenuItem::with_id(app, "view-all", "All", true, true, Some("cmd+1"))?;
-    let view_list =
-        CheckMenuItem::with_id(app, "view-list", "Dive List", true, false, Some("cmd+2"))?;
-    let view_profile =
-        CheckMenuItem::with_id(app, "view-profile", "Dive Profile", true, false, Some("cmd+3"))?;
-    let view_info =
-        CheckMenuItem::with_id(app, "view-info", "Info", true, false, Some("cmd+4"))?;
-    let view_map =
-        CheckMenuItem::with_id(app, "view-map", "Map", true, false, Some("cmd+5"))?;
+fn build_recent_submenu<R: Runtime>(
+    app: &impl Manager<R>,
+    recents: &[RecentEntry],
+) -> tauri::Result<Submenu<R>> {
+    if recents.is_empty() {
+        let placeholder =
+            MenuItem::with_id(app, "recent-empty", "(No Recent Items)", false, None::<&str>)?;
+        return Submenu::with_items(app, "Open Recent", true, &[&placeholder]);
+    }
+    let items: Vec<MenuItem<R>> = recents
+        .iter()
+        .enumerate()
+        .map(|(i, entry)| {
+            let label = match entry {
+                RecentEntry::Local { path } => path
+                    .rsplit(['/', '\\'])
+                    .next()
+                    .unwrap_or(path)
+                    .to_owned(),
+                RecentEntry::Cloud { email, url } => {
+                    let host = url.trim_start_matches("https://").trim_start_matches("http://");
+                    format!("{email}@{host}")
+                }
+            };
+            MenuItem::with_id(app, format!("recent-{i}"), label, true, None::<&str>)
+        })
+        .collect::<tauri::Result<_>>()?;
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<R>> = items.iter().map(|m| m as _).collect();
+    Submenu::with_items(app, "Open Recent", true, &refs)
+}
 
-    app.manage(ViewItems {
-        all: view_all.clone(),
-        list: view_list.clone(),
-        profile: view_profile.clone(),
-        info: view_info.clone(),
-        map: view_map.clone(),
-    });
+fn create_view_items<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<ViewItems<R>> {
+    Ok(ViewItems {
+        all: CheckMenuItem::with_id(app, "view-all", "All", true, true, Some("cmd+1"))?,
+        list: CheckMenuItem::with_id(app, "view-list", "Dive List", true, false, Some("cmd+2"))?,
+        profile: CheckMenuItem::with_id(
+            app,
+            "view-profile",
+            "Dive Profile",
+            true,
+            false,
+            Some("cmd+3"),
+        )?,
+        info: CheckMenuItem::with_id(app, "view-info", "Info", true, false, Some("cmd+4"))?,
+        map: CheckMenuItem::with_id(app, "view-map", "Map", true, false, Some("cmd+5"))?,
+    })
+}
 
-    let file_open = MenuItem::with_id(app, "file-open", "Open Logbook\u{2026}", true, None::<&str>)?;
-    let file_new = MenuItem::with_id(app, "file-new", "New Logbook\u{2026}", true, None::<&str>)?;
+fn assemble_menu<R: Runtime>(
+    app: &impl Manager<R>,
+    vi: &ViewItems<R>,
+    recents: &[RecentEntry],
+) -> tauri::Result<Menu<R>> {
+    let file_open =
+        MenuItem::with_id(app, "file-open", "Open Logbook\u{2026}", true, None::<&str>)?;
+    let file_new =
+        MenuItem::with_id(app, "file-new", "New Logbook\u{2026}", true, None::<&str>)?;
     let file_cloud_open = MenuItem::with_id(
         app,
         "file-cloud-open",
@@ -54,20 +92,30 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
         true,
         None::<&str>,
     )?;
+    let recent_sep = PredefinedMenuItem::separator(app)?;
+    let recent_submenu = build_recent_submenu(app, recents)?;
 
     let view = Submenu::with_items(
         app,
         "View",
         true,
-        &[&view_all, &view_list, &view_profile, &view_info, &view_map],
+        &[&vi.all, &vi.list, &vi.profile, &vi.info, &vi.map],
     )?;
 
-    // On macOS the first submenu becomes the app menu (title overridden by the app
-    // name). Prepend a proper app menu so File appears as its own menu in the bar.
     #[cfg(target_os = "macos")]
     {
-        let file = Submenu::with_items(app, "File", true, &[&file_open, &file_new, &file_cloud_open])?;
-
+        let file = Submenu::with_items(
+            app,
+            "File",
+            true,
+            &[
+                &file_open,
+                &file_new,
+                &file_cloud_open,
+                &recent_sep,
+                &recent_submenu,
+            ],
+        )?;
         let app_menu = Submenu::with_items(
             app,
             "Subsurface",
@@ -86,7 +134,6 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
                 &PredefinedMenuItem::quit(app, None)?,
             ],
         )?;
-
         let items: &[&dyn tauri::menu::IsMenuItem<R>] = &[
             &app_menu,
             &file,
@@ -103,8 +150,19 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
     {
         let settings_item =
             MenuItem::with_id(app, "settings", "Preferences\u{2026}", true, None::<&str>)?;
-        let file = Submenu::with_items(app, "File", true, &[&file_open, &file_new, &file_cloud_open, &settings_item])?;
-
+        let file = Submenu::with_items(
+            app,
+            "File",
+            true,
+            &[
+                &file_open,
+                &file_new,
+                &file_cloud_open,
+                &recent_sep,
+                &recent_submenu,
+                &settings_item,
+            ],
+        )?;
         let items: &[&dyn tauri::menu::IsMenuItem<R>] = &[
             &file,
             &stub_submenu(app, "Edit")?,
@@ -115,6 +173,46 @@ pub fn build<R: Runtime>(app: &impl Manager<R>) -> tauri::Result<Menu<R>> {
         ];
         Menu::with_items(app, items)
     }
+}
+
+pub fn build<R: Runtime>(
+    app: &impl Manager<R>,
+    recents: &[RecentEntry],
+) -> tauri::Result<Menu<R>> {
+    let vi = create_view_items(app)?;
+    app.manage(Mutex::new(ViewItems {
+        all: vi.all.clone(),
+        list: vi.list.clone(),
+        profile: vi.profile.clone(),
+        info: vi.info.clone(),
+        map: vi.map.clone(),
+    }));
+    app.manage(Mutex::new(RecentList(recents.to_vec())));
+    assemble_menu(app, &vi, recents)
+}
+
+pub fn rebuild<R: Runtime>(app: &AppHandle<R>, recents: &[RecentEntry]) -> tauri::Result<()> {
+    let vi = create_view_items(app)?;
+
+    {
+        let state = app.state::<Mutex<ViewItems<R>>>();
+        let mut guard = state.lock().unwrap();
+        *guard = ViewItems {
+            all: vi.all.clone(),
+            list: vi.list.clone(),
+            profile: vi.profile.clone(),
+            info: vi.info.clone(),
+            map: vi.map.clone(),
+        };
+    }
+    {
+        let state = app.state::<Mutex<RecentList>>();
+        state.lock().unwrap().0 = recents.to_vec();
+    }
+
+    let new_menu = assemble_menu(app, &vi, recents)?;
+    app.set_menu(new_menu)?;
+    Ok(())
 }
 
 fn stub_submenu<R: Runtime>(app: &impl Manager<R>, label: &str) -> tauri::Result<Submenu<R>> {
@@ -143,23 +241,17 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEven
                 win.show().ok();
                 win.set_focus().ok();
             } else {
-                WebviewWindowBuilder::new(
-                    app,
-                    label,
-                    WebviewUrl::App("prefs.html".into()),
-                )
-                .title("Preferences")
-                .inner_size(720.0, 480.0)
-                .resizable(false)
-                .build()
-                .ok();
+                WebviewWindowBuilder::new(app, label, WebviewUrl::App("prefs.html".into()))
+                    .title("Preferences")
+                    .inner_size(720.0, 480.0)
+                    .resizable(false)
+                    .build()
+                    .ok();
             }
         }
         id @ ("view-all" | "view-list" | "view-profile" | "view-info" | "view-map") => {
-            let items = app.state::<ViewItems<R>>();
-            // muda auto-toggles before on_menu_event fires. If the item is now
-            // unchecked the user clicked the already-selected item — revert and
-            // ignore (radio buttons can't be deselected).
+            let state = app.state::<Mutex<ViewItems<R>>>();
+            let items = state.lock().unwrap();
             let clicked = match id {
                 "view-all" => &items.all,
                 "view-list" => &items.list,
@@ -168,11 +260,13 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEven
                 "view-map" => &items.map,
                 _ => return,
             };
+            // muda auto-toggles before on_menu_event fires. If the item is now
+            // unchecked the user clicked the already-selected item — revert and
+            // ignore (radio buttons can't be deselected).
             if !clicked.is_checked().unwrap_or(false) {
                 clicked.set_checked(true).ok();
                 return;
             }
-            // Uncheck all others, then derive the full panel visibility state.
             let all_items = [
                 &items.all,
                 &items.list,
@@ -196,6 +290,17 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEven
                 },
             )
             .ok();
+        }
+        id if id.starts_with("recent-") => {
+            let idx: usize = match id["recent-".len()..].parse() {
+                Ok(n) => n,
+                Err(_) => return,
+            };
+            let state = app.state::<Mutex<RecentList>>();
+            let list = state.lock().unwrap();
+            if let Some(entry) = list.0.get(idx) {
+                app.emit("menu:open-recent", entry).ok();
+            }
         }
         _ => {}
     }

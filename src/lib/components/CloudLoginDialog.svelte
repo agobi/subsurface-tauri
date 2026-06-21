@@ -4,9 +4,11 @@
   import { invoke } from "@tauri-apps/api/core";
   import { app } from "$lib/stores/app.svelte.ts";
 
-  let { onClose, onSuccess }: {
+  let { onClose, onSuccess, initialEmail = "", message }: {
     onClose: () => void;
     onSuccess: (email: string) => void;
+    initialEmail?: string;
+    message?: string;
   } = $props();
 
   let email = $state("");
@@ -15,6 +17,10 @@
   let error = $state<string | null>(null);
 
   onMount(async () => {
+    if (initialEmail) {
+      email = initialEmail;
+      return;
+    }
     try {
       const saved = await invoke<string | null>("get_cloud_credentials");
       if (typeof saved === "string") email = saved;
@@ -40,6 +46,9 @@
 <div class="overlay" role="dialog" aria-modal="true" aria-label="Open Cloud Notebook">
   <div class="dialog">
     <h2 class="title">Open Cloud Notebook</h2>
+    {#if message}
+      <div class="notice" role="status">{message}</div>
+    {/if}
     <div class="field">
       <label for="cloud-email">Email</label>
       <input id="cloud-email" type="email" bind:value={email} autocomplete="username" />
@@ -68,6 +77,7 @@
   .field label { font-size: 12.5px; color: var(--txt-2); }
   .field input { height: 32px; padding: 0 10px; background: var(--panel-2); border: 1px solid var(--hair); border-radius: var(--r-control); color: var(--txt); font: inherit; font-size: 13px; outline: none; }
   .field input:focus { border-color: var(--blue); }
+  .notice { font-size: 12.5px; color: var(--txt-2); background: var(--panel-2); border: 1px solid var(--hair); border-radius: var(--r-control); padding: 8px 10px; }
   .error { font-size: 12.5px; color: var(--red, #c0392b); padding: 6px 0; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
   .btn { height: 30px; padding: 0 14px; border-radius: var(--r-control); border: 1px solid var(--hair); background: var(--elev); color: var(--txt); font: inherit; cursor: pointer; }

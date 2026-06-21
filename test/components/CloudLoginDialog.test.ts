@@ -4,8 +4,12 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/svelte";
 import { invoke } from "@tauri-apps/api/core";
 import { app } from "$lib/stores/app.svelte.ts";
 import CloudLoginDialog from "$lib/components/CloudLoginDialog.svelte";
+import type { OpenResult } from "$lib/types.ts";
 import sample from "$lib/fixtures/logbook.sample.json";
-import type { Logbook } from "$lib/types.ts";
+
+function openResult(email = "user@example.com"): OpenResult {
+  return { logbook: sample as any, displayName: email, recents: [] };
+}
 
 describe("CloudLoginDialog", () => {
   beforeEach(() => app.reset());
@@ -48,7 +52,7 @@ describe("CloudLoginDialog", () => {
 
   it("calls onSuccess with email after successful open", async () => {
     vi.mocked(invoke).mockResolvedValueOnce(null); // get_cloud_credentials
-    vi.mocked(invoke).mockResolvedValueOnce(sample as unknown as Logbook); // open_cloud_logbook
+    vi.mocked(invoke).mockResolvedValueOnce(openResult("user@example.com")); // open_cloud_logbook
     const onSuccess = vi.fn();
     const onClose = vi.fn();
     render(CloudLoginDialog, { props: { onClose, onSuccess } });
