@@ -79,15 +79,21 @@ fn parse_dive_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
         _ => return None,
     };
     if dd.len() != 2 || !dd.chars().all(|c| c.is_ascii_digit()) { return None; }
+    // Validate month and year when they come from the directory name, not from the caller.
+    if parts.len() >= 2 && !is_month(month_out) { return None; }
+    if parts.len() == 3 && !is_year(year_out) { return None; }
 
-    // Find "Dive-NNN" file
+    // Find "Dive-NNN" file; sort entries for a deterministic result if multiple exist.
     let entries = std::fs::read_dir(dir).ok()?;
-    let dive_entry = entries
+    let mut dive_entries: Vec<_> = entries
         .filter_map(|e| e.ok())
-        .find(|e| {
+        .filter(|e| {
             let n = e.file_name().to_string_lossy().to_string();
-            n.starts_with("Dive-") && n[5..].chars().all(|c| c.is_ascii_digit())
-        })?;
+            n.starts_with("Dive-") && !n[5..].is_empty() && n[5..].chars().all(|c| c.is_ascii_digit())
+        })
+        .collect();
+    dive_entries.sort_by_key(|e| e.file_name());
+    let dive_entry = dive_entries.into_iter().next()?;
     let dive_name = dive_entry.file_name().to_string_lossy().to_string();
     let number: i32 = dive_name[5..].parse().ok()?;
     let overview = parse_dive(&read_file(&dive_entry.path()).ok()?);
@@ -163,7 +169,6 @@ fn parse_trip_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
         })
         .collect();
 
-    if trip_dives.is_empty() { return None; }
     trip_dives.sort_by(|a, b| a.date_time.cmp(&b.date_time));
 
     let dive_numbers: Vec<i32> = trip_dives.iter().map(|d| d.number).collect();
@@ -324,6 +329,49 @@ mod tests {
             .filter(|n| !t.dive_numbers.contains(n))
             .collect();
         assert_eq!(ungrouped, vec![1]);
+    }
+
+    #[test]
+    fn parse_dive_dir_non_numeric_month_in_filename_returns_none() {
+        // Two-part date prefix "Aug-15" has a non-numeric month; must be rejected to
+        // prevent a garbage date_time like "2024-Aug-15T12:28:43".
+        let tmp = std::env::temp_dir().join("ssrf_test_non_numeric_month");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("Dive-1"), "").unwrap();
+        let result = parse_dive_dir(&tmp, "2024", "08", "Aug-15-Fri-12=28=43");
+        assert!(result.is_none(), "non-numeric month in filename must be rejected");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn parse_dive_dir_ignores_bare_dive_dash_and_picks_numbered() {
+        // A file named "Dive-" (empty suffix after dash) must be skipped; "Dive-1" must
+        // be selected. Also verifies deterministic selection when multiple files exist.
+        let tmp = std::env::temp_dir().join("ssrf_test_dive_dash_pick");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("Dive-"), "").unwrap();
+        std::fs::write(tmp.join("Dive-1"), "").unwrap();
+        let result = parse_dive_dir(&tmp, "2024", "03", "15-Fri-12=28=43");
+        assert!(result.is_some(), "Dive-1 must be selected, ignoring bare Dive-");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn parse_trip_dir_returns_trip_when_all_dives_fail() {
+        // A trip whose child dive directories all fail to parse must still appear in
+        // the logbook rather than being silently discarded.
+        let tmp = std::env::temp_dir().join("ssrf_test_trip_no_dives");
+        let trip_dir = tmp.join("2024").join("03").join("15-Egypt");
+        std::fs::create_dir_all(&trip_dir).unwrap();
+        std::fs::write(trip_dir.join("00-Trip"), "location \"Egypt\"\n").unwrap();
+        // Corrupt dive sub-dir: "Dive-NNN" file is missing, so parse_dive_dir returns None.
+        let dive_dir = trip_dir.join("15-Fri-12=28=43");
+        std::fs::create_dir_all(&dive_dir).unwrap();
+        let lb = parse_logbook(&tmp).unwrap();
+        assert_eq!(lb.trips.len(), 1, "trip must survive even when all dives fail to parse");
+        assert_eq!(lb.trips[0].label, "Egypt");
+        assert_eq!(lb.trips[0].dive_numbers.len(), 0);
+        std::fs::remove_dir_all(&tmp).ok();
     }
 
     #[test]

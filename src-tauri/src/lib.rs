@@ -115,15 +115,16 @@ async fn open_logbook(app: tauri::AppHandle, root: String) -> Result<OpenResult,
     let path = std::path::PathBuf::from(&root);
     validate_logbook_path(&path)?;
 
-    let store = app.store("settings.json").map_err(|e| e.to_string())?;
-    store.set("logbookPath", serde_json::json!(root));
-    store.save().map_err(|e| e.to_string())?;
-    let display_name = path_basename(&path);
-    let recents = update_recents(&store, RecentEntry::Local { path: root })?;
-
-    let logbook = tauri::async_runtime::spawn_blocking(move || crate::ssrf_git::parse_logbook(&path))
+    // Parse first — nothing is persisted until we know the logbook is readable.
+    let path_clone = path.clone();
+    let logbook = tauri::async_runtime::spawn_blocking(move || crate::ssrf_git::parse_logbook(&path_clone))
         .await
         .map_err(|e| e.to_string())??;
+
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let display_name = path_basename(&path);
+    store.set("logbookPath", serde_json::json!(root));
+    let recents = update_recents(&store, RecentEntry::Local { path: root })?;
 
     #[cfg(desktop)]
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
@@ -136,18 +137,19 @@ async fn new_logbook(app: tauri::AppHandle, root: String) -> Result<OpenResult, 
     let path = std::path::PathBuf::from(&root);
     validate_logbook_path(&path)?;
 
-    let store = app.store("settings.json").map_err(|e| e.to_string())?;
-    store.set("logbookPath", serde_json::json!(root));
-    store.save().map_err(|e| e.to_string())?;
-    let display_name = path_basename(&path);
-    let recents = update_recents(&store, RecentEntry::Local { path: root })?;
-
+    // Create dir and parse first — nothing is persisted until we know the path is good.
+    let path_clone = path.clone();
     let logbook = tauri::async_runtime::spawn_blocking(move || {
-        std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
-        crate::ssrf_git::parse_logbook(&path)
+        std::fs::create_dir_all(&path_clone).map_err(|e| e.to_string())?;
+        crate::ssrf_git::parse_logbook(&path_clone)
     })
     .await
     .map_err(|e| e.to_string())??;
+
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let display_name = path_basename(&path);
+    store.set("logbookPath", serde_json::json!(root));
+    let recents = update_recents(&store, RecentEntry::Local { path: root })?;
 
     #[cfg(desktop)]
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;

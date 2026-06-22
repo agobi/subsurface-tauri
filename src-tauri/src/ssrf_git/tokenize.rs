@@ -60,7 +60,14 @@ pub fn parse_attrs(rest: &str) -> HashMap<String, String> {
             // scan to closing unescaped quote
             let mut i = 1;
             while i < s.len() {
-                if s.as_bytes()[i] == b'\\' { i = (i + 2).min(s.len()); }
+                if s.as_bytes()[i] == b'\\' {
+                    // '\' is single-byte ASCII, so i+1 is a char boundary.
+                    let next = i + 1;
+                    let ch_len = if next < s.len() {
+                        s[next..].chars().next().map(|c| c.len_utf8()).unwrap_or(0)
+                    } else { 0 };
+                    i = (next + ch_len).min(s.len());
+                }
                 else if s.as_bytes()[i] == b'"' { i += 1; break; }
                 else { i += 1; }
             }
@@ -120,6 +127,14 @@ mod tests {
         // A quoted value ending with a bare backslash must not panic.
         let a = parse_attrs(r#"key="abc\"#);
         // Value is malformed but we must not crash; key may or may not be present.
+        let _ = a.get("key");
+    }
+
+    #[test]
+    fn parse_attrs_multibyte_after_backslash_does_not_panic() {
+        // '€' is 3 bytes in UTF-8; advancing only 2 bytes after '\' would land
+        // mid-codepoint and panic on subsequent &s[..i] / &s[i..] slicing.
+        let a = parse_attrs("key=\"\\€\"");
         let _ = a.get("key");
     }
 
