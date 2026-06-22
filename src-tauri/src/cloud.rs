@@ -47,11 +47,15 @@ mod macos_keychain {
     // RAII wrappers to ensure CF objects are released.
     struct OwnedStr(CFStringRef);
     impl Drop for OwnedStr {
-        fn drop(&mut self) { unsafe { CFRelease(self.0 as _); } }
+        fn drop(&mut self) {
+            if !self.0.is_null() { unsafe { CFRelease(self.0 as _); } }
+        }
     }
     struct OwnedDict(CFMutableDictionaryRef);
     impl Drop for OwnedDict {
-        fn drop(&mut self) { unsafe { CFRelease(self.0 as _); } }
+        fn drop(&mut self) {
+            if !self.0.is_null() { unsafe { CFRelease(self.0 as _); } }
+        }
     }
 
     fn cf_str(s: &str) -> OwnedStr {

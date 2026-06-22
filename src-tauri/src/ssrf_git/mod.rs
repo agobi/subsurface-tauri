@@ -52,7 +52,9 @@ fn parse_dive_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
     // Handles [[yyyy-]mm-]nn-ddd-hh=mm=ss[~hex] (= or : as time separator).
     // Strip optional ~hex uniqueness suffix first.
     let base = dir_name.split('~').next().unwrap_or(dir_name);
-    if base.len() < 8 { return None; }
+    // Need at least 9 chars: 8 for the time portion plus 1 separator before it,
+    // so base.len()-9 in the date-prefix slice below does not underflow.
+    if base.len() < 9 { return None; }
 
     // Last 8 chars are the time: HH=MM=SS or HH:MM:SS.
     let time_str = &base[base.len() - 8..];
@@ -322,6 +324,15 @@ mod tests {
             .filter(|n| !t.dive_numbers.contains(n))
             .collect();
         assert_eq!(ungrouped, vec![1]);
+    }
+
+    #[test]
+    fn parse_dive_dir_eight_char_name_returns_none_not_panic() {
+        // "01=01=01" is 8 chars and satisfies is_dive_dir (b[5]=='='), but the
+        // date-prefix slice `&base[..base.len()-9]` would underflow if the guard
+        // were `< 8`. With the corrected guard of `< 9` this must return None.
+        let result = parse_dive_dir(std::path::Path::new("/nonexistent"), "2024", "03", "01=01=01");
+        assert!(result.is_none());
     }
 
     #[test]

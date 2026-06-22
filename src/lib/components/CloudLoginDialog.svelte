@@ -6,7 +6,7 @@
 
   let { onClose, onSuccess, initialEmail = "", message }: {
     onClose: () => void;
-    onSuccess: (email: string) => void;
+    onSuccess: (email: string) => void | Promise<void>;
     initialEmail?: string;
     message?: string;
   } = $props();
@@ -34,7 +34,7 @@
     error = null;
     try {
       await app.openCloud(email, password);
-      onSuccess(email);
+      await onSuccess(email);
     } catch (e) {
       error = typeof e === "string" ? e : "An unexpected error occurred.";
     } finally {

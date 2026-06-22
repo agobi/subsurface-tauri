@@ -30,6 +30,7 @@
         app.showCloudDialog = {
           email: entry.email,
           message: "Saved credentials could not be loaded. Please sign in again.",
+          onSuccess: onBack,
         };
       }
     } else {

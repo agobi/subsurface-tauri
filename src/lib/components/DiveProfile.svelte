@@ -32,6 +32,10 @@
   );
 
   let cursor = $state<{ x: number; sample: typeof dive.samples[number] } | null>(null);
+  $effect(() => {
+    dive; // reset crosshair whenever the displayed dive changes
+    cursor = null;
+  });
   function onMove(e: MouseEvent) {
     if (dive.samples.length === 0) return;
     const svg = e.currentTarget as unknown as SVGSVGElement;
@@ -91,12 +95,12 @@
 
     {#if series.temp}
       <polyline fill="none" stroke="var(--teal)" stroke-width="1.5"
-        points={dive.samples.filter((s) => s.tempC != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - ((s.tempC ?? 0) / 40) * (plot.y1 - plot.y0)}`).join(" ")} />
+        points={dive.samples.filter((s) => s.tempC != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - Math.max(0, Math.min(1, (s.tempC ?? 0) / 40)) * (plot.y1 - plot.y0)}`).join(" ")} />
     {/if}
 
     {#if series.tank}
       <polyline fill="none" stroke="var(--amber)" stroke-width="1.5"
-        points={dive.samples.filter((s) => s.pressureBar != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - ((s.pressureBar ?? 0) / 250) * (plot.y1 - plot.y0)}`).join(" ")} />
+        points={dive.samples.filter((s) => s.pressureBar != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - Math.max(0, Math.min(1, (s.pressureBar ?? 0) / 250)) * (plot.y1 - plot.y0)}`).join(" ")} />
     {/if}
 
     {#if cursor}

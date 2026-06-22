@@ -23,7 +23,7 @@ class AppStore {
   get isCloudLogbook(): boolean { return this.recents[0]?.kind === "Cloud"; }
   displayName = $state("");
   recents = $state<RecentEntry[]>([]);
-  showCloudDialog = $state<{ email: string; message?: string } | false>(false);
+  showCloudDialog = $state<{ email: string; message?: string; onSuccess?: () => void } | false>(false);
   diveListPrefs = $state<DiveListPrefs>({
     ...DEFAULT_DIVE_LIST_PREFS,
     colOrder: [...DEFAULT_DIVE_LIST_PREFS.colOrder],
@@ -131,20 +131,28 @@ class AppStore {
 
   setPlatform(p: Platform) { this.platform = p; }
 
-  setSortCol(id: ColId) {
+  async setSortCol(id: ColId) {
     const { sortKey, sortDir } = this.diveListPrefs;
     const newDir = id === sortKey ? (sortDir === "asc" ? "desc" : "asc") : "asc";
     this.diveListPrefs = { ...this.diveListPrefs, sortKey: id, sortDir: newDir };
-    saveDiveListPrefs(this.diveListPrefs);
+    try {
+      await saveDiveListPrefs(this.diveListPrefs);
+    } catch (e) {
+      console.error("Failed to persist sort preference:", e);
+    }
   }
 
-  toggleColumn(id: ColId) {
+  async toggleColumn(id: ColId) {
     const { colOrder } = this.diveListPrefs;
     const next = colOrder.includes(id)
       ? colOrder.filter(c => c !== id)
       : [...colOrder, id];
     this.diveListPrefs = { ...this.diveListPrefs, colOrder: next };
-    saveDiveListPrefs(this.diveListPrefs);
+    try {
+      await saveDiveListPrefs(this.diveListPrefs);
+    } catch (e) {
+      console.error("Failed to persist column preference:", e);
+    }
   }
 
   reset() {
