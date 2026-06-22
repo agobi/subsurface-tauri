@@ -30,11 +30,16 @@
         app.showCloudDialog = {
           email: entry.email,
           message: "Saved credentials could not be loaded. Please sign in again.",
+          onSuccess: onBack,
         };
       }
     } else {
-      app.openRecent(entry);
-      onBack();
+      try {
+        await app.openRecent(entry);
+        onBack();
+      } catch (e) {
+        console.error("Failed to open recent logbook:", e);
+      }
     }
   }
 </script>

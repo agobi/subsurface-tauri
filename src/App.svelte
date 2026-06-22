@@ -2,7 +2,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { open as openDialog } from "@tauri-apps/plugin-dialog";
+  import { open as openDialog, message as showMessage } from "@tauri-apps/plugin-dialog";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { platform } from "@tauri-apps/plugin-os";
   import { app, type VisiblePanels } from "$lib/stores/app.svelte.ts";
@@ -30,7 +30,7 @@
         await app.open(dir);
         await setWindowTitle();
       } catch (e) {
-        console.error("Failed to open logbook:", e);
+        await showMessage(e instanceof Error ? e.message : String(e), { title: "Error", kind: "error" });
       }
     }
   }
@@ -42,18 +42,25 @@
         await app.newLogbook(dir);
         await setWindowTitle();
       } catch (e) {
-        console.error("Failed to create logbook:", e);
+        await showMessage(e instanceof Error ? e.message : String(e), { title: "Error", kind: "error" });
       }
     }
   }
 
   async function handleSync() {
-    await app.syncCloud();
+    try {
+      await app.syncCloud();
+      await setWindowTitle();
+    } catch (e) {
+      await showMessage(e instanceof Error ? e.message : String(e), { title: "Sync Failed", kind: "error" });
+    }
   }
 
   async function handleCloudSuccess(_email: string) {
+    const cb = typeof app.showCloudDialog === "object" ? app.showCloudDialog.onSuccess : undefined;
     app.showCloudDialog = false;
     await setWindowTitle();
+    cb?.();
   }
 
   async function handleOpenRecent(entry: RecentEntry) {
@@ -72,7 +79,7 @@
         await app.open(entry.path);
         await setWindowTitle();
       } catch (e) {
-        console.error("Failed to open recent logbook:", e);
+        await showMessage(e instanceof Error ? e.message : String(e), { title: "Error", kind: "error" });
       }
     }
   }

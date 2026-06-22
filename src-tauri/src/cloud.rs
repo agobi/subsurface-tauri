@@ -47,11 +47,15 @@ mod macos_keychain {
     // RAII wrappers to ensure CF objects are released.
     struct OwnedStr(CFStringRef);
     impl Drop for OwnedStr {
-        fn drop(&mut self) { unsafe { CFRelease(self.0 as _); } }
+        fn drop(&mut self) {
+            if !self.0.is_null() { unsafe { CFRelease(self.0 as _); } }
+        }
     }
     struct OwnedDict(CFMutableDictionaryRef);
     impl Drop for OwnedDict {
-        fn drop(&mut self) { unsafe { CFRelease(self.0 as _); } }
+        fn drop(&mut self) {
+            if !self.0.is_null() { unsafe { CFRelease(self.0 as _); } }
+        }
     }
 
     fn cf_str(s: &str) -> OwnedStr {
@@ -372,16 +376,18 @@ pub async fn open_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Step 3: Save credentials, persist logbookPath, update recents, and parse
+    // Step 3: Save credentials, persist logbookPath, update recents, and parse.
+    // keychain_set runs BEFORE store.save so that a keychain failure leaves nothing
+    // persisted — avoiding the stuck-loop where the path is saved but credentials aren't.
     let app_clone = app.clone();
     let cloud_url = CLOUD_BASE.to_owned();
     let (logbook, recents) = tauri::async_runtime::spawn_blocking(move || -> Result<(Logbook, Vec<RecentEntry>), String> {
         let store = app_clone.store("settings.json").map_err(|e| e.to_string())?;
+        let kc_key = cloud_display_name(&email2, CLOUD_BASE);
+        keychain_set(KEYRING_SERVICE, &kc_key, &password2)?;
         store.set("cloudEmail", serde_json::json!(email2));
         store.set("logbookPath", serde_json::json!(cache_dir2.to_string_lossy().as_ref()));
         store.save().map_err(|e| e.to_string())?;
-        let kc_key = cloud_display_name(&email2, CLOUD_BASE);
-        keychain_set(KEYRING_SERVICE, &kc_key, &password2)?;
         let recents = crate::update_recents(
             &store,
             RecentEntry::Cloud { email: email2.clone(), url: cloud_url },
@@ -458,12 +464,6 @@ pub async fn sync_cloud_logbook(app: tauri::AppHandle) -> Result<OpenResult, Str
         .and_then(|v| v.as_str().map(str::to_owned))
         .ok_or_else(|| "No cloud logbook configured.".to_string())?;
 
-    // Read current recents without modifying them — sync doesn't change the entry.
-    let recents: Vec<RecentEntry> = store
-        .get("recents")
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-
     let password = get_password(&email, CLOUD_BASE).map_err(|_| {
         "No saved credentials found. Please open the cloud logbook again.".to_string()
     })?;
@@ -480,6 +480,13 @@ pub async fn sync_cloud_logbook(app: tauri::AppHandle) -> Result<OpenResult, Str
     })
     .await
     .map_err(|e| e.to_string())??;
+
+    // Read recents AFTER the (potentially multi-second) fetch so a concurrent open
+    // that wrote a new entry during the fetch is not overwritten with a stale snapshot.
+    let recents: Vec<RecentEntry> = store
+        .get("recents")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
 
     Ok(OpenResult { logbook, display_name, recents })
 }

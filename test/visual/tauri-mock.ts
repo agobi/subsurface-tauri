@@ -44,6 +44,7 @@ export function getCurrentWindow() {
 export async function open(_opts?: unknown): Promise<null> {
   return null;
 }
+export async function message(_msg: string, _opts?: unknown): Promise<void> {}
 
 // @tauri-apps/plugin-os
 export async function platform(): Promise<string> {

@@ -192,7 +192,27 @@ pub fn build<R: Runtime>(
 }
 
 pub fn rebuild<R: Runtime>(app: &AppHandle<R>, recents: &[RecentEntry]) -> tauri::Result<()> {
-    let vi = create_view_items(app)?;
+    // Preserve the current view selection so opening a logbook doesn't reset
+    // the menu check state to "All" regardless of what the user had selected.
+    let (was_all, was_list, was_profile, was_info, was_map) = {
+        let state = app.state::<Mutex<ViewItems<R>>>();
+        let guard = state.lock().unwrap();
+        (
+            guard.all.is_checked().unwrap_or(true),
+            guard.list.is_checked().unwrap_or(false),
+            guard.profile.is_checked().unwrap_or(false),
+            guard.info.is_checked().unwrap_or(false),
+            guard.map.is_checked().unwrap_or(false),
+        )
+    };
+
+    let vi = ViewItems {
+        all: CheckMenuItem::with_id(app, "view-all", "All", true, was_all, Some("cmd+1"))?,
+        list: CheckMenuItem::with_id(app, "view-list", "Dive List", true, was_list, Some("cmd+2"))?,
+        profile: CheckMenuItem::with_id(app, "view-profile", "Dive Profile", true, was_profile, Some("cmd+3"))?,
+        info: CheckMenuItem::with_id(app, "view-info", "Info", true, was_info, Some("cmd+4"))?,
+        map: CheckMenuItem::with_id(app, "view-map", "Map", true, was_map, Some("cmd+5"))?,
+    };
 
     {
         let state = app.state::<Mutex<ViewItems<R>>>();

@@ -14,7 +14,17 @@ const dive: Dive = {
   ], events: [],
 };
 
+const diveNoSamples: Dive = {
+  number: 2, dateTime: "2024-03-16T10:00:00", durationSec: 1800, tags: [], cylinders: [],
+  maxDepthM: 18, samples: [], events: [],
+};
+
 describe("DiveProfile", () => {
+  it("renders without crash when samples is empty", () => {
+    const { container } = render(DiveProfile, { props: { dive: diveNoSamples } });
+    expect(container.querySelector("svg")).toBeInTheDocument();
+  });
+
   it("renders an svg with a depth path", () => {
     const { container } = render(DiveProfile, { props: { dive } });
     expect(container.querySelector("svg")).toBeInTheDocument();

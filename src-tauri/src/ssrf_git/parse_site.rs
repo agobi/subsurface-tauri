@@ -23,10 +23,13 @@ pub fn parse_site(file_name: &str, text: &str) -> Site {
                 let parts: Vec<&str> = rest.split_whitespace().collect();
                 if let Some(pos) = parts.iter().position(|&s| s == "cat") {
                     if parts.get(pos + 1).is_some_and(|&v| v == "2") {
-                        if let Some(last) = parts.last() {
-                            let c = unquote(last);
-                            if !c.is_empty() {
-                                site.country = Some(c);
+                        // Extract the quoted country name from the raw line to preserve spaces.
+                        if let (Some(start), Some(end)) = (rest.find('"'), rest.rfind('"')) {
+                            if start < end {
+                                let c = unquote(&rest[start..=end]);
+                                if !c.is_empty() {
+                                    site.country = Some(c);
+                                }
                             }
                         }
                     }
@@ -81,6 +84,13 @@ mod tests {
         let text = "name \"Test Spring\"\ngps 47.668408 18.307076\ngeo cat 1 origin 1 \"Europe\"\ngeo cat 2 origin 2 \"Hungary\"\ngeo cat 3 origin 3 \"Budapest\"\n";
         let site = parse_site("Site-04782ed8", text);
         assert_eq!(site.country.as_deref(), Some("Hungary"));
+    }
+
+    #[test]
+    fn multi_word_country_name_preserved() {
+        let text = "name \"Red Sea Site\"\ngps 27.2 33.8\ngeo cat 2 origin 2 \"United Kingdom\"\n";
+        let site = parse_site("Site-aabbccdd", text);
+        assert_eq!(site.country.as_deref(), Some("United Kingdom"));
     }
 
     #[test]

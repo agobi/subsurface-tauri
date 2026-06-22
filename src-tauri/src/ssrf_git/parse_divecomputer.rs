@@ -22,7 +22,6 @@ fn parse_sample_line(line: &str, carry: &mut Sample) -> Sample {
         return carry.clone();
     }
     carry.time_sec = mmss(tokens[0]);
-    carry.depth_m = 0.0;
     for &tok in tokens.iter().skip(1) {
         if tok.ends_with('m') && !tok.contains('=') {
             carry.depth_m = strip_unit(tok);
@@ -35,7 +34,8 @@ fn parse_sample_line(line: &str, carry: &mut Sample) -> Sample {
         } else if let Some(v) = tok.strip_prefix("cns=") {
             carry.cns = Some(strip_unit(v));
         } else if tok.ends_with("bar") && !tok.contains('=') {
-            carry.pressure_bar = Some(strip_unit(tok.split(':').next().unwrap_or(tok)));
+            // Tokens may be cylinder-indexed: "0:200.0bar" — take the value after the last colon.
+            carry.pressure_bar = Some(strip_unit(tok.split(':').next_back().unwrap_or(tok)));
         }
     }
     carry.clone()
@@ -167,6 +167,29 @@ mod tests {
         assert_eq!(s3.depth_m, 15.0);
         assert_eq!(s3.temp_c, Some(24.0));
         assert_eq!(s3.ndl_sec, Some(99 * 60));
+    }
+
+    #[test]
+    fn cylinder_indexed_pressure_parsed_correctly() {
+        // "0:200.0bar" means cylinder 0 at 200 bar; the value after ':' is the pressure.
+        let dc = parse_divecomputer("model \"Test\"\n  0:30 10.0m 0:200.0bar\n  1:00 15.0m 0:180.0bar\n");
+        assert_eq!(dc.samples[0].pressure_bar, Some(200.0));
+        assert_eq!(dc.samples[1].pressure_bar, Some(180.0));
+    }
+
+    #[test]
+    fn single_cylinder_pressure_without_index_still_works() {
+        let dc = parse_divecomputer("model \"Test\"\n  0:30 10.0m 200.0bar\n");
+        assert_eq!(dc.samples[0].pressure_bar, Some(200.0));
+    }
+
+    #[test]
+    fn depth_carries_forward_when_absent_from_sample() {
+        // A sample with no depth token should inherit the previous depth, not reset to 0.
+        let dc = parse_divecomputer("model \"Test\"\n  0:30 20.0m\n  1:00 24.0°C\n  1:30 15.0m\n");
+        assert_eq!(dc.samples[0].depth_m, 20.0);
+        assert_eq!(dc.samples[1].depth_m, 20.0, "depth must carry forward, not reset to 0");
+        assert_eq!(dc.samples[2].depth_m, 15.0);
     }
 
     #[test]

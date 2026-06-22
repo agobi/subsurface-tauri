@@ -25,4 +25,10 @@ describe("profile-scale", () => {
     expect(ascentRateClass({ timeSec: 0, depthM: 10 }, { timeSec: 60, depthM: 12 })).toBe("normal");
     expect(ascentRateClass({ timeSec: 0, depthM: 10 }, { timeSec: 60, depthM: 7 })).toBe("ok");
   });
+
+  it("returns normal (not fast) for same-timestamp consecutive samples", () => {
+    // Two samples at t=0 is common at dive start; must not produce an inflated rate.
+    expect(ascentRateClass({ timeSec: 0, depthM: 0 }, { timeSec: 0, depthM: 1 })).toBe("normal");
+    expect(ascentRateClass({ timeSec: 10, depthM: 5 }, { timeSec: 10, depthM: 4 })).toBe("normal");
+  });
 });

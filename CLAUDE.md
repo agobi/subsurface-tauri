@@ -68,15 +68,18 @@ npm run tauri android build
 
 ## Tauri IPC
 
-Three commands exposed from Rust to the frontend:
+Commands exposed from Rust to the frontend:
 
 | Command | Description |
 |---|---|
 | `startup_logbook` | Opens persisted path (or creates default at app_data_dir/logbook) |
 | `open_logbook { root }` | Saves `root` to store and parses it |
 | `new_logbook { root }` | Creates the dir, saves to store, and parses |
+| `open_recent_cloud_logbook { email }` | Opens cloud logbook using keychain credentials |
+| `open_cloud_logbook { email, password }` | Authenticates and clones cloud logbook |
+| `sync_cloud_logbook` | Pulls latest from cloud; preserves selected dive if still present |
 
-All return `Result<Logbook, String>` and call `spawn_blocking` for all `std::fs` work.
+All return `Result<OpenResult, String>` and call `spawn_blocking` for all `std::fs` work.
 The logbook path is persisted in `settings.json` via `tauri-plugin-store`.
 
 ## Type Contract
@@ -135,9 +138,24 @@ Platform-specific baselines are gitignored — only `*-linux.png` files are comm
 All AI-generated files contain `// AI-generated (Claude)` (Rust/TS) or
 `<!-- AI-generated (Claude) -->` (Svelte) near the top of the file.
 
+## Cloud Logbook
+
+The Subsurface cloud logbook is stored as a **git repository**. `lib.rs` identifies a
+cloud logbook by checking `p.join(".git").is_dir()` — this is intentional and correct.
+A local non-cloud logbook does not have a `.git` directory; only cloud-synced clones do.
+Do not flag this as a bug in code reviews.
+
+## Parser Notes
+
+**Sample carry-forward:** All optional sample fields (`temp_c`, `ndl_sec`, `tts_sec`,
+`cns`, `pressure_bar`, `depth_m`) carry forward from the previous sample when absent from
+a line. Only `time_sec` is required on every sample line.
+
+**Metric-only samples:** `parse_divecomputer.rs` parses only metric units in sample lines
+(m, bar, °C). Imperial sample tokens (ft, psi, °F) are silently ignored; the header
+`units` field still correctly reflects the logbook's unit system.
+
 ## Known Follow-ups
 
-- `ssrf_git/mod.rs:69/73` — unreadable Dive/Divecomputer files silently drop the dive
-  (`.ok()?` discards it). Should log a warning or surface the error.
-- Sample parsing in `parse_divecomputer.rs` is metric-only (m, bar, °C).
-  Imperial units (ft, psi, °F) in sample lines will be ignored.
+- Unreadable Dive/Divecomputer files silently drop the dive (`.ok()?` in `parse_dive_dir`).
+  Should log a warning or surface the error.
