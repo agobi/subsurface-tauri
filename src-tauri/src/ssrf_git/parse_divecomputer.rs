@@ -35,7 +35,7 @@ fn parse_sample_line(line: &str, carry: &mut Sample) -> Sample {
             carry.cns = Some(strip_unit(v));
         } else if tok.ends_with("bar") && !tok.contains('=') {
             // Tokens may be cylinder-indexed: "0:200.0bar" — take the value after the last colon.
-            carry.pressure_bar = Some(strip_unit(tok.split(':').last().unwrap_or(tok)));
+            carry.pressure_bar = Some(strip_unit(tok.split(':').next_back().unwrap_or(tok)));
         }
     }
     carry.clone()
