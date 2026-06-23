@@ -12,6 +12,7 @@ import {
   DEFAULT_DIVE_LIST_PREFS,
   type DiveListPrefs,
 } from "$lib/prefs.ts";
+import { ALL_COLS } from "$lib/diveListColumns.ts";
 
 describe("resolveTheme", () => {
   it("returns 'dark' directly", () => {
@@ -100,18 +101,40 @@ describe("saveAndEmitAppearance", () => {
 describe("loadDiveListPrefs", () => {
   afterEach(() => vi.resetAllMocks());
 
-  it("returns defaults when settings.json has no diveList key", async () => {
+  it("returns defaults with hiddenCols when settings.json has no diveList key", async () => {
     vi.mocked(store.load).mockResolvedValueOnce({
       get: vi.fn().mockResolvedValue(null),
       set: vi.fn(),
       save: vi.fn(),
     } as any);
     const prefs = await loadDiveListPrefs();
-    expect(prefs).toEqual(DEFAULT_DIVE_LIST_PREFS);
+    expect(prefs.hiddenCols).toEqual(expect.arrayContaining(["temp", "suit", "cylinder"]));
+    expect(prefs.colOrder.length).toBe(17);
   });
 
-  it("returns saved prefs when present", async () => {
-    const saved: DiveListPrefs = { sortKey: "depth", sortDir: "desc", colOrder: ["nr", "depth"] };
+  it("migrates old format (no hiddenCols): infers hiddenCols from absent ids", async () => {
+    const oldFormat = { sortKey: "nr" as const, sortDir: "asc" as const, colOrder: ["nr", "date", "depth"] };
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: vi.fn().mockResolvedValue(oldFormat),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    const prefs = await loadDiveListPrefs();
+    // All 17 ids must be present in colOrder after migration
+    expect(prefs.colOrder.length).toBe(ALL_COLS.length);
+    // The 3 visible ones must come first
+    expect(prefs.colOrder.slice(0, 3)).toEqual(["nr", "date", "depth"]);
+    // hiddenCols = every id that wasn't in the saved colOrder
+    const expectedHidden = ALL_COLS.map(c => c.id).filter(id => !oldFormat.colOrder.includes(id));
+    expect(prefs.hiddenCols.sort()).toEqual(expectedHidden.sort());
+  });
+
+  it("returns saved prefs unchanged when hiddenCols is already present", async () => {
+    const saved: DiveListPrefs = {
+      sortKey: "depth", sortDir: "desc",
+      colOrder: ["nr", "depth"],
+      hiddenCols: ["date"],
+    };
     vi.mocked(store.load).mockResolvedValueOnce({
       get: vi.fn().mockResolvedValue(saved),
       set: vi.fn(),
@@ -133,7 +156,11 @@ describe("saveDiveListPrefs", () => {
       set: mockSet,
       save: mockSave,
     } as any);
-    const prefs: DiveListPrefs = { sortKey: "depth", sortDir: "asc", colOrder: ["nr", "depth"] };
+    const prefs: DiveListPrefs = {
+      sortKey: "depth", sortDir: "asc",
+      colOrder: ["nr", "depth"],
+      hiddenCols: ["date"],
+    };
     await saveDiveListPrefs(prefs);
     expect(mockSet).toHaveBeenCalledWith("diveList", prefs);
     expect(mockSave).toHaveBeenCalled();
