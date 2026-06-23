@@ -1,9 +1,5 @@
 # Future Projects
 
-## High Priority
-
-- [ ] **Release workflow: Android APK/AAB** — extend the existing release workflow to include a signed Android build (`cargo tauri android build --release`) with keystore secrets configured in GitHub. Produce an APK/AAB artifact for distribution alongside the desktop binaries.
-
 ## Dive List Columns — Deferred
 
 These columns were scoped out of the initial sorting/columns implementation (2026-06-18)
@@ -56,5 +52,6 @@ The recents list is currently unbounded and entries can only be added, not remov
 
 ## Backlog
 
+- [ ] **Release workflow: signed Android APK/AAB** — debug APKs are already built and uploaded on release (see `release.yml`). Remaining: switch to `--release`, add keystore secrets, and optionally produce an AAB for Play Store. Only needed if Play Store distribution becomes a goal.
 - [ ] Imperial units support in `parse_divecomputer.rs` sample parsing (currently metric-only: m, bar, °C — ft, psi, °F sample lines are silently ignored)
 - [ ] Surface unreadable Dive/Divecomputer parse errors instead of silently dropping dives (`ssrf_git/mod.rs:69/73`)
