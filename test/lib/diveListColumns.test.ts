@@ -11,20 +11,25 @@ function makeDive(overrides: Partial<Dive> = {}): Dive {
 }
 
 describe("DEFAULT_COL_ORDER", () => {
-  it("contains 9 entries", () => expect(DEFAULT_COL_ORDER.length).toBe(9));
+  it("contains 17 entries", () => expect(DEFAULT_COL_ORDER.length).toBe(17));
   it("starts with nr and date", () => {
     expect(DEFAULT_COL_ORDER[0]).toBe("nr");
     expect(DEFAULT_COL_ORDER[1]).toBe("date");
+  });
+  it("contains all ColIds from ALL_COLS", () => {
+    const allIds = ALL_COLS.map(c => c.id);
+    expect(DEFAULT_COL_ORDER).toEqual(expect.arrayContaining(allIds));
+    expect(DEFAULT_COL_ORDER.length).toBe(allIds.length);
   });
 });
 
 describe("ALL_COLS", () => {
   it("contains 17 entries", () => expect(ALL_COLS.length).toBe(17));
-  it("every DEFAULT_COL_ORDER id is marked defaultVisible", () => {
-    for (const id of DEFAULT_COL_ORDER) {
-      const col = ALL_COLS.find(c => c.id === id)!;
-      expect(col.defaultVisible, `${id} should be defaultVisible`).toBe(true);
-    }
+  it("defaultVisible cols appear before non-defaultVisible cols in DEFAULT_COL_ORDER", () => {
+    const orders = DEFAULT_COL_ORDER.map(id => ALL_COLS.find(c => c.id === id)!.defaultVisible);
+    const firstHidden = orders.indexOf(false);
+    const lastVisible = orders.lastIndexOf(true);
+    expect(firstHidden).toBeGreaterThan(lastVisible);
   });
 });
 

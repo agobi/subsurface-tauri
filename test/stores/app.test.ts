@@ -94,22 +94,57 @@ describe("diveListPrefs", () => {
     expect(app.diveListPrefs.sortDir).toBe("asc");
   });
 
-  it("toggleColumn removes a visible column from colOrder", () => {
-    expect(app.diveListPrefs.colOrder).toContain("buddy");
+  it("toggleColumn hides a visible column (adds to hiddenCols, colOrder unchanged)", () => {
+    const orderBefore = [...app.diveListPrefs.colOrder];
     app.toggleColumn("buddy");
-    expect(app.diveListPrefs.colOrder).not.toContain("buddy");
+    expect(app.diveListPrefs.hiddenCols).toContain("buddy");
+    expect(app.diveListPrefs.colOrder).toEqual(orderBefore);
   });
 
-  it("toggleColumn adds a hidden column to end of colOrder", () => {
-    expect(app.diveListPrefs.colOrder).not.toContain("temp");
+  it("toggleColumn shows a hidden column (removes from hiddenCols, colOrder unchanged)", () => {
+    // "temp" starts hidden by default
+    const orderBefore = [...app.diveListPrefs.colOrder];
     app.toggleColumn("temp");
-    const order = app.diveListPrefs.colOrder;
-    expect(order).toContain("temp");
-    expect(order[order.length - 1]).toBe("temp");
+    expect(app.diveListPrefs.hiddenCols).not.toContain("temp");
+    expect(app.diveListPrefs.colOrder).toEqual(orderBefore);
   });
 
-  it("visibleCols returns ColDefs matching colOrder ids", () => {
-    expect(app.visibleCols.map(c => c.id)).toEqual(app.diveListPrefs.colOrder);
+  it("visibleCols excludes hiddenCols entries and preserves colOrder order", () => {
+    app.diveListPrefs = { ...app.diveListPrefs, hiddenCols: ["depth", "buddy"] };
+    const ids = app.visibleCols.map(c => c.id);
+    expect(ids).not.toContain("depth");
+    expect(ids).not.toContain("buddy");
+    // Visible ids must appear in same relative order as colOrder
+    const visibleFromOrder = app.diveListPrefs.colOrder.filter(id => !["depth", "buddy"].includes(id));
+    expect(ids).toEqual(visibleFromOrder);
+  });
+
+  it("reorderColumn moves fromId to toId position", () => {
+    // Set a simple known order
+    app.diveListPrefs = {
+      ...app.diveListPrefs,
+      colOrder: ["nr", "date", "depth", "duration", "buddy"],
+    };
+    app.reorderColumn("depth", "nr");
+    expect(app.diveListPrefs.colOrder).toEqual(["depth", "nr", "date", "duration", "buddy"]);
+  });
+
+  it("reorderColumn with same id is a no-op", () => {
+    const before = [...app.diveListPrefs.colOrder];
+    app.reorderColumn("nr", "nr");
+    expect(app.diveListPrefs.colOrder).toEqual(before);
+  });
+
+  it("reorderColumn with unknown fromId is a no-op", () => {
+    const before = [...app.diveListPrefs.colOrder];
+    app.reorderColumn("unknown" as any, "nr");
+    expect(app.diveListPrefs.colOrder).toEqual(before);
+  });
+
+  it("reorderColumn with unknown toId is a no-op", () => {
+    const before = [...app.diveListPrefs.colOrder];
+    app.reorderColumn("nr", "unknown" as any);
+    expect(app.diveListPrefs.colOrder).toEqual(before);
   });
 });
 

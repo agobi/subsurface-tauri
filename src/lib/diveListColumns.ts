@@ -25,6 +25,8 @@ export interface ColDef {
 export const DEFAULT_COL_ORDER: ColId[] = [
   "nr", "date", "rating", "depth", "duration",
   "buddy", "guide", "country", "location",
+  "temp", "suit", "cylinder", "sac", "tags",
+  "notes", "divemode", "weight",
 ];
 
 function gasMix(c?: Cylinder): string {
