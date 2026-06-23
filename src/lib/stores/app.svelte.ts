@@ -27,6 +27,7 @@ class AppStore {
   diveListPrefs = $state<DiveListPrefs>({
     ...DEFAULT_DIVE_LIST_PREFS,
     colOrder: [...DEFAULT_DIVE_LIST_PREFS.colOrder],
+    hiddenCols: [...DEFAULT_DIVE_LIST_PREFS.hiddenCols],
   });
 
   get dives(): Dive[] { return this.logbook.dives; }
@@ -38,7 +39,9 @@ class AppStore {
   get isMobile(): boolean { return this.platform === "mobile"; }
 
   get visibleCols(): ColDef[] {
+    const hidden = new Set(this.diveListPrefs.hiddenCols);
     return this.diveListPrefs.colOrder
+      .filter(id => !hidden.has(id))
       .map(id => ALL_COLS.find(c => c.id === id))
       .filter((c): c is ColDef => c != null);
   }
@@ -143,10 +146,27 @@ class AppStore {
   }
 
   async toggleColumn(id: ColId) {
+    const { hiddenCols } = this.diveListPrefs;
+    const next = hiddenCols.includes(id)
+      ? hiddenCols.filter(c => c !== id)
+      : [...hiddenCols, id];
+    this.diveListPrefs = { ...this.diveListPrefs, hiddenCols: next };
+    try {
+      await saveDiveListPrefs(this.diveListPrefs);
+    } catch (e) {
+      console.error("Failed to persist column preference:", e);
+    }
+  }
+
+  async reorderColumn(fromId: ColId, toId: ColId) {
+    if (fromId === toId) return;
     const { colOrder } = this.diveListPrefs;
-    const next = colOrder.includes(id)
-      ? colOrder.filter(c => c !== id)
-      : [...colOrder, id];
+    const fromIdx = colOrder.indexOf(fromId);
+    const toIdx = colOrder.indexOf(toId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const next = [...colOrder];
+    next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, fromId);
     this.diveListPrefs = { ...this.diveListPrefs, colOrder: next };
     try {
       await saveDiveListPrefs(this.diveListPrefs);
@@ -164,7 +184,11 @@ class AppStore {
     this.displayName = "";
     this.recents = [];
     this.showCloudDialog = false;
-    this.diveListPrefs = { ...DEFAULT_DIVE_LIST_PREFS, colOrder: [...DEFAULT_DIVE_LIST_PREFS.colOrder] };
+    this.diveListPrefs = {
+      ...DEFAULT_DIVE_LIST_PREFS,
+      colOrder: [...DEFAULT_DIVE_LIST_PREFS.colOrder],
+      hiddenCols: [...DEFAULT_DIVE_LIST_PREFS.hiddenCols],
+    };
   }
 }
 
