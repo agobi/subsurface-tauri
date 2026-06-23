@@ -59,8 +59,8 @@
   async function handleCloudSuccess(_email: string) {
     const cb = typeof app.showCloudDialog === "object" ? app.showCloudDialog.onSuccess : undefined;
     app.showCloudDialog = false;
-    await setWindowTitle();
-    cb?.();
+    try { await setWindowTitle(); } catch { /* title update failure must not block onSuccess */ }
+    await cb?.();
   }
 
   async function handleOpenRecent(entry: RecentEntry) {

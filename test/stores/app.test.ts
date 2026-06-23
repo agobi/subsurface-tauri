@@ -116,13 +116,21 @@ describe("diveListPrefs", () => {
 describe("sortedDives", () => {
   beforeEach(() => app.reset());
 
-  it("returns logbook dives unchanged when sortKey is nr", () => {
+  it("sorts by dive number ascending when sortKey is nr (default)", () => {
     app.logbook = {
-      dives: [makeDive({ number: 2, dateTime: "2024-02-01T00:00:00" }), makeDive({ number: 1, dateTime: "2024-01-01T00:00:00" })],
+      dives: [makeDive({ number: 3 }), makeDive({ number: 1 }), makeDive({ number: 2 })],
       trips: [], sites: [], units: "METRIC",
     };
-    expect(app.sortedDives[0].number).toBe(2);
-    expect(app.sortedDives[1].number).toBe(1);
+    expect(app.sortedDives.map(d => d.number)).toEqual([1, 2, 3]);
+  });
+
+  it("sorts by dive number descending when sortKey is nr and sortDir is desc", () => {
+    app.logbook = {
+      dives: [makeDive({ number: 3 }), makeDive({ number: 1 }), makeDive({ number: 2 })],
+      trips: [], sites: [], units: "METRIC",
+    };
+    app.setSortCol("nr"); // toggles asc→desc since "nr" is already the default sortKey
+    expect(app.sortedDives.map(d => d.number)).toEqual([3, 2, 1]);
   });
 
   it("sorts by depth ascending", () => {
@@ -235,5 +243,18 @@ describe("cloud logbook", () => {
     vi.mocked(invoke).mockResolvedValueOnce(openResult({ recents: localRecents }));
     await app.newLogbook("/some/new/path");
     expect(app.isCloudLogbook).toBe(false);
+  });
+
+  it("openRecent() with Cloud entry invokes open_recent_cloud_logbook (not showCloudDialog)", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ recents: cloudRecents }));
+    await app.openRecent({ kind: "Cloud", email: "user@example.com", url: "https://ssrf-cloud-eu.subsurface-divelog.org" });
+    expect(invoke).toHaveBeenCalledWith("open_recent_cloud_logbook", { email: "user@example.com" });
+    expect(app.showCloudDialog).toBe(false);
+  });
+
+  it("openRecent() with Local entry invokes open_logbook", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ recents: localRecents }));
+    await app.openRecent({ kind: "Local", path: "/some/local/path" });
+    expect(invoke).toHaveBeenCalledWith("open_logbook", { root: "/some/local/path" });
   });
 });

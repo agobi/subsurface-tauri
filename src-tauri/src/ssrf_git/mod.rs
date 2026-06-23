@@ -159,7 +159,10 @@ fn parse_trip_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
         (dir_name_label(dir_name), None)
     };
 
-    let Ok(entries) = std::fs::read_dir(dir) else { return None; };
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return Some((Trip { label, area: None, notes, dive_numbers: vec![] }, vec![])),
+    };
     let mut trip_dives: Vec<Dive> = entries
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_dir() && is_dive_dir(&e.file_name().to_string_lossy()))
@@ -372,6 +375,30 @@ mod tests {
         assert_eq!(lb.trips[0].label, "Egypt");
         assert_eq!(lb.trips[0].dive_numbers.len(), 0);
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn parse_trip_dir_read_dir_failure_returns_empty_trip_not_none() {
+        // When read_dir on the trip directory itself fails (e.g. permission denied),
+        // parse_trip_dir must return Some(empty trip) rather than None so the trip
+        // still appears in the logbook.
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = std::env::temp_dir().join("ssrf_test_trip_read_dir_fail");
+        let trip_dir = tmp.join("2024").join("03").join("08-RedSea");
+        std::fs::create_dir_all(&trip_dir).unwrap();
+        std::fs::write(trip_dir.join("00-Trip"), "location \"Red Sea\"\n").unwrap();
+        // Remove read+execute permission so read_dir fails.
+        std::fs::set_permissions(&trip_dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let lb = parse_logbook(&tmp);
+        // Restore permissions before asserting so cleanup always succeeds.
+        std::fs::set_permissions(&trip_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(&tmp).ok();
+
+        let lb = lb.unwrap();
+        assert_eq!(lb.trips.len(), 1, "trip must survive read_dir failure");
+        assert_eq!(lb.trips[0].dive_numbers.len(), 0);
     }
 
     #[test]
