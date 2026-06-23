@@ -124,6 +124,7 @@ async fn open_logbook(app: tauri::AppHandle, root: String) -> Result<OpenResult,
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let display_name = path_basename(&path);
     store.set("logbookPath", serde_json::json!(root));
+    store.save().map_err(|e| e.to_string())?;
     let recents = update_recents(&store, RecentEntry::Local { path: root })?;
 
     #[cfg(desktop)]
@@ -149,6 +150,7 @@ async fn new_logbook(app: tauri::AppHandle, root: String) -> Result<OpenResult, 
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let display_name = path_basename(&path);
     store.set("logbookPath", serde_json::json!(root));
+    store.save().map_err(|e| e.to_string())?;
     let recents = update_recents(&store, RecentEntry::Local { path: root })?;
 
     #[cfg(desktop)]

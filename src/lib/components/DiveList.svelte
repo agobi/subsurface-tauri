@@ -35,13 +35,14 @@
   let groupedNumbers = $derived(new Set(trips.flatMap(t => t.diveNumbers)));
   let ungrouped = $derived(filtered.filter(d => !groupedNumbers.has(d.number)));
   // Order trips by position of their first dive in filtered (inherits sortDir from sortedDives).
-  let sortedTrips = $derived(
-    [...trips].sort((a, b) => {
-      const ai = filtered.findIndex(d => a.diveNumbers.includes(d.number));
-      const bi = filtered.findIndex(d => b.diveNumbers.includes(d.number));
-      return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
-    })
-  );
+  let sortedTrips = $derived.by(() => {
+    const pos = new Map(filtered.map((d, i) => [d.number, i]));
+    return [...trips].sort((a, b) => {
+      const ai = a.diveNumbers.reduce((m, n) => Math.min(m, pos.get(n) ?? Infinity), Infinity);
+      const bi = b.diveNumbers.reduce((m, n) => Math.min(m, pos.get(n) ?? Infinity), Infinity);
+      return ai - bi;
+    });
+  });
   let collapsed = $state<Record<number, boolean>>({});
   function toggleTrip(key: number) { collapsed = { ...collapsed, [key]: !collapsed[key] }; }
 
@@ -54,7 +55,7 @@
       <button
         class="sort-hd"
         class:active={prefs.sortKey === col.id}
-        onclick={() => app.setSortCol(col.id)}>
+        onclick={() => void app.setSortCol(col.id)}>
         {col.label}{#if prefs.sortKey === col.id}{prefs.sortDir === "asc" ? " ↑" : " ↓"}{/if}
       </button>
     {/each}
@@ -72,7 +73,7 @@
   {#if prefs.sortKey === "nr"}
     {#each sortedTrips as t}
       {@const tds = tripDives(t)}
-      {@const tripKey = t.diveNumbers[0]}
+      {@const tripKey = t.diveNumbers[0] ?? `trip-${t.label}`}
       {#if tds.length}
         <button class="trip" onclick={() => toggleTrip(tripKey)}>
           <span class="tw">{collapsed[tripKey] ? "+" : "−"} {t.label}</span>
@@ -83,6 +84,11 @@
             {@render row(d, i, true)}
           {/each}
         {/if}
+      {:else}
+        <div class="trip trip--empty">
+          <span class="tw">− {t.label}</span>
+          <span class="cnt">(no dives parsed)</span>
+        </div>
       {/if}
     {/each}
     {#each ungrouped as d, i (d.number)}

@@ -1,10 +1,13 @@
 // AI-generated (Claude)
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/svelte";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "../../src/App.svelte";
 import { app } from "$lib/stores/app.svelte.ts";
+import sample from "$lib/fixtures/logbook.sample.json";
+import type { OpenResult } from "$lib/types.ts";
 
 describe("App — desktop cloud wiring", () => {
   beforeEach(() => {
@@ -57,5 +60,66 @@ describe("App — desktop cloud wiring", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /sync/i })).toBeInTheDocument()
     );
+  });
+});
+
+describe("App — handleCloudSuccess", () => {
+  function openResult(overrides: Partial<OpenResult> = {}): OpenResult {
+    return { logbook: sample as any, displayName: "test", recents: [], ...overrides };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Reset setTitle to a resolving mock between tests so implementations don't leak.
+    vi.mocked(getCurrentWindow).mockReturnValue({ setTitle: vi.fn().mockResolvedValue(undefined) } as any);
+    app.reset();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+  });
+
+  it("calls onSuccess even when setWindowTitle rejects", async () => {
+    // Startup's setWindowTitle call must succeed; only the handleCloudSuccess call fails.
+    const setTitle = vi.fn()
+      .mockResolvedValueOnce(undefined)               // startup
+      .mockRejectedValue(new Error("window gone"));   // handleCloudSuccess
+    vi.mocked(getCurrentWindow).mockReturnValue({ setTitle } as any);
+
+    const onSuccess = vi.fn().mockResolvedValue(undefined);
+    app.showCloudDialog = { email: "user@example.com", onSuccess };
+
+    // startup_logbook + get_cloud_credentials + open_cloud_logbook
+    vi.mocked(invoke).mockResolvedValue(openResult());
+
+    render(App);
+    await waitFor(() => screen.getByRole("dialog", { name: /open cloud notebook/i }));
+
+    await fireEvent.input(screen.getByLabelText(/email/i), { target: { value: "user@example.com" } });
+    await fireEvent.input(screen.getByLabelText(/password/i), { target: { value: "secret" } });
+    await fireEvent.click(screen.getByRole("button", { name: /open cloud/i }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
+  });
+
+  it("awaits async onSuccess before resolving", async () => {
+    const order: string[] = [];
+    const onSuccess = vi.fn().mockImplementation(async () => {
+      await new Promise(r => setTimeout(r, 0));
+      order.push("callback");
+    });
+    app.showCloudDialog = { email: "user@example.com", onSuccess };
+
+    vi.mocked(invoke).mockResolvedValue(openResult());
+
+    render(App);
+    await waitFor(() => screen.getByRole("dialog", { name: /open cloud notebook/i }));
+
+    await fireEvent.input(screen.getByLabelText(/email/i), { target: { value: "user@example.com" } });
+    await fireEvent.input(screen.getByLabelText(/password/i), { target: { value: "secret" } });
+    await fireEvent.click(screen.getByRole("button", { name: /open cloud/i }));
+
+    await waitFor(() => expect(order).toContain("callback"));
   });
 });

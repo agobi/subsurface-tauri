@@ -46,7 +46,7 @@ class AppStore {
   get sortedDives(): Dive[] {
     const { sortKey, sortDir } = this.diveListPrefs;
     if (sortKey === "nr") {
-      return sortDir === "asc" ? this.logbook.dives : [...this.logbook.dives].reverse();
+      return [...this.logbook.dives].sort((a, b) => sortDir === "asc" ? a.number - b.number : b.number - a.number);
     }
     const col = ALL_COLS.find(c => c.id === sortKey);
     if (!col) return this.logbook.dives;
@@ -117,7 +117,7 @@ class AppStore {
     if (entry.kind === "Local") {
       await this.open(entry.path);
     } else {
-      this.showCloudDialog = { email: entry.email };
+      await this.openRecentCloud(entry.email);
     }
   }
 
