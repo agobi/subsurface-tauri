@@ -9,7 +9,10 @@ import sample from "$lib/fixtures/logbook.sample.json";
 
 describe("QuadrantGrid wired to data", () => {
   beforeEach(async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ logbook: sample, displayName: "test", recents: [] } as unknown as OpenResult);
+    app.reset();
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({ logbook: sample, displayName: "test", recents: [] } as unknown as OpenResult)
+      .mockResolvedValueOnce((sample as any).dives[0]); // get_dive called by selectDive
     await app.startup();
   });
 

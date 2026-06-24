@@ -15,6 +15,7 @@
 
   let selected = $derived(app.selectedDive);
   let selectedSite = $derived(app.logbook.sites.find((s) => s.id === selected?.siteId));
+  let profileLoading = $derived(app.selectedDiveLoading);
 
   let p = $derived(app.visiblePanels);
   let allVisible = $derived(p.info && p.profile && p.list && p.map);
@@ -61,7 +62,7 @@
 {#snippet profilePanel()}
   <section class="quad" data-testid="quad-profile">
     <header class="panel-head"><span class="ttl">Profile</span></header>
-    <div class="body">{#if selected}<DiveProfile dive={selected} />{/if}</div>
+    <div class="body"><DiveProfile dive={selected} loading={profileLoading} /></div>
   </section>
 {/snippet}
 

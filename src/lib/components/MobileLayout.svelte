@@ -63,7 +63,7 @@
         </div>
       {:else if activeTab === "profile"}
         <div class="mobile-panel" data-testid="mobile-panel-profile">
-          {#if selected}<DiveProfile dive={selected} />{/if}
+          <DiveProfile dive={selected} loading={app.selectedDiveLoading} />
         </div>
       {:else if activeTab === "info"}
         <div class="mobile-panel" data-testid="mobile-panel-info">

@@ -127,10 +127,95 @@ pub struct Site {
     pub country: Option<String>,
 }
 
+/// All scalar fields from `Dive`; no samples or events. Serialized in `Logbook` and
+/// returned by every open command so the list view never crosses the IPC boundary with
+/// bulk sample arrays.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct DiveSummary {
+    pub number: i32,
+    pub date_time: String,
+    pub duration_sec: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub site_id: Option<String>,
+    pub tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dive_guide: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buddy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    pub cylinders: Vec<Cylinder>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dc_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_depth_m: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mean_depth_m: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water_temp_c: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deco_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub divemode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_weight_kg: Option<f64>,
+}
+
+impl From<&Dive> for DiveSummary {
+    fn from(d: &Dive) -> Self {
+        DiveSummary {
+            number: d.number,
+            date_time: d.date_time.clone(),
+            duration_sec: d.duration_sec,
+            site_id: d.site_id.clone(),
+            tags: d.tags.clone(),
+            rating: d.rating,
+            dive_guide: d.dive_guide.clone(),
+            buddy: d.buddy.clone(),
+            suit: d.suit.clone(),
+            notes: d.notes.clone(),
+            cylinders: d.cylinders.clone(),
+            dc_model: d.dc_model.clone(),
+            max_depth_m: d.max_depth_m,
+            mean_depth_m: d.mean_depth_m,
+            water_temp_c: d.water_temp_c,
+            deco_model: d.deco_model.clone(),
+            divemode: d.divemode.clone(),
+            total_weight_kg: d.total_weight_kg,
+        }
+    }
+}
+
+/// Internal parse result — holds full `Dive` objects with samples and events.
+/// Not serialized to IPC; converted to `Logbook` (with `DiveSummary`) before returning.
+#[derive(Clone, Debug)]
+pub struct ParsedLogbook {
+    pub dives: Vec<Dive>,
+    pub trips: Vec<Trip>,
+    pub sites: Vec<Site>,
+    pub units: String,
+}
+
+impl ParsedLogbook {
+    /// Splits into the full dive list (stored in managed state) and a summary-only `Logbook`
+    /// suitable for the IPC payload.
+    pub fn into_summary(self) -> (Vec<Dive>, Logbook) {
+        let summaries: Vec<DiveSummary> = self.dives.iter().map(DiveSummary::from).collect();
+        let logbook = Logbook { dives: summaries, trips: self.trips, sites: self.sites, units: self.units };
+        (self.dives, logbook)
+    }
+}
+
+/// Logbook as returned over IPC: dives are summaries only; samples/events are fetched on demand.
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Logbook {
-    pub dives: Vec<Dive>,
+    pub dives: Vec<DiveSummary>,
     pub trips: Vec<Trip>,
     pub sites: Vec<Site>,
     pub units: String,
@@ -217,5 +302,79 @@ mod tests {
         };
         let json = serde_json::to_string(&lb).unwrap();
         assert!(json.contains("\"units\":\"METRIC\""));
+    }
+
+    fn make_dive(number: i32) -> Dive {
+        Dive {
+            number,
+            date_time: "2024-06-15T09:00:00".to_owned(),
+            duration_sec: 2700,
+            site_id: Some("site-1".to_owned()),
+            tags: vec!["cold".to_owned()],
+            rating: Some(4),
+            dive_guide: None,
+            buddy: Some("Alice".to_owned()),
+            suit: None,
+            notes: Some("Great dive".to_owned()),
+            cylinders: vec![],
+            dc_model: Some("Shearwater Perdix".to_owned()),
+            max_depth_m: Some(30.5),
+            mean_depth_m: Some(15.0),
+            water_temp_c: Some(12.0),
+            deco_model: None,
+            divemode: None,
+            total_weight_kg: Some(8.0),
+            samples: vec![Sample { time_sec: 0, depth_m: 0.0, temp_c: None, ndl_sec: None, tts_sec: None, cns: None, pressure_bar: None }],
+            events: vec![],
+        }
+    }
+
+    #[test]
+    fn dive_summary_has_no_samples_or_events() {
+        let dive = make_dive(42);
+        let summary = DiveSummary::from(&dive);
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(!json.contains("samples"), "DiveSummary must not contain samples: {json}");
+        assert!(!json.contains("events"), "DiveSummary must not contain events: {json}");
+        assert!(json.contains("\"number\":42"), "number missing: {json}");
+        assert!(json.contains("\"dateTime\":"), "dateTime missing: {json}");
+        assert!(json.contains("\"maxDepthM\":30.5"), "maxDepthM missing: {json}");
+        assert!(json.contains("\"rating\":4"), "rating missing: {json}");
+    }
+
+    #[test]
+    fn dive_summary_from_copies_all_scalar_fields() {
+        let dive = make_dive(7);
+        let summary = DiveSummary::from(&dive);
+        assert_eq!(summary.number, dive.number);
+        assert_eq!(summary.date_time, dive.date_time);
+        assert_eq!(summary.duration_sec, dive.duration_sec);
+        assert_eq!(summary.site_id, dive.site_id);
+        assert_eq!(summary.tags, dive.tags);
+        assert_eq!(summary.rating, dive.rating);
+        assert_eq!(summary.buddy, dive.buddy);
+        assert_eq!(summary.notes, dive.notes);
+        assert_eq!(summary.dc_model, dive.dc_model);
+        assert_eq!(summary.max_depth_m, dive.max_depth_m);
+        assert_eq!(summary.water_temp_c, dive.water_temp_c);
+        assert_eq!(summary.total_weight_kg, dive.total_weight_kg);
+    }
+
+    #[test]
+    fn parsed_logbook_into_summary_splits_correctly() {
+        let d1 = make_dive(1);
+        let d2 = make_dive(2);
+        let parsed = ParsedLogbook {
+            dives: vec![d1.clone(), d2.clone()],
+            trips: vec![],
+            sites: vec![],
+            units: "METRIC".to_owned(),
+        };
+        let (full_dives, logbook) = parsed.into_summary();
+        assert_eq!(full_dives.len(), 2, "full dives count");
+        assert_eq!(logbook.dives.len(), 2, "summary dives count");
+        assert_eq!(full_dives[0].samples.len(), 1, "full dive retains samples");
+        assert_eq!(logbook.dives[0].number, 1);
+        assert_eq!(logbook.dives[1].number, 2);
     }
 }
