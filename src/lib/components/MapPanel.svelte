@@ -1,16 +1,59 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+  import L from 'leaflet';
+  import 'leaflet/dist/leaflet.css';
+  import { cachedTileLayer } from '$lib/map/cachedTileLayer.ts';
+
   let { siteName, gps }: { siteName?: string; gps?: { lat: number; lon: number } } = $props();
+
+  let mapEl: HTMLDivElement | undefined = $state(undefined);
+  let map: L.Map | undefined;
+  let marker: L.Marker | undefined;
+
+  const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  const ATTRIBUTION =
+    '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
+    '© <a href="https://carto.com/attributions">CARTO</a>';
+
+  $effect(() => {
+    if (!mapEl) {
+      if (map) { map.remove(); map = undefined; marker = undefined; }
+      return;
+    }
+    if (!gps) return;
+    if (!map) {
+      map = L.map(mapEl, { zoomControl: true });
+      cachedTileLayer(TILE_URL, { attribution: ATTRIBUTION }).addTo(map);
+      map.setView([gps.lat, gps.lon], 13);
+      const icon = L.divIcon({
+        className: '',
+        html: '<div class="lf-marker"></div>',
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+        popupAnchor: [0, -7],
+      });
+      marker = L.marker([gps.lat, gps.lon], { icon }).addTo(map);
+      if (siteName) marker.bindPopup(siteName);
+    } else {
+      map.flyTo([gps.lat, gps.lon], 13);
+      marker?.setLatLng([gps.lat, gps.lon]);
+    }
+  });
+
+  onDestroy(() => {
+    map?.remove();
+  });
 </script>
 
 <div class="map">
-  {#if siteName}
-    <svg viewBox="0 0 400 240" role="img" aria-label="Stylized map">
-      <rect width="400" height="240" fill="var(--panel-2)" />
-      <path d="M0 160 Q100 140 200 160 T400 150" fill="none" stroke="var(--aqua)" stroke-opacity="0.4" />
-      <circle data-testid="map-marker" cx="200" cy="120" r="7" fill="var(--rate-fast)" stroke="#fff" stroke-width="2" />
-    </svg>
-    <div class="cap">{siteName}{#if gps} <span class="tnum">({gps.lat.toFixed(3)}, {gps.lon.toFixed(3)})</span>{/if}</div>
+  {#if gps}
+    <div class="map-inner" bind:this={mapEl}></div>
+    <div class="cap">
+      {siteName ?? ''}<span class="tnum">&nbsp;({gps.lat.toFixed(3)}, {gps.lon.toFixed(3)})</span>
+    </div>
+  {:else if siteName}
+    <div class="empty">No GPS for this site</div>
   {:else}
     <div class="empty">No site for this dive</div>
   {/if}
@@ -18,7 +61,24 @@
 
 <style>
   .map { height: 100%; display: flex; flex-direction: column; }
-  .map svg { flex: 1; min-height: 0; }
-  .cap { padding: var(--space-2) var(--space-3); font-size: 12px; color: var(--txt-2); border-top: 1px solid var(--hair); }
+  .map-inner { flex: 1; min-height: 0; }
+  .cap {
+    padding: var(--space-2) var(--space-3);
+    font-size: 12px;
+    color: var(--txt-2);
+    border-top: 1px solid var(--hair);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tnum { color: var(--txt-3); }
   .empty { margin: auto; color: var(--txt-3); font-size: 12px; }
+  :global(.lf-marker) {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #39C2E0;
+    border: 2px solid #fff;
+    box-sizing: border-box;
+  }
 </style>
