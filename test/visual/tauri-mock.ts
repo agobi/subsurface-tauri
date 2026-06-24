@@ -24,6 +24,11 @@ export async function invoke<T>(cmd: string, _args?: unknown): Promise<T> {
       return fixtureResult() as T;
     case 'new_logbook':
       return { logbook: EMPTY, displayName: '', recents: [] } as T;
+    case 'get_dive': {
+      const args = _args as { number: number } | undefined;
+      const dive = fixtureLogbook().dives.find(d => d.number === args?.number);
+      return (dive ?? null) as T;
+    }
     default:
       return null as T;
   }

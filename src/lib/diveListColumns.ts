@@ -86,7 +86,7 @@ export const ALL_COLS: ColDef[] = [
     compare: (a, b) => (a.buddy ?? "").localeCompare(b.buddy ?? ""),
   },
   {
-    id: "guide", label: "DiveSummary guide", width: "1fr", defaultVisible: true,
+    id: "guide", label: "Dive guide", width: "1fr", defaultVisible: true,
     render: (d) => d.diveGuide ?? "—",
     compare: (a, b) => (a.diveGuide ?? "").localeCompare(b.diveGuide ?? ""),
   },
@@ -134,7 +134,7 @@ export const ALL_COLS: ColDef[] = [
     compare: (a, b) => (a.notes ?? "").localeCompare(b.notes ?? ""),
   },
   {
-    id: "divemode", label: "DiveSummarymode", width: "72px", defaultVisible: false,
+    id: "divemode", label: "Divemode", width: "72px", defaultVisible: false,
     render: (d) => d.divemode ?? "—",
     compare: (a, b) => (a.divemode ?? "").localeCompare(b.divemode ?? ""),
   },
