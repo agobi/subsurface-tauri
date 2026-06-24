@@ -1,6 +1,6 @@
 // AI-generated (Claude)
 import { invoke } from "@tauri-apps/api/core";
-import type { Logbook, Dive, OpenResult, RecentEntry } from "$lib/types.ts";
+import type { Logbook, Dive, DiveSummary, OpenResult, RecentEntry } from "$lib/types.ts";
 import type { DiveListPrefs } from "$lib/prefs.ts";
 import { DEFAULT_DIVE_LIST_PREFS, loadDiveListPrefs, saveDiveListPrefs } from "$lib/prefs.ts";
 import type { ColId, ColDef, RenderCtx } from "$lib/diveListColumns.ts";
@@ -17,6 +17,8 @@ const EMPTY_LOGBOOK: Logbook = { dives: [], trips: [], sites: [], units: "METRIC
 class AppStore {
   logbook = $state<Logbook>({ ...EMPTY_LOGBOOK });
   selectedDiveId = $state<number | null>(null);
+  selectedDive = $state<Dive | null>(null);
+  selectedDiveLoading = $state(false);
   visiblePanels = $state<VisiblePanels>({ ...ALL_VISIBLE });
   theme = $state<Theme>("auto");
   platform = $state<Platform>("desktop");
@@ -30,11 +32,7 @@ class AppStore {
     hiddenCols: [...DEFAULT_DIVE_LIST_PREFS.hiddenCols],
   });
 
-  get dives(): Dive[] { return this.logbook.dives; }
-
-  get selectedDive(): Dive | undefined {
-    return this.logbook.dives.find((d) => d.number === this.selectedDiveId);
-  }
+  get dives(): DiveSummary[] { return this.logbook.dives; }
 
   get isMobile(): boolean { return this.platform === "mobile"; }
 
@@ -46,7 +44,7 @@ class AppStore {
       .filter((c): c is ColDef => c != null);
   }
 
-  get sortedDives(): Dive[] {
+  get sortedDives(): DiveSummary[] {
     const { sortKey, sortDir } = this.diveListPrefs;
     if (sortKey === "nr") {
       return [...this.logbook.dives].sort((a, b) => sortDir === "asc" ? a.number - b.number : b.number - a.number);
@@ -65,13 +63,25 @@ class AppStore {
     });
   }
 
+  async selectDive(number: number | null): Promise<void> {
+    this.selectedDiveId = number;
+    this.selectedDive = null;
+    if (number === null) return;
+    this.selectedDiveLoading = true;
+    try {
+      this.selectedDive = await invoke<Dive>("get_dive", { number });
+    } finally {
+      this.selectedDiveLoading = false;
+    }
+  }
+
   async startup(): Promise<void> {
     const result = await invoke<OpenResult>("startup_logbook");
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
-    this.selectedDiveId = result.logbook.dives[0]?.number ?? null;
     this.diveListPrefs = await loadDiveListPrefs();
+    await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
   async open(root: string): Promise<void> {
@@ -79,7 +89,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
-    this.selectedDiveId = result.logbook.dives[0]?.number ?? null;
+    await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
   async newLogbook(root: string): Promise<void> {
@@ -87,7 +97,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
-    this.selectedDiveId = result.logbook.dives[0]?.number ?? null;
+    await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
   async openRecentCloud(email: string): Promise<void> {
@@ -95,7 +105,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
-    this.selectedDiveId = result.logbook.dives[0]?.number ?? null;
+    await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
   async openCloud(email: string, password: string): Promise<void> {
@@ -103,7 +113,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
-    this.selectedDiveId = result.logbook.dives[0]?.number ?? null;
+    await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
   async syncCloud(): Promise<void> {
@@ -113,7 +123,7 @@ class AppStore {
     this.displayName = result.displayName;
     this.recents = result.recents;
     const stillExists = result.logbook.dives.some((d) => d.number === currentId);
-    this.selectedDiveId = stillExists ? currentId : (result.logbook.dives[0]?.number ?? null);
+    await this.selectDive(stillExists ? currentId : (result.logbook.dives[0]?.number ?? null));
   }
 
   async openRecent(entry: RecentEntry): Promise<void> {
@@ -178,6 +188,8 @@ class AppStore {
   reset() {
     this.logbook = { ...EMPTY_LOGBOOK };
     this.selectedDiveId = null;
+    this.selectedDive = null;
+    this.selectedDiveLoading = false;
     this.visiblePanels = { ...ALL_VISIBLE };
     this.theme = "auto";
     this.platform = "desktop";

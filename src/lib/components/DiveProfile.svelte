@@ -1,10 +1,10 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
-  import type { Dive } from "$lib/types.ts";
+  import type { Dive, Sample } from "$lib/types.ts";
   import { timeToX, depthToY, depthAxisMax, ascentRateClass } from "$lib/profile/profile-scale.ts";
   import { fmtMinSec } from "$lib/format.ts";
 
-  let { dive }: { dive: Dive } = $props();
+  let { dive, loading = false }: { dive: Dive | null; loading?: boolean } = $props();
 
   const VB = { w: 1000, h: 380 };
   const M = { l: 44, r: 18, t: 24, b: 34 };
@@ -12,17 +12,18 @@
 
   let series = $state({ depth: true, temp: true, tank: true, ceiling: true, po2: false, mod: false, hr: false });
 
-  let maxTime = $derived(dive.samples.length ? dive.samples[dive.samples.length - 1].timeSec : 1);
+  let samples = $derived(dive?.samples ?? []);
+  let maxTime = $derived(samples.length ? samples[samples.length - 1].timeSec : 1);
   let axisMax = $derived.by(() => {
-    if (dive.maxDepthM != null) return depthAxisMax(dive.maxDepthM);
+    if (dive?.maxDepthM != null) return depthAxisMax(dive.maxDepthM);
     let max = 0;
-    for (const s of dive.samples) if (s.depthM > max) max = s.depthM;
+    for (const s of samples) if (s.depthM > max) max = s.depthM;
     return depthAxisMax(max);
   });
 
   let depthSegments = $derived(
-    dive.samples.slice(1).map((s, i) => {
-      const prev = dive.samples[i];
+    samples.slice(1).map((s, i) => {
+      const prev = samples[i];
       return {
         x1: timeToX(prev.timeSec, maxTime, plot), y1: depthToY(prev.depthM, axisMax, plot),
         x2: timeToX(s.timeSec, maxTime, plot), y2: depthToY(s.depthM, axisMax, plot),
@@ -31,19 +32,19 @@
     })
   );
 
-  let cursor = $state<{ x: number; sample: typeof dive.samples[number] } | null>(null);
+  let cursor = $state<{ x: number; sample: Sample } | null>(null);
   $effect(() => {
     dive; // reset crosshair whenever the displayed dive changes
     cursor = null;
   });
   function onMove(e: MouseEvent) {
-    if (dive.samples.length === 0) return;
+    if (samples.length === 0) return;
     const svg = e.currentTarget as unknown as SVGSVGElement;
     const r = svg.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width) * VB.w;
     const t = ((px - plot.x0) / (plot.x1 - plot.x0)) * maxTime;
-    let nearest = dive.samples[0];
-    for (const s of dive.samples) if (Math.abs(s.timeSec - t) < Math.abs(nearest.timeSec - t)) nearest = s;
+    let nearest = samples[0];
+    for (const s of samples) if (Math.abs(s.timeSec - t) < Math.abs(nearest.timeSec - t)) nearest = s;
     cursor = { x: timeToX(nearest.timeSec, maxTime, plot), sample: nearest };
   }
 
@@ -60,6 +61,11 @@
   function gridLines(max: number) { const out: number[] = []; for (let m = 0; m <= max; m += 5) out.push(m); return out; }
 </script>
 
+{#if loading}
+  <div class="profile-state"><span class="spinner" aria-label="Loading dive profile…"></span></div>
+{:else if dive === null}
+  <div class="profile-state"></div>
+{:else}
 <div class="profile">
   <div class="ptoolbar">
     {#each toggles as t}
@@ -85,7 +91,7 @@
     {/each}
 
     {#if series.depth}
-      <path d={`M ${plot.x0} ${plot.y0} ` + dive.samples.map((s) => `L ${timeToX(s.timeSec, maxTime, plot)} ${depthToY(s.depthM, axisMax, plot)}`).join(" ") + ` L ${plot.x1} ${plot.y0} Z`} fill="url(#water)" />
+      <path d={`M ${plot.x0} ${plot.y0} ` + samples.map((s) => `L ${timeToX(s.timeSec, maxTime, plot)} ${depthToY(s.depthM, axisMax, plot)}`).join(" ") + ` L ${plot.x1} ${plot.y0} Z`} fill="url(#water)" />
       {#each depthSegments as seg}
         <line x1={seg.x1} y1={seg.y1} x2={seg.x2} y2={seg.y2} stroke-width="2"
           stroke={seg.cls === "fast" ? "var(--rate-fast)" : seg.cls === "ok" ? "var(--rate-ok)" : "var(--aqua)"}
@@ -95,12 +101,12 @@
 
     {#if series.temp}
       <polyline fill="none" stroke="var(--teal)" stroke-width="1.5"
-        points={dive.samples.filter((s) => s.tempC != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - Math.max(0, Math.min(1, (s.tempC ?? 0) / 40)) * (plot.y1 - plot.y0)}`).join(" ")} />
+        points={samples.filter((s) => s.tempC != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - Math.max(0, Math.min(1, (s.tempC ?? 0) / 40)) * (plot.y1 - plot.y0)}`).join(" ")} />
     {/if}
 
     {#if series.tank}
       <polyline fill="none" stroke="var(--amber)" stroke-width="1.5"
-        points={dive.samples.filter((s) => s.pressureBar != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - Math.max(0, Math.min(1, (s.pressureBar ?? 0) / 250)) * (plot.y1 - plot.y0)}`).join(" ")} />
+        points={samples.filter((s) => s.pressureBar != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - Math.max(0, Math.min(1, (s.pressureBar ?? 0) / 250)) * (plot.y1 - plot.y0)}`).join(" ")} />
     {/if}
 
     {#if cursor}
@@ -120,8 +126,12 @@
     <span><i class="sw" style="background:var(--teal)"></i>Temp</span>
   </div>
 </div>
+{/if}
 
 <style>
+  .profile-state { display: flex; align-items: center; justify-content: center; height: 100%; }
+  .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid var(--hair); border-top-color: var(--aqua); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .profile { position: relative; display: flex; height: 100%; }
   .ptoolbar { display: flex; flex-direction: column; gap: 4px; padding: var(--space-2); border-right: 1px solid var(--hair); }
   .ptog { height: 26px; padding: 0 8px; border: 1px solid var(--hair); border-radius: 5px; background: var(--panel-2); color: var(--txt-3); font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }

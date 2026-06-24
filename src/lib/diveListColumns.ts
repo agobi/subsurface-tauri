@@ -1,5 +1,5 @@
 // AI-generated (Claude)
-import type { Dive, Site, Cylinder } from "$lib/types.ts";
+import type { DiveSummary, Site, Cylinder } from "$lib/types.ts";
 import { fmtMinSec } from "$lib/format.ts";
 
 export type ColId =
@@ -17,9 +17,9 @@ export interface ColDef {
   label: string;
   width: string;
   defaultVisible: boolean;
-  render: (d: Dive, ctx: RenderCtx) => string;
+  render: (d: DiveSummary, ctx: RenderCtx) => string;
   // missing values sort last in both asc and desc — enforced by AppStore.sortedDives
-  compare: (a: Dive, b: Dive, ctx: RenderCtx) => number;
+  compare: (a: DiveSummary, b: DiveSummary, ctx: RenderCtx) => number;
 }
 
 export const DEFAULT_COL_ORDER: ColId[] = [
@@ -38,7 +38,7 @@ function gasMix(c?: Cylinder): string {
   return `EAN${Math.round(o2)}`;
 }
 
-function sacRaw(d: Dive): number | null {
+function sacRaw(d: DiveSummary): number | null {
   const cyl = d.cylinders[0];
   if (!cyl || cyl.startBar == null || cyl.endBar == null || cyl.volumeL == null || d.meanDepthM == null) return null;
   const durationMin = d.durationSec / 60;
@@ -46,11 +46,11 @@ function sacRaw(d: Dive): number | null {
   return (cyl.startBar - cyl.endBar) * cyl.volumeL / durationMin / (d.meanDepthM / 10 + 1);
 }
 
-function lookupSiteName(d: Dive, sites: Site[]): string {
+function lookupSiteName(d: DiveSummary, sites: Site[]): string {
   return sites.find(s => s.id === d.siteId)?.name ?? "—";
 }
 
-function lookupCountry(d: Dive, sites: Site[]): string {
+function lookupCountry(d: DiveSummary, sites: Site[]): string {
   return sites.find(s => s.id === d.siteId)?.country ?? "—";
 }
 

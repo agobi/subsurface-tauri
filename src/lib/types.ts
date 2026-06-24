@@ -33,14 +33,14 @@ export interface DiveEvent {
   o2Percent?: number;
 }
 
-export interface Dive {
-  number: number;        // from Dive-NNN filename
-  dateTime: string;      // ISO 8601, from the dive directory name
+export interface DiveSummary {
+  number: number;
+  dateTime: string;
   durationSec: number;
-  siteId?: string;       // divesiteid (hex, no 0x)
+  siteId?: string;
   tags: string[];
-  rating?: number;       // 0..5
-  diveGuide?: string;    // "divemaster" line
+  rating?: number;
+  diveGuide?: string;
   buddy?: string;
   suit?: string;
   notes?: string;
@@ -49,9 +49,12 @@ export interface Dive {
   maxDepthM?: number;
   meanDepthM?: number;
   waterTempC?: number;
-  decoModel?: string;    // keyvalue "Deco model", e.g. "GF 55/85"
-  divemode?: string;     // dctype, e.g. "CCR", "OC"
+  decoModel?: string;
+  divemode?: string;
   totalWeightKg?: number;
+}
+
+export interface Dive extends DiveSummary {
   samples: Sample[];
   events: DiveEvent[];
 }
@@ -73,7 +76,7 @@ export interface Site {
 }
 
 export interface Logbook {
-  dives: Dive[];
+  dives: DiveSummary[];
   trips: Trip[];
   sites: Site[];
   units: Units;

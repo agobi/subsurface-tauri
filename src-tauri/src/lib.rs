@@ -5,8 +5,9 @@ mod cloud;
 mod ssrf_git;
 mod types;
 
+use std::sync::Mutex;
 use tauri_plugin_store::StoreExt;
-use types::{OpenResult, RecentEntry};
+use types::{Dive, OpenResult, RecentEntry};
 
 fn validate_logbook_path(path: &std::path::Path) -> Result<(), String> {
     use std::path::Component;
@@ -51,7 +52,10 @@ pub(crate) fn update_recents(
 }
 
 #[tauri::command]
-async fn startup_logbook(app: tauri::AppHandle) -> Result<OpenResult, String> {
+async fn startup_logbook(
+    app: tauri::AppHandle,
+    dives_state: tauri::State<'_, Mutex<Vec<Dive>>>,
+) -> Result<OpenResult, String> {
     use tauri::Manager;
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
 
@@ -100,9 +104,12 @@ async fn startup_logbook(app: tauri::AppHandle) -> Result<OpenResult, String> {
     let recents = update_recents(&store, entry)?;
 
     let root_clone = root.clone();
-    let logbook = tauri::async_runtime::spawn_blocking(move || crate::ssrf_git::parse_logbook(&root_clone))
+    let parsed = tauri::async_runtime::spawn_blocking(move || crate::ssrf_git::parse_logbook(&root_clone))
         .await
         .map_err(|e| e.to_string())??;
+
+    let (full_dives, logbook) = parsed.into_summary();
+    *dives_state.lock().map_err(|e| e.to_string())? = full_dives;
 
     #[cfg(desktop)]
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
@@ -111,15 +118,22 @@ async fn startup_logbook(app: tauri::AppHandle) -> Result<OpenResult, String> {
 }
 
 #[tauri::command]
-async fn open_logbook(app: tauri::AppHandle, root: String) -> Result<OpenResult, String> {
+async fn open_logbook(
+    app: tauri::AppHandle,
+    root: String,
+    dives_state: tauri::State<'_, Mutex<Vec<Dive>>>,
+) -> Result<OpenResult, String> {
     let path = std::path::PathBuf::from(&root);
     validate_logbook_path(&path)?;
 
     // Parse first — nothing is persisted until we know the logbook is readable.
     let path_clone = path.clone();
-    let logbook = tauri::async_runtime::spawn_blocking(move || crate::ssrf_git::parse_logbook(&path_clone))
+    let parsed = tauri::async_runtime::spawn_blocking(move || crate::ssrf_git::parse_logbook(&path_clone))
         .await
         .map_err(|e| e.to_string())??;
+
+    let (full_dives, logbook) = parsed.into_summary();
+    *dives_state.lock().map_err(|e| e.to_string())? = full_dives;
 
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let display_name = path_basename(&path);
@@ -134,19 +148,26 @@ async fn open_logbook(app: tauri::AppHandle, root: String) -> Result<OpenResult,
 }
 
 #[tauri::command]
-async fn new_logbook(app: tauri::AppHandle, root: String) -> Result<OpenResult, String> {
+async fn new_logbook(
+    app: tauri::AppHandle,
+    root: String,
+    dives_state: tauri::State<'_, Mutex<Vec<Dive>>>,
+) -> Result<OpenResult, String> {
     let path = std::path::PathBuf::from(&root);
     validate_logbook_path(&path)?;
 
     // Create dir and parse first — nothing is persisted until we know the path is good.
     let path_clone = path.clone();
-    let logbook = tauri::async_runtime::spawn_blocking(move || {
+    let parsed = tauri::async_runtime::spawn_blocking(move || {
         std::fs::create_dir_all(&path_clone).map_err(|e| e.to_string())?;
         crate::ssrf_git::parse_logbook(&path_clone)
     })
     .await
     .map_err(|e| e.to_string())??;
 
+    let (full_dives, logbook) = parsed.into_summary();
+    *dives_state.lock().map_err(|e| e.to_string())? = full_dives;
+
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let display_name = path_basename(&path);
     store.set("logbookPath", serde_json::json!(root));
@@ -157,6 +178,19 @@ async fn new_logbook(app: tauri::AppHandle, root: String) -> Result<OpenResult, 
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
 
     Ok(OpenResult { logbook, display_name, recents })
+}
+
+#[tauri::command]
+async fn get_dive(
+    number: i32,
+    dives_state: tauri::State<'_, Mutex<Vec<Dive>>>,
+) -> Result<Dive, String> {
+    let guard = dives_state.lock().map_err(|e| e.to_string())?;
+    guard
+        .iter()
+        .find(|d| d.number == number)
+        .cloned()
+        .ok_or_else(|| format!("dive {} not found", number))
 }
 
 #[tauri::command]
@@ -171,6 +205,7 @@ async fn get_recents(app: tauri::AppHandle) -> Result<Vec<RecentEntry>, String> 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        .manage(Mutex::new(Vec::<Dive>::new()))
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -198,6 +233,7 @@ pub fn run() {
             startup_logbook,
             open_logbook,
             new_logbook,
+            get_dive,
             get_recents,
             cloud::get_cloud_credentials,
             cloud::open_cloud_logbook,

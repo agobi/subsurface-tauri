@@ -11,7 +11,7 @@ use parse_site::parse_site;
 use parse_dive::parse_dive;
 use parse_divecomputer::parse_divecomputer;
 use tokenize::unquote;
-use crate::types::{Dive, Logbook, Site, Trip};
+use crate::types::{Dive, ParsedLogbook, Site, Trip};
 
 fn is_year(s: &str) -> bool { s.len() == 4 && s.chars().all(|c| c.is_ascii_digit()) }
 fn is_month(s: &str) -> bool { s.len() == 2 && s.chars().all(|c| c.is_ascii_digit()) }
@@ -178,7 +178,7 @@ fn parse_trip_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
     Some((Trip { label, area: None, notes, dive_numbers }, trip_dives))
 }
 
-pub fn parse_logbook(root: &Path) -> Result<Logbook, String> {
+pub fn parse_logbook(root: &Path) -> Result<ParsedLogbook, String> {
     let header_path = root.join("00-Subsurface");
     let units = if header_path.exists() {
         parse_header(&read_file(&header_path)?)
@@ -226,7 +226,7 @@ pub fn parse_logbook(root: &Path) -> Result<Logbook, String> {
 
     dives.sort_by(|a, b| a.date_time.cmp(&b.date_time));
 
-    Ok(Logbook { dives, trips, sites, units })
+    Ok(ParsedLogbook { dives, trips, sites, units })
 }
 
 #[cfg(test)]

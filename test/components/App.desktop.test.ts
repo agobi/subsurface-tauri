@@ -90,8 +90,12 @@ describe("App — handleCloudSuccess", () => {
     const onSuccess = vi.fn().mockResolvedValue(undefined);
     app.showCloudDialog = { email: "user@example.com", onSuccess };
 
-    // startup_logbook + get_cloud_credentials + open_cloud_logbook
-    vi.mocked(invoke).mockResolvedValue(openResult());
+    // startup_logbook + get_dive + get_cloud_credentials + open_cloud_logbook + get_dive
+    const sampleDive = (sample as any).dives[0];
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_dive") return sampleDive;
+      return openResult();
+    });
 
     render(App);
     await waitFor(() => screen.getByRole("dialog", { name: /open cloud notebook/i }));
@@ -111,7 +115,11 @@ describe("App — handleCloudSuccess", () => {
     });
     app.showCloudDialog = { email: "user@example.com", onSuccess };
 
-    vi.mocked(invoke).mockResolvedValue(openResult());
+    const sampleDive = (sample as any).dives[0];
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_dive") return sampleDive;
+      return openResult();
+    });
 
     render(App);
     await waitFor(() => screen.getByRole("dialog", { name: /open cloud notebook/i }));

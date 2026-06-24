@@ -32,11 +32,12 @@ describe("logbook loading via IPC", () => {
     expect(app.selectedDiveId).toBeNull();
   });
 
-  it("selectedDive returns the dive matching selectedDiveId", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(openResult());
+  it("selectedDive is populated after startup() calls selectDive()", async () => {
+    const sampleDive = (sample as any).dives[0];
+    vi.mocked(invoke)
+      .mockResolvedValueOnce(openResult())  // startup_logbook
+      .mockResolvedValueOnce(sampleDive);   // get_dive called by selectDive
     await app.startup();
-    const first = app.logbook.dives[0];
-    app.selectedDiveId = first.number;
-    expect(app.selectedDive?.number).toBe(first.number);
+    expect(app.selectedDive?.number).toBe(sampleDive.number);
   });
 });

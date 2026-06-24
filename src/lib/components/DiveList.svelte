@@ -1,13 +1,13 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
-  import type { Dive, Trip, Site } from "$lib/types.ts";
+  import type { DiveSummary, Trip, Site } from "$lib/types.ts";
   import type { RenderCtx } from "$lib/diveListColumns.ts";
   import { ALL_COLS } from "$lib/diveListColumns.ts";
   import { app } from "$lib/stores/app.svelte.ts";
   import ColumnPicker from "$lib/components/ColumnPicker.svelte";
 
   let { dives, trips, sites, query = "" }: {
-    dives: Dive[];
+    dives: DiveSummary[];
     trips: Trip[];
     sites: Site[];
     query?: string;
@@ -101,7 +101,7 @@
   {/if}
 </div>
 
-{#snippet row(d: Dive, i: number, inTrip = false)}
+{#snippet row(d: DiveSummary, i: number, inTrip = false)}
   <div
     class="dl-row"
     data-testid="dive-row"
@@ -111,8 +111,8 @@
     class:sel={app.selectedDiveId === d.number}
     role="button"
     tabindex="0"
-    onclick={() => (app.selectedDiveId = d.number)}
-    onkeydown={(e) => e.key === "Enter" && (app.selectedDiveId = d.number)}>
+    onclick={() => void app.selectDive(d.number)}
+    onkeydown={(e) => e.key === "Enter" && void app.selectDive(d.number)}>
     {#each visibleCols as col}
       <span
         class:tnum={numericCols.has(col.id)}
