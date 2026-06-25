@@ -3,9 +3,9 @@ fn main() {
     tauri_build::build();
 
     // Build libdivecomputer as a static library via CMake.
-    // CMakeLists.txt is in src-tauri/libdc/ (created alongside the submodule
-    // because the Subsurface-DS9 branch uses autotools, not cmake).
-    let dst = cmake::Config::new("libdc")
+    // CMakeLists.txt is in src-tauri/libdc-cmake/ (tracked in the parent repo).
+    // The actual C sources live in the sibling libdc/ git submodule.
+    let dst = cmake::Config::new("libdc-cmake")
         .define("LIBDC_WITH_TESTS", "OFF")
         .build();
 
@@ -16,18 +16,15 @@ fn main() {
     println!("cargo:rustc-link-lib=static=divecomputer");
 
     // Platform system libs required by libdivecomputer.
-    #[cfg(target_os = "linux")]
-    {
+    // Use CARGO_CFG_TARGET_OS for cross-compilation correctness.
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "linux" {
         println!("cargo:rustc-link-lib=udev");
         println!("cargo:rustc-link-lib=usb-1.0");
-    }
-    #[cfg(target_os = "macos")]
-    {
+    } else if target_os == "macos" {
         println!("cargo:rustc-link-lib=framework=IOKit");
         println!("cargo:rustc-link-lib=framework=CoreFoundation");
-    }
-    #[cfg(target_os = "windows")]
-    {
+    } else if target_os == "windows" {
         println!("cargo:rustc-link-lib=setupapi");
         println!("cargo:rustc-link-lib=hid");
     }
@@ -37,9 +34,10 @@ fn main() {
     // We pass that directory first so bindgen can resolve the generated header.
     let dst_include = format!("{}/include", dst.display());
     let bindings = bindgen::Builder::default()
-        .header("libdc/include/libdivecomputer.h")
+        .header("libdc-cmake/include/libdivecomputer.h")
         .clang_arg(format!("-I{}", dst_include))
         .clang_arg("-Ilibdc/include")
+        .clang_arg("-Ilibdc-cmake/include")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .allowlist_type("dc_.*")
         .allowlist_function("dc_.*")
