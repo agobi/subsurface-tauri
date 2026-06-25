@@ -43,7 +43,7 @@
   }
 </script>
 
-<div class="overlay" role="dialog" aria-modal="true" aria-label="Open Cloud Notebook">
+<div class="overlay" role="dialog" aria-modal="true" aria-label="Open Cloud Notebook" style="z-index: 1001">
   <div class="dialog">
     <h2 class="title">Open Cloud Notebook</h2>
     {#if message}
@@ -70,7 +70,7 @@
 </div>
 
 <style>
-  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
   .dialog { background: var(--panel); border: 1px solid var(--hair); border-radius: var(--r-panel, 8px); padding: 24px; width: 360px; display: flex; flex-direction: column; gap: 16px; }
   .title { margin: 0; font-size: 16px; font-weight: 600; color: var(--txt); }
   .field { display: flex; flex-direction: column; gap: 6px; }
