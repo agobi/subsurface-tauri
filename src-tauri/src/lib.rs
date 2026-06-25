@@ -2,6 +2,7 @@
 #[cfg(desktop)]
 mod menu;
 mod cloud;
+mod dc;
 mod ssrf_git;
 mod types;
 
@@ -239,6 +240,8 @@ pub fn run() {
             cloud::open_cloud_logbook,
             cloud::open_recent_cloud_logbook,
             cloud::sync_cloud_logbook,
+            dc::commands::list_dc_vendors,
+            dc::commands::list_dc_models,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
