@@ -1,5 +1,15 @@
 // AI-generated (Claude)
 import { test, expect, setupPage, sampleLogbook } from './fixtures.ts';
+import type { Logbook } from '../../src/lib/types.ts';
+
+// Extend the sample with GPS so the Leaflet map renders for the first selected dive.
+const sampleLogbookWithGps: Logbook = {
+  ...sampleLogbook,
+  sites: [
+    { id: 'c171f112', name: 'Molnar Janos', country: 'Hungary', gps: { lat: 47.5, lon: 19.0 } },
+    ...sampleLogbook.sites.slice(1),
+  ],
+};
 
 for (const theme of ['light', 'dark'] as const) {
   test(`empty logbook — ${theme}`, async ({ page, platform }) => {
@@ -17,6 +27,18 @@ for (const theme of ['light', 'dark'] as const) {
     await page.locator('[data-testid="dive-row"]').nth(1).click();
     await page.waitForTimeout(200); // let Svelte reactivity flush
     await expect(page).toHaveScreenshot(`sample-second-${theme}.png`);
+  });
+
+  // Regression: cloud dialog must sit above Leaflet's zoom controls (z-index 1000).
+  test(`cloud dialog above map — ${theme}`, async ({ page, platform }) => {
+    test.skip(platform === 'android', 'desktop-only');
+    await setupPage(page, { logbook: sampleLogbookWithGps, theme, platform });
+    await page.evaluate(async () => {
+      const { app } = await import('/src/lib/stores/app.svelte.ts');
+      app.showCloudDialog = { email: '' };
+    });
+    await page.waitForTimeout(100);
+    await expect(page).toHaveScreenshot(`cloud-dialog-${theme}.png`);
   });
 
   test(`dive list scrolled to country column — ${theme}`, async ({ page, platform }) => {

@@ -77,6 +77,14 @@ describe("CloudLoginDialog", () => {
     );
   });
 
+  it("overlay z-index is above Leaflet's control layer (1000)", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(null);
+    render(CloudLoginDialog, { props: { onClose: vi.fn(), onSuccess: vi.fn() } });
+    const overlay = screen.getByRole("dialog") as HTMLElement;
+    // Leaflet's control containers sit at z-index 1000; the dialog overlay must be above them.
+    expect(parseInt(overlay.style.zIndex, 10)).toBeGreaterThan(1000);
+  });
+
   it("disables the Open Cloud button while loading", async () => {
     vi.mocked(invoke).mockResolvedValueOnce(null); // get_cloud_credentials
     // open_cloud_logbook never resolves (simulates slow network)
