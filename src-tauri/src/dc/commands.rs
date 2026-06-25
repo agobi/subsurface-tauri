@@ -140,6 +140,90 @@ pub async fn scan_ble_devices(
     Ok(())
 }
 
+/// Result returned by [`start_dc_download`], serialized to the frontend.
+#[cfg(not(target_os = "android"))]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadResultSer {
+    pub added: u32,
+    pub skipped: u32,
+}
+
+/// Start a dive-computer download.
+///
+/// Resets the cancel flag, spawns a blocking task that calls
+/// [`crate::dc::device::run_download`], and emits `dc-complete` on success.
+///
+/// The frontend may call [`cancel_dc_download`] at any time to abort.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn start_dc_download(
+    app: tauri::AppHandle,
+    vendor: String,
+    model: String,
+    transport: crate::dc::transport::TransportArg,
+    cancel: tauri::State<'_, std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    dives_state: tauri::State<'_, std::sync::Mutex<Vec<crate::types::Dive>>>,
+) -> Result<DownloadResultSer, String> {
+    use std::sync::atomic::Ordering;
+    use tauri::Emitter;
+
+    // Reset cancel flag from any previous download.
+    cancel.store(false, Ordering::Relaxed);
+    let cancel_clone = std::sync::Arc::clone(&cancel);
+
+    let dives = dives_state.lock().map_err(|e| e.to_string())?.clone();
+
+    // Read logbook path from the persisted store.
+    let root = {
+        use tauri::Manager;
+        use tauri_plugin_store::StoreExt;
+        let store = app.store("settings.json").map_err(|e| e.to_string())?;
+        let path = store
+            .get("logbookPath")
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .ok_or_else(|| "no logbook open".to_string())?;
+        std::path::PathBuf::from(path)
+    };
+
+    let app_clone = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        crate::dc::device::run_download(
+            app_clone,
+            root,
+            dives,
+            vendor,
+            model,
+            transport,
+            cancel_clone,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    app.emit(
+        "dc-complete",
+        serde_json::json!({ "added": result.added, "skipped": result.skipped }),
+    )
+    .ok();
+
+    Ok(DownloadResultSer { added: result.added, skipped: result.skipped })
+}
+
+/// Set the cancel flag to abort an in-progress download.
+///
+/// The next call to the libdivecomputer cancel callback will return 1, causing
+/// `dc_device_foreach` to stop after the current dive completes.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub fn cancel_dc_download(
+    cancel: tauri::State<'_, std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    cancel.store(true, Ordering::Relaxed);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

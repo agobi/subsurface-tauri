@@ -6,3 +6,7 @@ pub mod commands;
 pub mod transport;
 pub mod writer;
 pub mod fingerprint;
+#[cfg(not(target_os = "android"))]
+pub mod parser;
+#[cfg(not(target_os = "android"))]
+pub mod device;

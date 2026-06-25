@@ -6,7 +6,8 @@ mod dc;
 mod ssrf_git;
 mod types;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
 use tauri_plugin_store::StoreExt;
 use types::{Dive, OpenResult, RecentEntry};
 
@@ -207,6 +208,7 @@ async fn get_recents(app: tauri::AppHandle) -> Result<Vec<RecentEntry>, String> 
 pub fn run() {
     let builder = tauri::Builder::default()
         .manage(Mutex::new(Vec::<Dive>::new()))
+        .manage(Arc::new(AtomicBool::new(false)))
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -245,6 +247,10 @@ pub fn run() {
             dc::commands::list_serial_ports,
             #[cfg(not(target_os = "android"))]
             dc::commands::scan_ble_devices,
+            #[cfg(not(target_os = "android"))]
+            dc::commands::start_dc_download,
+            #[cfg(not(target_os = "android"))]
+            dc::commands::cancel_dc_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
