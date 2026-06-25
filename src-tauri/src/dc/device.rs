@@ -125,7 +125,10 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
                 Ok(_) => {
                     ctx.added += 1;
                     // Track the newest fingerprint for persisting after the download.
-                    ctx.newest_fingerprint = Some(fp);
+                    // libdc delivers dives newest-first, so only keep the first one.
+                    if ctx.newest_fingerprint.is_none() {
+                        ctx.newest_fingerprint = Some(fp);
+                    }
                 }
                 Err(e) => {
                     ctx.app
