@@ -16,6 +16,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
+bindgen = "0.70"
+cmake = "0.1"
 
 [dependencies]
 serde_json = "1.0"
@@ -29,6 +31,11 @@ tauri-plugin-os = "2"
 git2 = { version = "0.20", default-features = false, features = ["https"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+serialport = "4"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+btleplug = "0.11"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3"
