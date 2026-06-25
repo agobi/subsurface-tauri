@@ -92,6 +92,13 @@ fn assemble_menu<R: Runtime>(
         true,
         None::<&str>,
     )?;
+    let file_dc_download = MenuItem::with_id(
+        app,
+        "file-dc-download",
+        "Download from DC\u{2026}",
+        true,
+        None::<&str>,
+    )?;
     let recent_sep = PredefinedMenuItem::separator(app)?;
     let recent_submenu = build_recent_submenu(app, recents)?;
 
@@ -112,6 +119,7 @@ fn assemble_menu<R: Runtime>(
                 &file_open,
                 &file_new,
                 &file_cloud_open,
+                &file_dc_download,
                 &recent_sep,
                 &recent_submenu,
             ],
@@ -158,6 +166,7 @@ fn assemble_menu<R: Runtime>(
                 &file_open,
                 &file_new,
                 &file_cloud_open,
+                &file_dc_download,
                 &recent_sep,
                 &recent_submenu,
                 &settings_item,
@@ -254,6 +263,9 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEven
         }
         "file-cloud-open" => {
             app.emit("menu:cloud-open", ()).ok();
+        }
+        "file-dc-download" => {
+            app.emit("menu:dc-download", ()).ok();
         }
         "settings" => {
             let label = "preferences";

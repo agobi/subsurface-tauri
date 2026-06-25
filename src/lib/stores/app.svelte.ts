@@ -26,6 +26,7 @@ class AppStore {
   displayName = $state("");
   recents = $state<RecentEntry[]>([]);
   showCloudDialog = $state<{ email: string; message?: string; onSuccess?: () => void } | false>(false);
+  showDcDialog = $state(false);
   diveListPrefs = $state<DiveListPrefs>({
     ...DEFAULT_DIVE_LIST_PREFS,
     colOrder: [...DEFAULT_DIVE_LIST_PREFS.colOrder],
@@ -196,6 +197,7 @@ class AppStore {
     this.displayName = "";
     this.recents = [];
     this.showCloudDialog = false;
+    this.showDcDialog = false;
     this.diveListPrefs = {
       ...DEFAULT_DIVE_LIST_PREFS,
       colOrder: [...DEFAULT_DIVE_LIST_PREFS.colOrder],
