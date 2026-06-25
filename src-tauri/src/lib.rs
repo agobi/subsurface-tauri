@@ -243,6 +243,8 @@ pub fn run() {
             dc::commands::list_dc_vendors,
             dc::commands::list_dc_models,
             dc::commands::list_serial_ports,
+            #[cfg(not(target_os = "android"))]
+            dc::commands::scan_ble_devices,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

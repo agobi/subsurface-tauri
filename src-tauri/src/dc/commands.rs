@@ -35,6 +35,111 @@ pub fn list_serial_ports() -> Vec<String> {
     serial_ports_impl()
 }
 
+/// BLE scan result emitted as the `dc-ble-found` event payload.
+#[cfg(not(target_os = "android"))]
+#[derive(Clone, serde::Serialize)]
+struct BleScanResult {
+    name: String,
+    address: String,
+}
+
+/// Scan for BLE dive computers matching `vendor`/`model`.
+///
+/// Emits `dc-ble-found` events with `{ name, address }` for each matching
+/// peripheral found during a 10-second scan window. Returns immediately;
+/// events arrive asynchronously via the Tauri event system.
+///
+/// The raw `dc_descriptor_t*` is never held across `.await` points — each
+/// `dc_descriptor_filter` call is wrapped in `spawn_blocking` to stay on a
+/// thread-pool thread, ensuring the async future is `Send`.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn scan_ble_devices(
+    app: tauri::AppHandle,
+    vendor: String,
+    model: String,
+) -> Result<(), String> {
+    use btleplug::api::{Central, Manager as _, Peripheral as _, ScanFilter};
+    use btleplug::platform::Manager;
+    use tauri::Emitter;
+
+    // Validate the device exists in libdc before starting the scan.
+    {
+        let ptr = crate::dc::descriptor::find_descriptor(&vendor, &model)
+            .ok_or_else(|| format!("unknown device: {vendor} {model}"))?;
+        unsafe { crate::dc::ffi::dc_descriptor_free(ptr) };
+    }
+
+    tauri::async_runtime::spawn(async move {
+        let manager = Manager::new().await.map_err(|e| e.to_string())?;
+        let adapters = manager.adapters().await.map_err(|e| e.to_string())?;
+        let adapter = adapters
+            .into_iter()
+            .next()
+            .ok_or_else(|| "no BLE adapter found".to_string())?;
+        adapter
+            .start_scan(ScanFilter::default())
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Poll for peripherals for up to 10 seconds (20 × 500 ms).
+        for _ in 0..20 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let peripherals = adapter.peripherals().await.map_err(|e| e.to_string())?;
+
+            // Collect (name, address) pairs — async btleplug calls complete here.
+            let mut candidates: Vec<(String, String)> = Vec::new();
+            for p in &peripherals {
+                if let Ok(Some(props)) = p.properties().await {
+                    if let Some(name) = props.local_name {
+                        candidates.push((name, props.address.to_string()));
+                    }
+                }
+            }
+
+            // Filter candidates via dc_descriptor_filter in spawn_blocking so the
+            // raw pointer never lives across an await point in this future.
+            for (name, address) in candidates {
+                let v = vendor.clone();
+                let m = model.clone();
+                let name_clone = name.clone();
+                let matches = tauri::async_runtime::spawn_blocking(move || {
+                    let Some(desc) = crate::dc::descriptor::find_descriptor(&v, &m) else {
+                        return false;
+                    };
+                    let Ok(c_name) = std::ffi::CString::new(name_clone.as_str()) else {
+                        unsafe { crate::dc::ffi::dc_descriptor_free(desc) };
+                        return false;
+                    };
+                    // dc_descriptor_filter returns non-zero on match.
+                    let result = unsafe {
+                        crate::dc::ffi::dc_descriptor_filter(
+                            desc,
+                            crate::dc::ffi::dc_transport_t_DC_TRANSPORT_BLE,
+                            c_name.as_ptr() as *const _,
+                        ) != 0
+                    };
+                    unsafe { crate::dc::ffi::dc_descriptor_free(desc) };
+                    result
+                })
+                .await
+                .unwrap_or(false);
+
+                if matches {
+                    app.emit(
+                        "dc-ble-found",
+                        BleScanResult { name, address },
+                    )
+                    .ok();
+                }
+            }
+        }
+        Ok::<(), String>(())
+    });
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

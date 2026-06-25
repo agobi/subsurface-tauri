@@ -1,4 +1,7 @@
 // AI-generated (Claude)
+#[cfg(not(target_os = "android"))]
+pub mod ble;
+
 use std::ptr;
 use crate::dc::ffi::*;
 use crate::dc::context::DcContext;
