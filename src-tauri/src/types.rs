@@ -90,6 +90,10 @@ pub struct Dive {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub divemode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub dc_device_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dc_dive_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub total_weight_kg: Option<f64>,
     pub samples: Vec<Sample>,
     pub events: Vec<DiveEvent>,
@@ -323,6 +327,8 @@ mod tests {
             water_temp_c: Some(12.0),
             deco_model: None,
             divemode: None,
+            dc_device_id: None,
+            dc_dive_id: None,
             total_weight_kg: Some(8.0),
             samples: vec![Sample { time_sec: 0, depth_m: 0.0, temp_c: None, ndl_sec: None, tts_sec: None, cns: None, pressure_bar: None }],
             events: vec![],
