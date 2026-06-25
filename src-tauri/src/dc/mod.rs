@@ -3,5 +3,6 @@ pub mod ffi;
 pub mod context;
 pub mod descriptor;
 pub mod commands;
+pub mod transport;
 pub mod writer;
 pub mod fingerprint;

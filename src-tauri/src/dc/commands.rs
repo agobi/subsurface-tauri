@@ -21,3 +21,26 @@ pub fn list_dc_models(vendor: String) -> Vec<DcModelSer> {
         .map(|m| DcModelSer { product: m.product, transports: m.transports })
         .collect()
 }
+
+pub fn serial_ports_impl() -> Vec<String> {
+    serialport::available_ports()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| p.port_name)
+        .collect()
+}
+
+#[tauri::command]
+pub fn list_serial_ports() -> Vec<String> {
+    serial_ports_impl()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn list_serial_ports_returns_vec() {
+        // Just verify it doesn't panic; actual ports depend on hardware.
+        let _ports = super::serial_ports_impl();
+        // passes if it returns without panicking
+    }
+}

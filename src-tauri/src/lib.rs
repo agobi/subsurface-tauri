@@ -242,6 +242,7 @@ pub fn run() {
             cloud::sync_cloud_logbook,
             dc::commands::list_dc_vendors,
             dc::commands::list_dc_models,
+            dc::commands::list_serial_ports,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
