@@ -11,7 +11,8 @@
   let map: L.Map | undefined;
   let marker: L.Marker | undefined;
 
-  const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  const TILE_STYLE = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark_all' : 'light_all';
+  const TILE_URL = `https://{s}.basemaps.cartocdn.com/${TILE_STYLE}/{z}/{x}/{y}{r}.png`;
   const ATTRIBUTION =
     '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
     '© <a href="https://carto.com/attributions">CARTO</a>';
