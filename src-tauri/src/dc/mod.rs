@@ -3,3 +3,4 @@ pub mod ffi;
 pub mod context;
 pub mod descriptor;
 pub mod commands;
+pub mod writer;
