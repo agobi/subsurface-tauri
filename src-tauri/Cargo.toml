@@ -48,3 +48,6 @@ openssl-src = ">=300.0.14, <300.7"
 
 [target.'cfg(target_os = "android")'.dependencies]
 git2 = { version = "0.20", default-features = false, features = ["vendored-openssl"] }
+
+[dev-dependencies]
+tauri = { version = "2.11.3", features = ["test"] }
