@@ -47,7 +47,8 @@
       "debugApplicationIdSuffix": ".debug"
     },
     "macOS": {
-      "entitlements": "./entitlements.macos.plist"
+      "entitlements": "./entitlements.macos.plist",
+      "infoPlist": "./Info.plist"
     }
   }
 }
