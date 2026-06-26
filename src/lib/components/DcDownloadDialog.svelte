@@ -121,6 +121,7 @@
           </select>
         </label>
         <button disabled={!model} on:click={goConnect}>Next</button>
+        <button on:click={onClose}>Cancel</button>
 
       {:else if step === "connect"}
         <h2>Connect</h2>
