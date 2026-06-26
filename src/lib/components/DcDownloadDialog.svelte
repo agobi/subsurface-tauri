@@ -100,6 +100,12 @@
 
   function cancel() { invoke("cancel_dc_download").catch(() => {}); }
   function close() { step = "select"; onClose(); }
+
+  function fmtBytes(n: number): string {
+    if (n >= 1_048_576) return (n / 1_048_576).toFixed(1) + " MiB";
+    if (n >= 1_024) return Math.round(n / 1_024) + " KiB";
+    return n + " B";
+  }
 </script>
 
 {#if open}
@@ -153,7 +159,7 @@
       {:else if step === "progress"}
         <h2>Downloading…</h2>
         <progress value={progressCurrent} max={progressMaximum || undefined}></progress>
-        <p>{progressCurrent} / {progressMaximum || "?"}</p>
+        <p>{fmtBytes(progressCurrent)} / {progressMaximum ? fmtBytes(progressMaximum) : "?"}</p>
         {#if errorMsg}
           <p class="warning">{errorMsg}</p>
         {/if}

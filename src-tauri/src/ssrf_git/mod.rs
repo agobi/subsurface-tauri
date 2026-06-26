@@ -1,12 +1,12 @@
 // AI-generated (Claude)
 mod tokenize;
-mod parse_header;
+pub mod settings;
 mod parse_site;
 mod parse_dive;
 mod parse_divecomputer;
 
 use std::path::Path;
-use parse_header::parse_header;
+use settings::read_settings;
 use parse_site::parse_site;
 use parse_dive::parse_dive;
 use parse_divecomputer::parse_divecomputer;
@@ -181,12 +181,7 @@ fn parse_trip_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
 }
 
 pub fn parse_logbook(root: &Path) -> Result<ParsedLogbook, String> {
-    let header_path = root.join("00-Subsurface");
-    let units = if header_path.exists() {
-        parse_header(&read_file(&header_path)?)
-    } else {
-        "METRIC".to_owned()
-    };
+    let units = read_settings(root).units;
 
     let sites = parse_sites(root);
     let mut dives: Vec<Dive> = vec![];
