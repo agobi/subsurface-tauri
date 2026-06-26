@@ -46,7 +46,7 @@ pub fn known_dive_ids(dives: &[crate::types::Dive]) -> HashSet<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use tauri::test::{mock_builder, mock_context, noop_assets, MockRuntime};
-    use tauri::Manager;
+    use tauri_plugin_store::StoreExt;
     use super::{hex_decode, STORE_KEY};
 
     fn read_fp<R: tauri::Runtime>(app: &tauri::AppHandle<R>, device_id: &str) -> Option<Vec<u8>> {
