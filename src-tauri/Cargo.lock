@@ -4000,6 +4000,7 @@ dependencies = [
  "cmake",
  "core-foundation 0.10.1",
  "core-foundation-sys",
+ "futures",
  "git2",
  "keyring",
  "log",

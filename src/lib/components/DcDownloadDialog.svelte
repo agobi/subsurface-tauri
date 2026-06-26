@@ -83,7 +83,7 @@
       : transport === "Bluetooth"
       ? { kind: "Bluetooth", address: bluetoothAddress }
       : transport === "BLE"
-      ? { kind: "Ble", name: selectedBleDevice ?? "" }
+      ? { kind: "Ble", address: selectedBleDevice ?? "" }
       : { kind: "UsbHid" };
     try {
       await invoke("start_dc_download", { vendor, model, transport: transportArg });
@@ -140,7 +140,7 @@
         {:else if transport === "BLE"}
           <button on:click={() => scanBle()}>Scan</button>
           {#each bleDevices as d}
-            <label><input type="radio" bind:group={selectedBleDevice} value={d.name} />{d.name}</label>
+            <label><input type="radio" bind:group={selectedBleDevice} value={d.address} />{d.name}</label>
           {/each}
         {/if}
         <button on:click={() => startDownload()} disabled={

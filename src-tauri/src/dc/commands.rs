@@ -96,7 +96,9 @@ pub async fn scan_ble_devices(
                     for p in &peripherals {
                         if let Ok(Some(props)) = p.properties().await {
                             if let Some(name) = props.local_name {
-                                candidates.push((name, props.address.to_string()));
+                                // Use p.id() as the identifier: CoreBluetooth UUID on macOS,
+                                // MAC address on Linux. props.address is always zero on macOS.
+                                candidates.push((name, p.id().to_string()));
                             }
                         }
                     }

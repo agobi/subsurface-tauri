@@ -176,9 +176,9 @@ pub fn run_download<R: tauri::Runtime>(
     let iostream = {
         #[cfg(not(target_os = "android"))]
         let result = match &transport_arg {
-            TransportArg::Ble { name } => {
+            TransportArg::Ble { address } => {
                 let handle = tokio::runtime::Handle::current();
-                crate::dc::transport::ble::open_ble_iostream(name, handle)
+                crate::dc::transport::ble::open_ble_iostream(&ctx_dc, address, handle)
             }
             _ => open_iostream(&ctx_dc, descriptor, &transport_arg),
         };

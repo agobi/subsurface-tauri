@@ -13,7 +13,7 @@ pub enum TransportArg {
     Serial { port: String },
     UsbHid,
     Bluetooth { address: String },
-    Ble { name: String },
+    Ble { address: String },
 }
 
 /// Opens a wired iostream for the given transport. BLE is handled separately.
