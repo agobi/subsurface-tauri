@@ -237,15 +237,25 @@ pub fn run_download<R: tauri::Runtime>(
         // known_fingerprints (from dc_dive_id in the logbook) handles dedup on first
         // download, and subsequent downloads rely on the same mechanism until
         // fingerprint-based dedup is added.
-        dc_device_foreach(
-            device,
-            Some(dive_cb::<R>),
-            &mut download_ctx as *mut DownloadCtx<R> as *mut _,
-        );
+        let foreach_rc = unsafe {
+            dc_device_foreach(
+                device,
+                Some(dive_cb::<R>),
+                &mut download_ctx as *mut DownloadCtx<R> as *mut _,
+            )
+        };
 
         dc_device_close(device);
         dc_iostream_close(iostream);
         dc_descriptor_free(descriptor);
+
+        // If foreach failed (connection lost, timeout, etc.) and user didn't cancel,
+        // report the error rather than silently returning partial results.
+        if foreach_rc != crate::dc::ffi::dc_status_t_DC_STATUS_SUCCESS
+            && !download_ctx.cancel.load(Ordering::Relaxed)
+        {
+            return Err(format!("device download interrupted: status {foreach_rc}"));
+        }
     }
 
     // Persist the newest fingerprint so the next download can skip already-seen dives.

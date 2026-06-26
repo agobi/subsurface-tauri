@@ -73,6 +73,7 @@
   function goConnect() { step = "connect"; onTransportChange(); }
 
   async function startDownload() {
+    errorMsg = null;
     step = "progress";
     progressCurrent = 0;
     progressMaximum = 0;

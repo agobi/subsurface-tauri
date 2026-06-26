@@ -71,73 +71,76 @@ pub async fn scan_ble_devices(
     }
 
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = (async {
+        let manager_result = (async {
             let manager = Manager::new().await.map_err(|e| e.to_string())?;
             let adapters = manager.adapters().await.map_err(|e| e.to_string())?;
             let adapter = adapters
                 .into_iter()
                 .next()
                 .ok_or_else(|| "no BLE adapter found".to_string())?;
+            Ok::<_, String>(adapter)
+        }).await;
+
+        if let Ok(adapter) = manager_result {
             adapter
                 .start_scan(ScanFilter::default())
                 .await
-                .map_err(|e| e.to_string())?;
+                .ok();
 
             // Poll for peripherals for up to 10 seconds (20 × 500 ms).
             for _ in 0..20 {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                let peripherals = adapter.peripherals().await.map_err(|e| e.to_string())?;
-
-                // Collect (name, address) pairs — async btleplug calls complete here.
-                let mut candidates: Vec<(String, String)> = Vec::new();
-                for p in &peripherals {
-                    if let Ok(Some(props)) = p.properties().await {
-                        if let Some(name) = props.local_name {
-                            candidates.push((name, props.address.to_string()));
+                if let Ok(peripherals) = adapter.peripherals().await {
+                    // Collect (name, address) pairs — async btleplug calls complete here.
+                    let mut candidates: Vec<(String, String)> = Vec::new();
+                    for p in &peripherals {
+                        if let Ok(Some(props)) = p.properties().await {
+                            if let Some(name) = props.local_name {
+                                candidates.push((name, props.address.to_string()));
+                            }
                         }
                     }
-                }
 
-                // Filter candidates via dc_descriptor_filter in spawn_blocking so the
-                // raw pointer never lives across an await point in this future.
-                for (name, address) in candidates {
-                    let v = vendor.clone();
-                    let m = model.clone();
-                    let name_clone = name.clone();
-                    let matches = tauri::async_runtime::spawn_blocking(move || {
-                        let Some(desc) = crate::dc::descriptor::find_descriptor(&v, &m) else {
-                            return false;
-                        };
-                        let Ok(c_name) = std::ffi::CString::new(name_clone.as_str()) else {
+                    // Filter candidates via dc_descriptor_filter in spawn_blocking so the
+                    // raw pointer never lives across an await point in this future.
+                    for (name, address) in candidates {
+                        let v = vendor.clone();
+                        let m = model.clone();
+                        let name_clone = name.clone();
+                        let matches = tauri::async_runtime::spawn_blocking(move || {
+                            let Some(desc) = crate::dc::descriptor::find_descriptor(&v, &m) else {
+                                return false;
+                            };
+                            let Ok(c_name) = std::ffi::CString::new(name_clone.as_str()) else {
+                                unsafe { crate::dc::ffi::dc_descriptor_free(desc) };
+                                return false;
+                            };
+                            // dc_descriptor_filter returns non-zero on match.
+                            let result = unsafe {
+                                crate::dc::ffi::dc_descriptor_filter(
+                                    desc,
+                                    crate::dc::ffi::dc_transport_t_DC_TRANSPORT_BLE,
+                                    c_name.as_ptr() as *const _,
+                                ) != 0
+                            };
                             unsafe { crate::dc::ffi::dc_descriptor_free(desc) };
-                            return false;
-                        };
-                        // dc_descriptor_filter returns non-zero on match.
-                        let result = unsafe {
-                            crate::dc::ffi::dc_descriptor_filter(
-                                desc,
-                                crate::dc::ffi::dc_transport_t_DC_TRANSPORT_BLE,
-                                c_name.as_ptr() as *const _,
-                            ) != 0
-                        };
-                        unsafe { crate::dc::ffi::dc_descriptor_free(desc) };
-                        result
-                    })
-                    .await
-                    .unwrap_or(false);
+                            result
+                        })
+                        .await
+                        .unwrap_or(false);
 
-                    if matches {
-                        app.emit(
-                            "dc-ble-found",
-                            BleScanResult { name, address },
-                        )
-                        .ok();
+                        if matches {
+                            app.emit(
+                                "dc-ble-found",
+                                BleScanResult { name, address },
+                            )
+                            .ok();
+                        }
                     }
                 }
             }
             adapter.stop_scan().await.ok();
-            Ok::<(), String>(())
-        }).await {
+        } else if let Err(e) = manager_result {
             app.emit("dc-error", serde_json::json!({ "message": e })).ok();
         }
     });
