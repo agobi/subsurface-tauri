@@ -138,7 +138,7 @@ pub async fn scan_ble_devices(
             adapter.stop_scan().await.ok();
             Ok::<(), String>(())
         }).await {
-            app.emit("dc-error", e).ok();
+            app.emit("dc-error", serde_json::json!({ "message": e })).ok();
         }
     });
 
