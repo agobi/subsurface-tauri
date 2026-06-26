@@ -78,7 +78,7 @@ mod tests {
         let handle = app.handle();
         let fp = vec![0x76u8, 0xb9, 0xbc, 0x25];
         super::write_fp(handle, "a790cf6c", &fp).unwrap();
-        let loaded = super::read_fp(handle, "a790cf6c").unwrap();
+        let loaded = read_fp(handle, "a790cf6c").unwrap();
         assert_eq!(loaded, fp);
     }
 
