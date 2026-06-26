@@ -13,7 +13,7 @@ use tauri::{AppHandle, Emitter};
 use crate::dc::ffi::*;
 use crate::dc::context::DcContext;
 use crate::dc::descriptor::find_descriptor;
-use crate::dc::fingerprint::{write_fp, known_dive_ids};
+use crate::dc::fingerprint::{lookup_fp, upsert_fp, known_dive_ids};
 use crate::dc::parser::parse_dive;
 use crate::dc::transport::{open_iostream, TransportArg};
 use crate::dc::writer::write_dive;
@@ -22,6 +22,9 @@ use crate::dc::writer::write_dive;
 pub struct DownloadResult {
     pub added: u32,
     pub skipped: u32,
+    /// The serial number and raw fingerprint bytes of the newest dive seen, if any.
+    /// The caller uses this to update in-memory state after `upsert_fp` writes to disk.
+    pub newest_fp: Option<(u32, Vec<u8>)>,
 }
 
 /// Userdata passed through libdivecomputer callbacks.
@@ -34,6 +37,8 @@ struct DownloadCtx<R: tauri::Runtime> {
     ctx_ptr: *mut dc_context_t,
     dc_model: String,
     device_id: Option<String>,
+    device_serial: Option<u32>,
+    settings: crate::ssrf_git::settings::Settings,
     known_fingerprints: HashSet<Vec<u8>>,
     newest_fingerprint: Option<Vec<u8>>,
     added: u32,
@@ -48,7 +53,7 @@ unsafe impl<R: tauri::Runtime> Send for DownloadCtx<R> {}
 
 /// Event callback — handles `DC_EVENT_PROGRESS` and `DC_EVENT_DEVINFO`.
 unsafe extern "C" fn event_cb<R: tauri::Runtime>(
-    _device: *mut dc_device_t,
+    device: *mut dc_device_t,
     event: dc_event_type_t,
     data: *const c_void,
     userdata: *mut c_void,
@@ -61,6 +66,14 @@ unsafe extern "C" fn event_cb<R: tauri::Runtime>(
             .ok();
     } else if event == dc_event_type_t_DC_EVENT_DEVINFO {
         let info = &*(data as *const dc_event_devinfo_t);
+
+        // Use the stored fingerprint to tell libdivecomputer where to stop, so it
+        // doesn't re-download dives we already have.
+        if let Some(fp) = lookup_fp(&ctx.settings, &ctx.dc_model, info.serial) {
+            dc_device_set_fingerprint(device, fp.as_ptr(), fp.len() as u32);
+        }
+
+        ctx.device_serial = Some(info.serial);
         ctx.device_id = Some(format!("{:08x}", info.serial));
         ctx.app
             .emit(
@@ -146,18 +159,22 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
 
 /// Download all new dives from a dive computer and write them to `logbook_root`.
 ///
+/// `settings` is cloned from managed state before the call; it is not re-read from disk.
+///
 /// Emits Tauri events:
 /// - `dc-progress { current, maximum }` — download progress
 /// - `dc-devinfo { model, firmware, serial }` — device identification
 /// - `dc-error { message }` — per-dive write error (non-fatal)
 ///
-/// Returns [`DownloadResult`] with the count of added and skipped dives.
+/// Returns [`DownloadResult`] with the count of added and skipped dives, plus the
+/// newest fingerprint (serial, bytes) so the caller can update in-memory state.
 ///
 /// This function blocks the calling thread; call it via
 /// `tauri::async_runtime::spawn_blocking`.
 pub fn run_download<R: tauri::Runtime>(
     app: AppHandle<R>,
     logbook_root: std::path::PathBuf,
+    settings: crate::ssrf_git::settings::Settings,
     dives: Vec<crate::types::Dive>,
     vendor: String,
     model: String,
@@ -198,6 +215,8 @@ pub fn run_download<R: tauri::Runtime>(
         ctx_ptr: ctx_dc.as_ptr(),
         dc_model: model.clone(),
         device_id: None,
+        device_serial: None,
+        settings,
         known_fingerprints,
         newest_fingerprint: None,
         added: 0,
@@ -230,11 +249,8 @@ pub fn run_download<R: tauri::Runtime>(
         );
 
         // Iterate all dives on the device; dive_cb is invoked for each one.
-        // Note: ideally we set dc_device_set_fingerprint after DC_EVENT_DEVINFO fires
-        // (to know the device serial → look up stored fingerprint). For now,
-        // known_fingerprints (from dc_dive_id in the logbook) handles dedup on first
-        // download, and subsequent downloads rely on the same mechanism until
-        // fingerprint-based dedup is added.
+        // DC_EVENT_DEVINFO fires before dives arrive, so dc_device_set_fingerprint is
+        // already set (if we have one) by the time enumeration begins.
         let foreach_rc = dc_device_foreach(
             device,
             Some(dive_cb::<R>),
@@ -254,17 +270,23 @@ pub fn run_download<R: tauri::Runtime>(
         }
     }
 
-    // Persist the newest fingerprint so the next download can skip already-seen dives.
-    if !download_ctx.cancel.load(Ordering::Relaxed) {
-        if let (Some(device_id), Some(fp)) =
-            (&download_ctx.device_id, &download_ctx.newest_fingerprint)
+    // Persist the newest fingerprint to disk so the next download can skip already-seen dives.
+    let newest_fp = if !download_ctx.cancel.load(Ordering::Relaxed) {
+        if let (Some(serial), Some(fp)) =
+            (download_ctx.device_serial, download_ctx.newest_fingerprint)
         {
-            write_fp(&app, device_id, fp).ok();
+            upsert_fp(&download_ctx.logbook_root, &model, serial, &fp).ok();
+            Some((serial, fp))
+        } else {
+            None
         }
-    }
+    } else {
+        None
+    };
 
     Ok(DownloadResult {
         added: download_ctx.added,
         skipped: download_ctx.skipped,
+        newest_fp,
     })
 }

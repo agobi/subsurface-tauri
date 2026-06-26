@@ -1,12 +1,12 @@
 // AI-generated (Claude)
 mod tokenize;
-mod parse_header;
+pub mod settings;
 mod parse_site;
 mod parse_dive;
 mod parse_divecomputer;
 
 use std::path::Path;
-use parse_header::parse_header;
+use settings::read_settings;
 use parse_site::parse_site;
 use parse_dive::parse_dive;
 use parse_divecomputer::parse_divecomputer;
@@ -181,12 +181,7 @@ fn parse_trip_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
 }
 
 pub fn parse_logbook(root: &Path) -> Result<ParsedLogbook, String> {
-    let header_path = root.join("00-Subsurface");
-    let units = if header_path.exists() {
-        parse_header(&read_file(&header_path)?)
-    } else {
-        "METRIC".to_owned()
-    };
+    let settings = read_settings(root);
 
     let sites = parse_sites(root);
     let mut dives: Vec<Dive> = vec![];
@@ -228,7 +223,7 @@ pub fn parse_logbook(root: &Path) -> Result<ParsedLogbook, String> {
 
     dives.sort_by(|a, b| a.date_time.cmp(&b.date_time));
 
-    Ok(ParsedLogbook { dives, trips, sites, units })
+    Ok(ParsedLogbook { dives, trips, sites, settings })
 }
 
 #[cfg(test)]
@@ -252,7 +247,7 @@ mod tests {
     #[test]
     fn golden_units_and_sites() {
         let lb = parse_logbook(&fixture()).unwrap();
-        assert_eq!(lb.units, "METRIC");
+        assert_eq!(lb.settings.units, "METRIC");
         assert_eq!(lb.sites.len(), 1);
         let s = &lb.sites[0];
         assert_eq!(s.id, "04782ed8");
@@ -311,7 +306,7 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
         let lb = parse_logbook(&tmp).unwrap();
         assert_eq!(lb.dives.len(), 0);
-        assert_eq!(lb.units, "METRIC");
+        assert_eq!(lb.settings.units, "METRIC");
         std::fs::remove_dir_all(&tmp).ok();
     }
 
