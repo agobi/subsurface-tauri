@@ -109,24 +109,24 @@
         <h2>Select Device</h2>
         <label>
           Vendor
-          <select aria-label="Vendor" bind:value={vendor} onchange={onVendorChange}>
+          <select aria-label="Vendor" bind:value={vendor} on:change={onVendorChange}>
             <option value="">— select —</option>
             {#each vendors as v}<option value={v}>{v}</option>{/each}
           </select>
         </label>
         <label>
           Model
-          <select bind:value={model} onchange={updateTransportDefault} disabled={!vendor}>
+          <select bind:value={model} on:change={updateTransportDefault} disabled={!vendor}>
             {#each models as m}<option value={m.product}>{m.product}</option>{/each}
           </select>
         </label>
-        <button disabled={!model} onclick={goConnect}>Next</button>
+        <button disabled={!model} on:click={goConnect}>Next</button>
 
       {:else if step === "connect"}
         <h2>Connect</h2>
         <label>
           Transport
-          <select bind:value={transport} onchange={onTransportChange}>
+          <select bind:value={transport} on:change={onTransportChange}>
             {#each (models.find((m2) => m2.product === model)?.transports ?? []) as t}
               <option value={t}>{t}</option>
             {/each}
@@ -137,7 +137,7 @@
         {:else if transport === "Bluetooth"}
           <label>Address <input bind:value={bluetoothAddress} placeholder="00:11:22:33:44:55" /></label>
         {:else if transport === "BLE"}
-          <button onclick={scanBle}>Scan</button>
+          <button on:click={scanBle}>Scan</button>
           {#each bleDevices as d}
             <label><input type="radio" bind:group={selectedBleDevice} value={d.name} />{d.name}</label>
           {/each}
@@ -147,7 +147,7 @@
           (transport === "Bluetooth" && !bluetoothAddress) ||
           (transport === "BLE" && !selectedBleDevice)
         }>Download</button>
-        <button onclick={() => (step = "select")}>Back</button>
+        <button on:click={() => (step = "select")}>Back</button>
 
       {:else if step === "progress"}
         <h2>Downloading…</h2>
@@ -156,7 +156,7 @@
         {#if errorMsg}
           <p class="warning">{errorMsg}</p>
         {/if}
-        <button onclick={cancel}>Cancel</button>
+        <button on:click={cancel}>Cancel</button>
 
       {:else if step === "result"}
         <h2>{errorMsg ? "Error" : "Done"}</h2>
@@ -165,7 +165,7 @@
         {:else}
           <p>{resultAdded} dive{resultAdded !== 1 ? "s" : ""} added, {resultSkipped} skipped.</p>
         {/if}
-        <button onclick={close}>Close</button>
+        <button on:click={close}>Close</button>
       {/if}
     </div>
   </div>
