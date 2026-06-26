@@ -138,12 +138,12 @@
         {:else if transport === "Bluetooth"}
           <label>Address <input bind:value={bluetoothAddress} placeholder="00:11:22:33:44:55" /></label>
         {:else if transport === "BLE"}
-          <button on:click={scanBle}>Scan</button>
+          <button on:click={() => scanBle()}>Scan</button>
           {#each bleDevices as d}
             <label><input type="radio" bind:group={selectedBleDevice} value={d.name} />{d.name}</label>
           {/each}
         {/if}
-        <button on:click={startDownload} disabled={
+        <button on:click={() => startDownload()} disabled={
           (transport === "Serial" && !serialPort) ||
           (transport === "Bluetooth" && !bluetoothAddress) ||
           (transport === "BLE" && !selectedBleDevice)
