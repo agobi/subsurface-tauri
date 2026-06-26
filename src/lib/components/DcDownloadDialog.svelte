@@ -142,7 +142,7 @@
             <label><input type="radio" bind:group={selectedBleDevice} value={d.name} />{d.name}</label>
           {/each}
         {/if}
-        <button onclick={startDownload} disabled={
+        <button onclick={() => startDownload()} disabled={
           (transport === "Serial" && !serialPort) ||
           (transport === "Bluetooth" && !bluetoothAddress) ||
           (transport === "BLE" && !selectedBleDevice)
