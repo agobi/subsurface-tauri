@@ -39,7 +39,7 @@ pub fn known_dive_ids(dives: &[crate::types::Dive]) -> HashSet<Vec<u8>> {
     dives
         .iter()
         .filter_map(|d| d.dc_dive_id.as_deref())
-        .filter_map(|hex| hex_decode(hex))
+        .filter_map(hex_decode)
         .collect()
 }
 

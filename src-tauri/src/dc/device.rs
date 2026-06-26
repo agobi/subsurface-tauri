@@ -167,9 +167,8 @@ pub fn run_download<R: tauri::Runtime>(
     let descriptor = find_descriptor(&vendor, &model)
         .ok_or_else(|| format!("unknown device: {vendor} {model}"))?;
 
-    let ctx_dc = DcContext::new().map_err(|e| {
+    let ctx_dc = DcContext::new().inspect_err(|_| {
         unsafe { dc_descriptor_free(descriptor) };
-        e
     })?;
 
     // Open the I/O stream for the selected transport.
@@ -186,9 +185,8 @@ pub fn run_download<R: tauri::Runtime>(
         let result = open_iostream(&ctx_dc, descriptor, &transport_arg);
         result
     };
-    let iostream = iostream.map_err(|e| {
+    let iostream = iostream.inspect_err(|_| {
         unsafe { dc_descriptor_free(descriptor) };
-        e
     })?;
 
     let known_fingerprints = known_dive_ids(&dives);

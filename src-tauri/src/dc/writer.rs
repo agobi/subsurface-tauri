@@ -94,8 +94,8 @@ pub fn next_dive_number(root: &Path) -> i32 {
         let Ok(entries) = std::fs::read_dir(dir) else { return; };
         for e in entries.filter_map(|e| e.ok()) {
             let name = e.file_name().to_string_lossy().to_string();
-            if name.starts_with("Dive-") {
-                let n: i32 = name[5..].parse().unwrap_or(0);
+            if let Some(suffix) = name.strip_prefix("Dive-") {
+                let n: i32 = suffix.parse().unwrap_or(0);
                 if n > *max { *max = n; }
             } else if e.path().is_dir() {
                 scan(&e.path(), max);
