@@ -47,6 +47,7 @@
     }));
     unlisteners.push(await listen<{ message: string }>("dc-error", (e) => {
       errorMsg = e.payload.message;
+      step = "result";
     }));
   });
 
