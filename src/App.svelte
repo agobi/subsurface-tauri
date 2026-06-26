@@ -13,6 +13,7 @@
   import QuadrantGrid from "$lib/components/QuadrantGrid.svelte";
   import MobileLayout from "$lib/components/MobileLayout.svelte";
   import CloudLoginDialog from "$lib/components/CloudLoginDialog.svelte";
+  import DcDownloadDialog from "$lib/components/DcDownloadDialog.svelte";
 
   let search = $state("");
   let initialized = $state(false);
@@ -117,6 +118,7 @@
         listen<RecentEntry>("menu:open-recent", ({ payload }) => {
           handleOpenRecent(payload);
         }),
+        listen("menu:dc-download", () => { app.showDcDialog = true; }),
       ]);
     }
 
@@ -155,6 +157,10 @@
       onClose={() => { app.showCloudDialog = false; }}
       onSuccess={handleCloudSuccess}
     />
+  {/if}
+
+  {#if app.showDcDialog}
+    <DcDownloadDialog open={app.showDcDialog} onClose={() => (app.showDcDialog = false)} />
   {/if}
 {/if}
 

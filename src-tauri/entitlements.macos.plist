@@ -9,5 +9,7 @@
     <array>
         <string>$(AppIdentifierPrefix)org.subsurfacedivelog.prototype</string>
     </array>
+    <key>com.apple.security.device.bluetooth</key>
+    <true/>
 </dict>
 </plist>

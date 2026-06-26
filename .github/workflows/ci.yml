@@ -41,12 +41,14 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          packages: build-essential libc6-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libudev-dev libusb-1.0-0-dev
           version: 1.0
 
       - uses: swatinem/rust-cache@v2
@@ -101,6 +103,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       - uses: actions/setup-node@v6
         with:

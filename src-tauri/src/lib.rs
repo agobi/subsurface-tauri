@@ -2,10 +2,13 @@
 #[cfg(desktop)]
 mod menu;
 mod cloud;
+#[cfg(desktop)]
+mod dc;
 mod ssrf_git;
 mod types;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
 use tauri_plugin_store::StoreExt;
 use types::{Dive, OpenResult, RecentEntry};
 
@@ -206,6 +209,7 @@ async fn get_recents(app: tauri::AppHandle) -> Result<Vec<RecentEntry>, String> 
 pub fn run() {
     let builder = tauri::Builder::default()
         .manage(Mutex::new(Vec::<Dive>::new()))
+        .manage(Arc::new(AtomicBool::new(false)))
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -239,6 +243,18 @@ pub fn run() {
             cloud::open_cloud_logbook,
             cloud::open_recent_cloud_logbook,
             cloud::sync_cloud_logbook,
+            #[cfg(desktop)]
+            dc::commands::list_dc_vendors,
+            #[cfg(desktop)]
+            dc::commands::list_dc_models,
+            #[cfg(desktop)]
+            dc::commands::list_serial_ports,
+            #[cfg(desktop)]
+            dc::commands::scan_ble_devices,
+            #[cfg(desktop)]
+            dc::commands::start_dc_download,
+            #[cfg(desktop)]
+            dc::commands::cancel_dc_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

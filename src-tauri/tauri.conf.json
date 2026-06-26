@@ -9,6 +9,9 @@
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
+  "plugins": {
+    "clipboard": {}
+  },
   "app": {
     "windows": [
       {
@@ -47,7 +50,8 @@
       "debugApplicationIdSuffix": ".debug"
     },
     "macOS": {
-      "entitlements": "./entitlements.macos.plist"
+      "entitlements": "./entitlements.macos.plist",
+      "infoPlist": "./Info.plist"
     }
   }
 }

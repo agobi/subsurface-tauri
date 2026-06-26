@@ -1,0 +1,4 @@
+[submodule "src-tauri/libdc"]
+	path = src-tauri/libdc
+	url = https://github.com/Subsurface-divelog/libdc.git
+	branch = Subsurface-DS9
