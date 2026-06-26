@@ -2,6 +2,7 @@
 #[cfg(desktop)]
 mod menu;
 mod cloud;
+#[cfg(desktop)]
 mod dc;
 mod ssrf_git;
 mod types;
@@ -242,14 +243,17 @@ pub fn run() {
             cloud::open_cloud_logbook,
             cloud::open_recent_cloud_logbook,
             cloud::sync_cloud_logbook,
+            #[cfg(desktop)]
             dc::commands::list_dc_vendors,
+            #[cfg(desktop)]
             dc::commands::list_dc_models,
+            #[cfg(desktop)]
             dc::commands::list_serial_ports,
-            #[cfg(not(target_os = "android"))]
+            #[cfg(desktop)]
             dc::commands::scan_ble_devices,
-            #[cfg(not(target_os = "android"))]
+            #[cfg(desktop)]
             dc::commands::start_dc_download,
-            #[cfg(not(target_os = "android"))]
+            #[cfg(desktop)]
             dc::commands::cancel_dc_download,
         ])
         .run(tauri::generate_context!())

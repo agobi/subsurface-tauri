@@ -52,6 +52,7 @@ The recents list is currently unbounded and entries can only be added, not remov
 
 ## Backlog
 
+- [ ] **Android dive computer download** — currently desktop-only (libdivecomputer FFI + serial/USB/BLE stacks don't compile on Android). Deferred: would require Android-specific transport bindings (android.hardware.usb, Android BLE APIs), separate FFI layer, and UI entry point in place of the menu bar.
 - [ ] **Release workflow: signed Android APK/AAB** — debug APKs are already built and uploaded on release (see `release.yml`). Remaining: switch to `--release`, add keystore secrets, and optionally produce an AAB for Play Store. Only needed if Play Store distribution becomes a goal.
 - [ ] Imperial units support in `parse_divecomputer.rs` sample parsing (currently metric-only: m, bar, °C — ft, psi, °F sample lines are silently ignored)
 - [ ] Surface unreadable Dive/Divecomputer parse errors instead of silently dropping dives (`ssrf_git/mod.rs:69/73`)

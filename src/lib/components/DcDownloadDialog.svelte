@@ -41,12 +41,12 @@
     unlisteners.push(await listen<{ added: number; skipped: number }>("dc-complete", async (e) => {
       resultAdded = e.payload.added;
       resultSkipped = e.payload.skipped;
+      errorMsg = null;
       step = "result";
       await invoke("startup_logbook");
     }));
     unlisteners.push(await listen<{ message: string }>("dc-error", (e) => {
       errorMsg = e.payload.message;
-      step = "result";
     }));
   });
 
@@ -151,6 +151,9 @@
         <h2>Downloading…</h2>
         <progress value={progressCurrent} max={progressMaximum || undefined}></progress>
         <p>{progressCurrent} / {progressMaximum || "?"}</p>
+        {#if errorMsg}
+          <p class="warning">{errorMsg}</p>
+        {/if}
         <button onclick={cancel}>Cancel</button>
 
       {:else if step === "result"}
@@ -176,4 +179,5 @@
     min-width: 360px; display: flex; flex-direction: column; gap: 1rem;
   }
   .error { color: red; }
+  .warning { color: #ff8800; font-size: 0.875rem; }
 </style>
