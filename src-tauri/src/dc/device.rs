@@ -237,13 +237,11 @@ pub fn run_download<R: tauri::Runtime>(
         // known_fingerprints (from dc_dive_id in the logbook) handles dedup on first
         // download, and subsequent downloads rely on the same mechanism until
         // fingerprint-based dedup is added.
-        let foreach_rc = unsafe {
-            dc_device_foreach(
-                device,
-                Some(dive_cb::<R>),
-                &mut download_ctx as *mut DownloadCtx<R> as *mut _,
-            )
-        };
+        let foreach_rc = dc_device_foreach(
+            device,
+            Some(dive_cb::<R>),
+            &mut download_ctx as *mut DownloadCtx<R> as *mut _,
+        );
 
         dc_device_close(device);
         dc_iostream_close(iostream);

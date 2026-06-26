@@ -184,7 +184,6 @@ pub async fn start_dc_download(
 
     // Read logbook path from the persisted store.
     let root = {
-        use tauri::Manager;
         use tauri_plugin_store::StoreExt;
         let store = app.store("settings.json").map_err(|e| e.to_string())?;
         let path = store

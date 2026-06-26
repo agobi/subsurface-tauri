@@ -19,13 +19,6 @@ fn hex_decode(hex: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-pub fn read_fp<R: tauri::Runtime>(app: &AppHandle<R>, device_id: &str) -> Option<Vec<u8>> {
-    let store = app.store("settings.json").ok()?;
-    let map = store.get(STORE_KEY)?;
-    let hex = map.get(device_id)?.as_str()?;
-    hex_decode(hex)
-}
-
 pub fn write_fp<R: tauri::Runtime>(
     app: &AppHandle<R>,
     device_id: &str,
@@ -54,6 +47,14 @@ pub fn known_dive_ids(dives: &[crate::types::Dive]) -> HashSet<Vec<u8>> {
 mod tests {
     use tauri::test::{mock_builder, mock_context, noop_assets, MockRuntime};
     use tauri::Manager;
+    use super::{hex_decode, STORE_KEY};
+
+    fn read_fp<R: tauri::Runtime>(app: &tauri::AppHandle<R>, device_id: &str) -> Option<Vec<u8>> {
+        let store = app.store("settings.json").ok()?;
+        let map = store.get(STORE_KEY)?;
+        let hex = map.get(device_id)?.as_str()?;
+        hex_decode(hex)
+    }
 
     fn setup() -> tauri::App<MockRuntime> {
         mock_builder()
@@ -68,7 +69,7 @@ mod tests {
         let handle = app.handle();
         // Use a device_id not written by any other test to avoid cross-test contamination
         // (mock_context reuses the same app_data_dir path across test instances).
-        assert!(super::read_fp(handle, "00000000").is_none());
+        assert!(read_fp(handle, "00000000").is_none());
     }
 
     #[test]

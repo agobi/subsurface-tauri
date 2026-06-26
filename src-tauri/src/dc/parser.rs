@@ -3,6 +3,7 @@
 //!
 //! The caller is responsible for creating the `dc_parser_t*` (via
 //! `dc_parser_new2`) and destroying it after this function returns.
+#![allow(non_upper_case_globals)]
 use std::ffi::c_void;
 use crate::dc::ffi::*;
 use crate::dc::writer::{ParsedCylinder, ParsedDive};
