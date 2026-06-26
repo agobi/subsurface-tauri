@@ -174,6 +174,13 @@ if(NOT WIN32)
     target_compile_definitions(divecomputer PRIVATE HAVE_PTHREAD_H=1)
 endif()
 
+# Check for Linux-specific serial header
+include(CheckIncludeFile)
+check_include_file("linux/serial.h" HAVE_LINUX_SERIAL_H)
+if(HAVE_LINUX_SERIAL_H)
+    target_compile_definitions(divecomputer PRIVATE HAVE_LINUX_SERIAL_H=1)
+endif()
+
 # Suppress warnings from the library sources
 target_compile_options(divecomputer PRIVATE
     $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wno-unused-parameter -Wno-sign-compare -Wno-implicit-function-declaration>
