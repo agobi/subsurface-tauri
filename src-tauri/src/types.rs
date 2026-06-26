@@ -196,23 +196,13 @@ impl From<&Dive> for DiveSummary {
 }
 
 /// Internal parse result — holds full `Dive` objects with samples and events.
-/// Not serialized to IPC; converted to `Logbook` (with `DiveSummary`) before returning.
+/// Not serialized to IPC; callers build a `LogbookState` from this, then call `to_logbook()`.
 #[derive(Clone, Debug)]
 pub struct ParsedLogbook {
     pub dives: Vec<Dive>,
     pub trips: Vec<Trip>,
     pub sites: Vec<Site>,
-    pub units: String,
-}
-
-impl ParsedLogbook {
-    /// Splits into the full dive list (stored in managed state) and a summary-only `Logbook`
-    /// suitable for the IPC payload.
-    pub fn into_summary(self) -> (Vec<Dive>, Logbook) {
-        let summaries: Vec<DiveSummary> = self.dives.iter().map(DiveSummary::from).collect();
-        let logbook = Logbook { dives: summaries, trips: self.trips, sites: self.sites, units: self.units };
-        (self.dives, logbook)
-    }
+    pub settings: crate::ssrf_git::settings::Settings,
 }
 
 /// Logbook as returned over IPC: dives are summaries only; samples/events are fetched on demand.
@@ -367,20 +357,18 @@ mod tests {
     }
 
     #[test]
-    fn parsed_logbook_into_summary_splits_correctly() {
-        let d1 = make_dive(1);
-        let d2 = make_dive(2);
+    fn parsed_logbook_carries_settings() {
+        use crate::ssrf_git::settings::Settings;
+        let mut settings = Settings::default();
+        settings.units = "IMPERIAL".to_owned();
         let parsed = ParsedLogbook {
-            dives: vec![d1.clone(), d2.clone()],
+            dives: vec![make_dive(1), make_dive(2)],
             trips: vec![],
             sites: vec![],
-            units: "METRIC".to_owned(),
+            settings,
         };
-        let (full_dives, logbook) = parsed.into_summary();
-        assert_eq!(full_dives.len(), 2, "full dives count");
-        assert_eq!(logbook.dives.len(), 2, "summary dives count");
-        assert_eq!(full_dives[0].samples.len(), 1, "full dive retains samples");
-        assert_eq!(logbook.dives[0].number, 1);
-        assert_eq!(logbook.dives[1].number, 2);
+        assert_eq!(parsed.settings.units, "IMPERIAL");
+        assert_eq!(parsed.dives.len(), 2);
+        assert_eq!(parsed.dives[0].samples.len(), 1, "full dive retains samples");
     }
 }

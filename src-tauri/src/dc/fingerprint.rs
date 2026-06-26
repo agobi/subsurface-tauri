@@ -19,10 +19,8 @@ pub fn lookup_fp(settings: &Settings, model_name: &str, serial: u32) -> Option<V
         .map(|r| r.data.clone())
 }
 
-/// Reads `<logbook_root>/00-Subsurface`, inserts or replaces the fingerprint for
-/// the given device, and writes the file back.
-pub fn upsert_fp(logbook_root: &Path, model_name: &str, serial: u32, fp_bytes: &[u8]) -> Result<(), String> {
-    let mut settings = read_settings(logbook_root);
+/// Inserts or replaces the fingerprint for the given device in `settings` (in-memory only).
+pub fn apply_fp(settings: &mut Settings, model_name: &str, serial: u32, fp_bytes: &[u8]) {
     let model_hash = sha1_u32(model_name.as_bytes());
     let device_id = sha1_u32(serial.to_string().as_bytes());
     let dive_id = sha1_u32(fp_bytes);
@@ -34,6 +32,13 @@ pub fn upsert_fp(logbook_root: &Path, model_name: &str, serial: u32, fp_bytes: &
         dive_id,
         data: fp_bytes.to_vec(),
     });
+}
+
+/// Reads `<logbook_root>/00-Subsurface`, inserts or replaces the fingerprint for
+/// the given device, and writes the file back.
+pub fn upsert_fp(logbook_root: &Path, model_name: &str, serial: u32, fp_bytes: &[u8]) -> Result<(), String> {
+    let mut settings = read_settings(logbook_root);
+    apply_fp(&mut settings, model_name, serial, fp_bytes);
     write_settings(logbook_root, &settings)
 }
 
@@ -49,7 +54,36 @@ pub fn known_dive_ids(dives: &[crate::types::Dive]) -> HashSet<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ssrf_git::settings::read_settings;
+    use crate::ssrf_git::settings::{read_settings, Settings};
+
+    #[test]
+    fn apply_fp_inserts_when_absent() {
+        let mut s = Settings::default();
+        apply_fp(&mut s, "Shearwater Perdix", 123456, &[0x01, 0x02]);
+        assert_eq!(s.fingerprints.len(), 1);
+        let fp = lookup_fp(&s, "Shearwater Perdix", 123456).unwrap();
+        assert_eq!(fp, vec![0x01u8, 0x02]);
+    }
+
+    #[test]
+    fn apply_fp_replaces_existing() {
+        let mut s = Settings::default();
+        apply_fp(&mut s, "Shearwater Perdix", 123456, &[0x01, 0x02]);
+        apply_fp(&mut s, "Shearwater Perdix", 123456, &[0xAA, 0xBB]);
+        assert_eq!(s.fingerprints.len(), 1, "second apply must replace, not append");
+        let fp = lookup_fp(&s, "Shearwater Perdix", 123456).unwrap();
+        assert_eq!(fp, vec![0xAAu8, 0xBB]);
+    }
+
+    #[test]
+    fn apply_fp_isolated_per_serial() {
+        let mut s = Settings::default();
+        apply_fp(&mut s, "Shearwater Perdix", 111111, &[0x01]);
+        apply_fp(&mut s, "Shearwater Perdix", 222222, &[0x02]);
+        assert_eq!(s.fingerprints.len(), 2);
+        assert_eq!(lookup_fp(&s, "Shearwater Perdix", 111111).unwrap(), vec![0x01u8]);
+        assert_eq!(lookup_fp(&s, "Shearwater Perdix", 222222).unwrap(), vec![0x02u8]);
+    }
 
     #[test]
     fn lookup_returns_none_when_absent() {

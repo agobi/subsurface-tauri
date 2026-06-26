@@ -22,6 +22,9 @@ use crate::dc::writer::write_dive;
 pub struct DownloadResult {
     pub added: u32,
     pub skipped: u32,
+    /// The serial number and raw fingerprint bytes of the newest dive seen, if any.
+    /// The caller uses this to update in-memory state after `upsert_fp` writes to disk.
+    pub newest_fp: Option<(u32, Vec<u8>)>,
 }
 
 /// Userdata passed through libdivecomputer callbacks.
@@ -156,18 +159,22 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
 
 /// Download all new dives from a dive computer and write them to `logbook_root`.
 ///
+/// `settings` is cloned from managed state before the call; it is not re-read from disk.
+///
 /// Emits Tauri events:
 /// - `dc-progress { current, maximum }` — download progress
 /// - `dc-devinfo { model, firmware, serial }` — device identification
 /// - `dc-error { message }` — per-dive write error (non-fatal)
 ///
-/// Returns [`DownloadResult`] with the count of added and skipped dives.
+/// Returns [`DownloadResult`] with the count of added and skipped dives, plus the
+/// newest fingerprint (serial, bytes) so the caller can update in-memory state.
 ///
 /// This function blocks the calling thread; call it via
 /// `tauri::async_runtime::spawn_blocking`.
 pub fn run_download<R: tauri::Runtime>(
     app: AppHandle<R>,
     logbook_root: std::path::PathBuf,
+    settings: crate::ssrf_git::settings::Settings,
     dives: Vec<crate::types::Dive>,
     vendor: String,
     model: String,
@@ -200,7 +207,6 @@ pub fn run_download<R: tauri::Runtime>(
     })?;
 
     let known_fingerprints = known_dive_ids(&dives);
-    let settings = crate::ssrf_git::settings::read_settings(&logbook_root);
 
     let mut download_ctx = DownloadCtx {
         app: app.clone(),
@@ -264,17 +270,23 @@ pub fn run_download<R: tauri::Runtime>(
         }
     }
 
-    // Persist the newest fingerprint so the next download can skip already-seen dives.
-    if !download_ctx.cancel.load(Ordering::Relaxed) {
+    // Persist the newest fingerprint to disk so the next download can skip already-seen dives.
+    let newest_fp = if !download_ctx.cancel.load(Ordering::Relaxed) {
         if let (Some(serial), Some(fp)) =
-            (download_ctx.device_serial, &download_ctx.newest_fingerprint)
+            (download_ctx.device_serial, download_ctx.newest_fingerprint)
         {
-            upsert_fp(&download_ctx.logbook_root, &model, serial, fp).ok();
+            upsert_fp(&download_ctx.logbook_root, &model, serial, &fp).ok();
+            Some((serial, fp))
+        } else {
+            None
         }
-    }
+    } else {
+        None
+    };
 
     Ok(DownloadResult {
         added: download_ctx.added,
         skipped: download_ctx.skipped,
+        newest_fp,
     })
 }

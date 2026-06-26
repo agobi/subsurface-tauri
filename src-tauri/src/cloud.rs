@@ -2,7 +2,8 @@
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
 use std::sync::Mutex;
-use crate::types::{Dive, OpenResult, ParsedLogbook, RecentEntry};
+use crate::state::LogbookState;
+use crate::types::{OpenResult, ParsedLogbook, RecentEntry};
 
 pub(crate) const CLOUD_BASE: &str = "https://ssrf-cloud-eu.subsurface-divelog.org";
 
@@ -353,7 +354,7 @@ pub async fn open_cloud_logbook(
     app: tauri::AppHandle,
     email: String,
     password: String,
-    dives_state: tauri::State<'_, Mutex<Vec<Dive>>>,
+    logbook_state: tauri::State<'_, Mutex<Option<LogbookState>>>,
 ) -> Result<OpenResult, String> {
     // Qt lowercases the email before all cloud operations (preferences_cloud.cpp::syncSettings).
     let email = email.to_lowercase();
@@ -381,6 +382,7 @@ pub async fn open_cloud_logbook(
     // Step 3: Save credentials, persist logbookPath, update recents, and parse.
     // keychain_set runs BEFORE store.save so that a keychain failure leaves nothing
     // persisted — avoiding the stuck-loop where the path is saved but credentials aren't.
+    let root = cache_dir2.clone();
     let app_clone = app.clone();
     let cloud_url = CLOUD_BASE.to_owned();
     let (parsed, recents) = tauri::async_runtime::spawn_blocking(move || -> Result<(ParsedLogbook, Vec<RecentEntry>), String> {
@@ -400,8 +402,7 @@ pub async fn open_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
-    let (full_dives, logbook) = parsed.into_summary();
-    *dives_state.lock().map_err(|e| e.to_string())? = full_dives;
+    let logbook = crate::install_logbook(&logbook_state, root, parsed)?;
 
     #[cfg(desktop)]
     crate::menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
@@ -417,7 +418,7 @@ pub async fn open_cloud_logbook(
 pub async fn open_recent_cloud_logbook(
     app: tauri::AppHandle,
     email: String,
-    dives_state: tauri::State<'_, Mutex<Vec<Dive>>>,
+    logbook_state: tauri::State<'_, Mutex<Option<LogbookState>>>,
 ) -> Result<OpenResult, String> {
     use tauri::Manager;
 
@@ -431,6 +432,7 @@ pub async fn open_recent_cloud_logbook(
     let email_clone = email.clone();
     let cloud_url = CLOUD_BASE.to_owned();
     let app_clone = app.clone();
+    let root = cache_dir.clone();
 
     let (parsed, recents) = tauri::async_runtime::spawn_blocking(
         move || -> Result<(ParsedLogbook, Vec<RecentEntry>), String> {
@@ -456,8 +458,7 @@ pub async fn open_recent_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
-    let (full_dives, logbook) = parsed.into_summary();
-    *dives_state.lock().map_err(|e| e.to_string())? = full_dives;
+    let logbook = crate::install_logbook(&logbook_state, root, parsed)?;
 
     #[cfg(desktop)]
     crate::menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
@@ -468,7 +469,7 @@ pub async fn open_recent_cloud_logbook(
 #[tauri::command]
 pub async fn sync_cloud_logbook(
     app: tauri::AppHandle,
-    dives_state: tauri::State<'_, Mutex<Vec<Dive>>>,
+    logbook_state: tauri::State<'_, Mutex<Option<LogbookState>>>,
 ) -> Result<OpenResult, String> {
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let email = store
@@ -485,6 +486,7 @@ pub async fn sync_cloud_logbook(
     let cache_dir = cloud_cache_dir(&data_dir, CLOUD_BASE, &email);
     let url = cloud_remote_url(&email);
     let branch = cloud_branch(&email).to_owned();
+    let root = cache_dir.clone();
 
     let parsed = tauri::async_runtime::spawn_blocking(move || {
         clone_or_fetch(&url, &branch, &cache_dir, &email, &password)?;
@@ -493,8 +495,7 @@ pub async fn sync_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
-    let (full_dives, logbook) = parsed.into_summary();
-    *dives_state.lock().map_err(|e| e.to_string())? = full_dives;
+    let logbook = crate::install_logbook(&logbook_state, root, parsed)?;
 
     // Read recents AFTER the (potentially multi-second) fetch so a concurrent open
     // that wrote a new entry during the fetch is not overwritten with a stale snapshot.

@@ -5,12 +5,15 @@ mod cloud;
 #[cfg(desktop)]
 mod dc;
 mod ssrf_git;
+mod state;
 mod types;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use tauri_plugin_store::StoreExt;
-use types::{Dive, OpenResult, RecentEntry};
+use state::LogbookState;
+use types::{OpenResult, RecentEntry};
 
 fn validate_logbook_path(path: &std::path::Path) -> Result<(), String> {
     use std::path::Component;
@@ -54,10 +57,27 @@ pub(crate) fn update_recents(
     Ok(recents)
 }
 
+fn install_logbook(
+    logbook_state: &tauri::State<'_, Mutex<Option<LogbookState>>>,
+    root: std::path::PathBuf,
+    parsed: types::ParsedLogbook,
+) -> Result<types::Logbook, String> {
+    let state = LogbookState {
+        root,
+        dives: parsed.dives,
+        trips: parsed.trips,
+        sites: parsed.sites,
+        settings: parsed.settings,
+    };
+    let logbook = state.to_logbook();
+    *logbook_state.lock().map_err(|e| e.to_string())? = Some(state);
+    Ok(logbook)
+}
+
 #[tauri::command]
 async fn startup_logbook(
     app: tauri::AppHandle,
-    dives_state: tauri::State<'_, Mutex<Vec<Dive>>>,
+    logbook_state: tauri::State<'_, Mutex<Option<LogbookState>>>,
 ) -> Result<OpenResult, String> {
     use tauri::Manager;
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
@@ -111,8 +131,7 @@ async fn startup_logbook(
         .await
         .map_err(|e| e.to_string())??;
 
-    let (full_dives, logbook) = parsed.into_summary();
-    *dives_state.lock().map_err(|e| e.to_string())? = full_dives;
+    let logbook = install_logbook(&logbook_state, root, parsed)?;
 
     #[cfg(desktop)]
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
@@ -124,7 +143,7 @@ async fn startup_logbook(
 async fn open_logbook(
     app: tauri::AppHandle,
     root: String,
-    dives_state: tauri::State<'_, Mutex<Vec<Dive>>>,
+    logbook_state: tauri::State<'_, Mutex<Option<LogbookState>>>,
 ) -> Result<OpenResult, String> {
     let path = std::path::PathBuf::from(&root);
     validate_logbook_path(&path)?;
@@ -135,8 +154,7 @@ async fn open_logbook(
         .await
         .map_err(|e| e.to_string())??;
 
-    let (full_dives, logbook) = parsed.into_summary();
-    *dives_state.lock().map_err(|e| e.to_string())? = full_dives;
+    let logbook = install_logbook(&logbook_state, path.clone(), parsed)?;
 
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let display_name = path_basename(&path);
@@ -154,7 +172,7 @@ async fn open_logbook(
 async fn new_logbook(
     app: tauri::AppHandle,
     root: String,
-    dives_state: tauri::State<'_, Mutex<Vec<Dive>>>,
+    logbook_state: tauri::State<'_, Mutex<Option<LogbookState>>>,
 ) -> Result<OpenResult, String> {
     let path = std::path::PathBuf::from(&root);
     validate_logbook_path(&path)?;
@@ -168,8 +186,7 @@ async fn new_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
-    let (full_dives, logbook) = parsed.into_summary();
-    *dives_state.lock().map_err(|e| e.to_string())? = full_dives;
+    let logbook = install_logbook(&logbook_state, path.clone(), parsed)?;
 
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let display_name = path_basename(&path);
@@ -186,10 +203,11 @@ async fn new_logbook(
 #[tauri::command]
 async fn get_dive(
     number: i32,
-    dives_state: tauri::State<'_, Mutex<Vec<Dive>>>,
-) -> Result<Dive, String> {
-    let guard = dives_state.lock().map_err(|e| e.to_string())?;
-    guard
+    logbook_state: tauri::State<'_, Mutex<Option<LogbookState>>>,
+) -> Result<types::Dive, String> {
+    let guard = logbook_state.lock().map_err(|e| e.to_string())?;
+    let state = guard.as_ref().ok_or_else(|| "no logbook open".to_string())?;
+    state.dives
         .iter()
         .find(|d| d.number == number)
         .cloned()
@@ -208,7 +226,7 @@ async fn get_recents(app: tauri::AppHandle) -> Result<Vec<RecentEntry>, String> 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        .manage(Mutex::new(Vec::<Dive>::new()))
+        .manage(Mutex::new(None::<LogbookState>))
         .manage(Arc::new(AtomicBool::new(false)))
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
