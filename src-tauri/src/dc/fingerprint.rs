@@ -1,85 +1,117 @@
 // AI-generated (Claude)
 use std::collections::HashSet;
-use tauri::AppHandle;
-use tauri_plugin_store::StoreExt;
+use std::path::Path;
+use crate::ssrf_git::settings::{read_settings, write_settings, sha1_u32, FingerprintRecord, Settings};
 
-const STORE_KEY: &str = "dcFingerprints";
-
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+/// Returns the raw fingerprint bytes for the given device, or `None` if absent.
+pub fn lookup_fp(settings: &Settings, model_name: &str, serial: u32) -> Option<Vec<u8>> {
+    let model_hash = sha1_u32(model_name.as_bytes());
+    settings.fingerprints.iter()
+        .find(|r| r.model == model_hash && r.serial == serial)
+        .map(|r| r.data.clone())
 }
 
-fn hex_decode(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 {
-        return None;
-    }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
-        .collect()
+/// Inserts or replaces the fingerprint for the given device in `settings` (in-memory only).
+pub fn apply_fp(settings: &mut Settings, model_name: &str, serial: u32, fp_bytes: &[u8]) {
+    let model_hash = sha1_u32(model_name.as_bytes());
+    let device_id = sha1_u32(serial.to_string().as_bytes());
+    let dive_id = sha1_u32(fp_bytes);
+    settings.fingerprints.retain(|r| !(r.model == model_hash && r.serial == serial));
+    settings.fingerprints.push(FingerprintRecord {
+        model: model_hash,
+        serial,
+        device_id,
+        dive_id,
+        data: fp_bytes.to_vec(),
+    });
 }
 
-pub fn write_fp<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    device_id: &str,
-    fingerprint: &[u8],
-) -> Result<(), String> {
-    let store = app.store("settings.json").map_err(|e| e.to_string())?;
-    let mut map: serde_json::Map<String, serde_json::Value> = store
-        .get(STORE_KEY)
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    map.insert(device_id.to_string(), serde_json::json!(hex_encode(fingerprint)));
-    store.set(STORE_KEY, serde_json::Value::Object(map));
-    store.save().map_err(|e| e.to_string())
+/// Reads `<logbook_root>/00-Subsurface`, inserts or replaces the fingerprint for
+/// the given device, and writes the file back.
+pub fn upsert_fp(logbook_root: &Path, model_name: &str, serial: u32, fp_bytes: &[u8]) -> Result<(), String> {
+    let mut settings = read_settings(logbook_root);
+    apply_fp(&mut settings, model_name, serial, fp_bytes);
+    write_settings(logbook_root, &settings)
 }
 
-/// Collects all dc_dive_id values from the parsed logbook dives as a fingerprint fallback set.
-pub fn known_dive_ids(dives: &[crate::types::Dive]) -> HashSet<Vec<u8>> {
+/// Returns the set of SHA1_uint32(fingerprint) values for all dives in the logbook.
+///
+/// Each Divecomputer file stores `diveid` as SHA1_uint32(raw_fingerprint_bytes),
+/// matching original Subsurface's calculate_diveid() / has_dive() convention.
+/// During download, compare sha1_u32(incoming_fp) against this set to skip duplicates.
+pub fn known_dive_ids(dives: &[crate::types::Dive]) -> HashSet<u32> {
     dives
         .iter()
         .filter_map(|d| d.dc_dive_id.as_deref())
-        .filter_map(hex_decode)
+        .filter_map(|s| u32::from_str_radix(s, 16).ok())
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use tauri::test::{mock_builder, mock_context, noop_assets, MockRuntime};
-    use tauri_plugin_store::StoreExt;
-    use super::{hex_decode, STORE_KEY};
+    use super::*;
+    use crate::ssrf_git::settings::{read_settings, Settings};
 
-    fn read_fp<R: tauri::Runtime>(app: &tauri::AppHandle<R>, device_id: &str) -> Option<Vec<u8>> {
-        let store = app.store("settings.json").ok()?;
-        let map = store.get(STORE_KEY)?;
-        let hex = map.get(device_id)?.as_str()?;
-        hex_decode(hex)
-    }
-
-    fn setup() -> tauri::App<MockRuntime> {
-        mock_builder()
-            .plugin(tauri_plugin_store::Builder::new().build())
-            .build(mock_context(noop_assets()))
-            .unwrap()
+    #[test]
+    fn apply_fp_inserts_when_absent() {
+        let mut s = Settings::default();
+        apply_fp(&mut s, "Shearwater Perdix", 123456, &[0x01, 0x02]);
+        assert_eq!(s.fingerprints.len(), 1);
+        let fp = lookup_fp(&s, "Shearwater Perdix", 123456).unwrap();
+        assert_eq!(fp, vec![0x01u8, 0x02]);
     }
 
     #[test]
-    fn read_returns_none_when_absent() {
-        let app = setup();
-        let handle = app.handle();
-        // Use a device_id not written by any other test to avoid cross-test contamination
-        // (mock_context reuses the same app_data_dir path across test instances).
-        assert!(read_fp(handle, "00000000").is_none());
+    fn apply_fp_replaces_existing() {
+        let mut s = Settings::default();
+        apply_fp(&mut s, "Shearwater Perdix", 123456, &[0x01, 0x02]);
+        apply_fp(&mut s, "Shearwater Perdix", 123456, &[0xAA, 0xBB]);
+        assert_eq!(s.fingerprints.len(), 1, "second apply must replace, not append");
+        let fp = lookup_fp(&s, "Shearwater Perdix", 123456).unwrap();
+        assert_eq!(fp, vec![0xAAu8, 0xBB]);
     }
 
     #[test]
-    fn write_then_read_roundtrip() {
-        let app = setup();
-        let handle = app.handle();
-        let fp = vec![0x76u8, 0xb9, 0xbc, 0x25];
-        super::write_fp(handle, "a790cf6c", &fp).unwrap();
-        let loaded = read_fp(handle, "a790cf6c").unwrap();
-        assert_eq!(loaded, fp);
+    fn apply_fp_isolated_per_serial() {
+        let mut s = Settings::default();
+        apply_fp(&mut s, "Shearwater Perdix", 111111, &[0x01]);
+        apply_fp(&mut s, "Shearwater Perdix", 222222, &[0x02]);
+        assert_eq!(s.fingerprints.len(), 2);
+        assert_eq!(lookup_fp(&s, "Shearwater Perdix", 111111).unwrap(), vec![0x01u8]);
+        assert_eq!(lookup_fp(&s, "Shearwater Perdix", 222222).unwrap(), vec![0x02u8]);
+    }
+
+    #[test]
+    fn lookup_returns_none_when_absent() {
+        let tmp = std::env::temp_dir().join("fp_lookup_absent");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let s = read_settings(&tmp);
+        assert!(lookup_fp(&s, "Shearwater Perdix", 123456).is_none());
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn upsert_then_lookup_roundtrip() {
+        let tmp = std::env::temp_dir().join("fp_upsert_rt");
+        std::fs::create_dir_all(&tmp).unwrap();
+        upsert_fp(&tmp, "Shearwater Perdix", 123456, &[0x76, 0xb9, 0xbc, 0x25]).unwrap();
+        let s = read_settings(&tmp);
+        let fp = lookup_fp(&s, "Shearwater Perdix", 123456).unwrap();
+        assert_eq!(fp, vec![0x76u8, 0xb9, 0xbc, 0x25]);
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn upsert_replaces_existing() {
+        let tmp = std::env::temp_dir().join("fp_upsert_replace");
+        std::fs::create_dir_all(&tmp).unwrap();
+        upsert_fp(&tmp, "Shearwater Perdix", 123456, &[0x76, 0xb9, 0xbc, 0x25]).unwrap();
+        upsert_fp(&tmp, "Shearwater Perdix", 123456, &[0xaa, 0xbb]).unwrap();
+        let s = read_settings(&tmp);
+        assert_eq!(s.fingerprints.len(), 1, "second upsert must replace, not append");
+        let fp = lookup_fp(&s, "Shearwater Perdix", 123456).unwrap();
+        assert_eq!(fp, vec![0xaa, 0xbb]);
+        std::fs::remove_dir_all(&tmp).ok();
     }
 
     #[test]
@@ -135,8 +167,9 @@ mod tests {
                 events: vec![],
             },
         ];
-        let ids = super::known_dive_ids(&dives);
-        assert!(ids.contains(&vec![0x76u8, 0xb9, 0xbc, 0x25]));
+        let ids = known_dive_ids(&dives);
+        // "76b9bc25" parsed as hex u32 = 0x76b9bc25
+        assert!(ids.contains(&0x76b9bc25u32));
         assert_eq!(ids.len(), 1);
     }
 }

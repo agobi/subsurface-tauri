@@ -173,7 +173,7 @@ pub async fn start_dc_download(
     model: String,
     transport: crate::dc::transport::TransportArg,
     cancel: tauri::State<'_, std::sync::Arc<std::sync::atomic::AtomicBool>>,
-    dives_state: tauri::State<'_, std::sync::Mutex<Vec<crate::types::Dive>>>,
+    logbook_state: tauri::State<'_, std::sync::Mutex<Option<crate::state::LogbookState>>>,
 ) -> Result<DownloadResultSer, String> {
     use std::sync::atomic::Ordering;
     use tauri::Emitter;
@@ -182,33 +182,40 @@ pub async fn start_dc_download(
     cancel.store(false, Ordering::Relaxed);
     let cancel_clone = std::sync::Arc::clone(&cancel);
 
-    let dives = dives_state.lock().map_err(|e| e.to_string())?.clone();
-
-    // Read logbook path from the persisted store.
-    let root = {
-        use tauri_plugin_store::StoreExt;
-        let store = app.store("settings.json").map_err(|e| e.to_string())?;
-        let path = store
-            .get("logbookPath")
-            .and_then(|v| v.as_str().map(str::to_owned))
-            .ok_or_else(|| "no logbook open".to_string())?;
-        std::path::PathBuf::from(path)
+    // Clone (root, settings, dives) from the managed state — lock is released before device I/O.
+    let (root, settings, dives) = {
+        let guard = logbook_state.lock().map_err(|e| e.to_string())?;
+        let state = guard.as_ref().ok_or_else(|| "no logbook open".to_string())?;
+        (state.root.clone(), state.settings.clone(), state.dives.clone())
     };
 
     let app_clone = app.clone();
+    let vendor_clone = vendor.clone();
+    let model_clone = model.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         crate::dc::device::run_download(
             app_clone,
             root,
+            settings,
             dives,
-            vendor,
-            model,
+            vendor_clone,
+            model_clone,
             transport,
             cancel_clone,
         )
     })
     .await
     .map_err(|e| e.to_string())??;
+
+    // Apply the newest fingerprint to the in-memory state (after disk write in run_download).
+    // Use the same "Vendor Product" string that run_download uses so the hash matches.
+    if let Some((serial, fp)) = &result.newest_fp {
+        let mut guard = logbook_state.lock().map_err(|e| e.to_string())?;
+        if let Some(ref mut state) = *guard {
+            let full_model = format!("{vendor} {model}");
+            crate::dc::fingerprint::apply_fp(&mut state.settings, &full_model, *serial, fp);
+        }
+    }
 
     app.emit(
         "dc-complete",
