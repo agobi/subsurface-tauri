@@ -3,14 +3,6 @@ use std::collections::HashSet;
 use std::path::Path;
 use crate::ssrf_git::settings::{read_settings, write_settings, sha1_u32, FingerprintRecord, Settings};
 
-fn hex_decode(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 { return None; }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
-        .collect()
-}
-
 /// Returns the raw fingerprint bytes for the given device, or `None` if absent.
 pub fn lookup_fp(settings: &Settings, model_name: &str, serial: u32) -> Option<Vec<u8>> {
     let model_hash = sha1_u32(model_name.as_bytes());
@@ -42,12 +34,16 @@ pub fn upsert_fp(logbook_root: &Path, model_name: &str, serial: u32, fp_bytes: &
     write_settings(logbook_root, &settings)
 }
 
-/// Collects all dc_dive_id values from parsed logbook dives as a fingerprint fallback set.
-pub fn known_dive_ids(dives: &[crate::types::Dive]) -> HashSet<Vec<u8>> {
+/// Returns the set of SHA1_uint32(fingerprint) values for all dives in the logbook.
+///
+/// Each Divecomputer file stores `diveid` as SHA1_uint32(raw_fingerprint_bytes),
+/// matching original Subsurface's calculate_diveid() / has_dive() convention.
+/// During download, compare sha1_u32(incoming_fp) against this set to skip duplicates.
+pub fn known_dive_ids(dives: &[crate::types::Dive]) -> HashSet<u32> {
     dives
         .iter()
         .filter_map(|d| d.dc_dive_id.as_deref())
-        .filter_map(hex_decode)
+        .filter_map(|s| u32::from_str_radix(s, 16).ok())
         .collect()
 }
 
@@ -172,7 +168,8 @@ mod tests {
             },
         ];
         let ids = known_dive_ids(&dives);
-        assert!(ids.contains(&vec![0x76u8, 0xb9, 0xbc, 0x25]));
+        // "76b9bc25" parsed as hex u32 = 0x76b9bc25
+        assert!(ids.contains(&0x76b9bc25u32));
         assert_eq!(ids.len(), 1);
     }
 }

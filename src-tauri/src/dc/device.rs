@@ -39,7 +39,9 @@ struct DownloadCtx<R: tauri::Runtime> {
     device_id: Option<String>,
     device_serial: Option<u32>,
     settings: crate::ssrf_git::settings::Settings,
-    known_fingerprints: HashSet<Vec<u8>>,
+    // SHA1_uint32 of each known fingerprint byte sequence, matching the diveid format
+    // written to Divecomputer files and used by original Subsurface's has_dive() check.
+    known_fingerprints: HashSet<u32>,
     newest_fingerprint: Option<Vec<u8>>,
     added: u32,
     skipped: u32,
@@ -74,7 +76,12 @@ unsafe extern "C" fn event_cb<R: tauri::Runtime>(
         }
 
         ctx.device_serial = Some(info.serial);
-        ctx.device_id = Some(format!("{:08x}", info.serial));
+        // Original Subsurface stores deviceid as SHA1_uint32(serial_string), matching
+        // calculate_string_hash() in libdivecomputer.cpp.
+        let device_id_hash = crate::ssrf_git::settings::sha1_u32(
+            info.serial.to_string().as_bytes()
+        );
+        ctx.device_id = Some(format!("{:08x}", device_id_hash));
         ctx.app
             .emit(
                 "dc-devinfo",
@@ -108,8 +115,18 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
     let ctx = &mut *(userdata as *mut DownloadCtx<R>);
     let fp = std::slice::from_raw_parts(fingerprint, fsize as usize).to_vec();
 
-    // Skip dives already in the logbook (known from dc_dive_id hex strings).
-    if ctx.known_fingerprints.contains(&fp) {
+    // libdc delivers dives newest-first, so the first dive delivered is the most recent.
+    // Capture its fingerprint unconditionally — even if the dive will be skipped as
+    // already-known — so upsert_fp always has a valid frontier to store after the
+    // download, regardless of whether any new dives were actually written.
+    if ctx.newest_fingerprint.is_none() {
+        ctx.newest_fingerprint = Some(fp.clone());
+    }
+
+    // Skip dives already in the logbook. Compare SHA1(fp) against the stored set of
+    // SHA1 hashes — the Divecomputer file stores SHA1_uint32(fingerprint), not raw bytes.
+    let fp_hash = crate::ssrf_git::settings::sha1_u32(&fp);
+    if ctx.known_fingerprints.contains(&fp_hash) {
         ctx.skipped += 1;
         return 1; // 1 = continue iterating
     }
@@ -137,11 +154,6 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
             match write_dive(&ctx.logbook_root, parsed) {
                 Ok(_) => {
                     ctx.added += 1;
-                    // Track the newest fingerprint for persisting after the download.
-                    // libdc delivers dives newest-first, so only keep the first one.
-                    if ctx.newest_fingerprint.is_none() {
-                        ctx.newest_fingerprint = Some(fp);
-                    }
                 }
                 Err(e) => {
                     ctx.app
@@ -208,12 +220,17 @@ pub fn run_download<R: tauri::Runtime>(
 
     let known_fingerprints = known_dive_ids(&dives);
 
+    // Qt Subsurface identifies devices as "Vendor Product" (e.g. "Shearwater Perdix AI").
+    // Use the same combined string so our fingerprint hashes are interoperable with the
+    // Qt logbook's 00-Subsurface fingerprint records.
+    let full_model = format!("{vendor} {model}");
+
     let mut download_ctx = DownloadCtx {
         app: app.clone(),
         logbook_root,
         descriptor,
         ctx_ptr: ctx_dc.as_ptr(),
-        dc_model: model.clone(),
+        dc_model: full_model,
         device_id: None,
         device_serial: None,
         settings,
@@ -275,7 +292,7 @@ pub fn run_download<R: tauri::Runtime>(
         if let (Some(serial), Some(fp)) =
             (download_ctx.device_serial, download_ctx.newest_fingerprint)
         {
-            upsert_fp(&download_ctx.logbook_root, &model, serial, &fp).ok();
+            upsert_fp(&download_ctx.logbook_root, &download_ctx.dc_model, serial, &fp).ok();
             Some((serial, fp))
         } else {
             None

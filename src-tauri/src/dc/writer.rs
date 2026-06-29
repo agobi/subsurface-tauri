@@ -1,6 +1,7 @@
 // AI-generated (Claude)
 use std::path::Path;
 use crate::types::{DiveEvent, Sample};
+use crate::ssrf_git::settings::sha1_u32;
 
 pub struct ParsedDive {
     pub year: i32,
@@ -45,10 +46,6 @@ fn weekday_abbrev(year: i32, month: u32, day: u32) -> &'static str {
         Weekday::Sat => "Sat",
         Weekday::Sun => "Sun",
     }
-}
-
-fn bytes_to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn duration_mmss(sec: u32) -> String {
@@ -144,7 +141,8 @@ pub fn write_dive(logbook_root: &Path, dive: ParsedDive) -> Result<(), String> {
     let mut dc_content = String::new();
     dc_content.push_str(&format!("model \"{}\"\n", dive.dc_model));
     dc_content.push_str(&format!("deviceid {}\n", dive.device_id));
-    dc_content.push_str(&format!("diveid {}\n", bytes_to_hex(&dive.dive_id)));
+    // diveid = SHA1_uint32(fingerprint_bytes), matching original Subsurface's calculate_diveid().
+    dc_content.push_str(&format!("diveid {:08x}\n", sha1_u32(&dive.dive_id)));
     dc_content.push_str(&format!("maxdepth {:.1}m\n", dive.max_depth_m));
     dc_content.push_str(&format!("meandepth {:.3}m\n", dive.mean_depth_m));
     if let Some(t) = dive.water_temp_c {
@@ -217,7 +215,9 @@ mod tests {
         assert!((d.water_temp_c.unwrap() - 12.0).abs() < 0.01);
         assert_eq!(d.dc_model.as_deref(), Some("Shearwater Perdix"));
         assert_eq!(d.dc_device_id.as_deref(), Some("a790cf6c"));
-        assert_eq!(d.dc_dive_id.as_deref(), Some("76b9bc25"));
+        // diveid is SHA1_uint32(fingerprint_bytes), not raw bytes
+        let expected_diveid = format!("{:08x}", sha1_u32(&[0x76u8, 0xb9, 0xbc, 0x25]));
+        assert_eq!(d.dc_dive_id.as_deref(), Some(expected_diveid.as_str()));
         assert_eq!(d.cylinders.len(), 1);
         assert_eq!(d.samples.len(), 2);
 

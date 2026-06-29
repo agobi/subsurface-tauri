@@ -190,6 +190,7 @@ pub async fn start_dc_download(
     };
 
     let app_clone = app.clone();
+    let vendor_clone = vendor.clone();
     let model_clone = model.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         crate::dc::device::run_download(
@@ -197,7 +198,7 @@ pub async fn start_dc_download(
             root,
             settings,
             dives,
-            vendor,
+            vendor_clone,
             model_clone,
             transport,
             cancel_clone,
@@ -207,10 +208,12 @@ pub async fn start_dc_download(
     .map_err(|e| e.to_string())??;
 
     // Apply the newest fingerprint to the in-memory state (after disk write in run_download).
+    // Use the same "Vendor Product" string that run_download uses so the hash matches.
     if let Some((serial, fp)) = &result.newest_fp {
         let mut guard = logbook_state.lock().map_err(|e| e.to_string())?;
         if let Some(ref mut state) = *guard {
-            crate::dc::fingerprint::apply_fp(&mut state.settings, &model, *serial, fp);
+            let full_model = format!("{vendor} {model}");
+            crate::dc::fingerprint::apply_fp(&mut state.settings, &full_model, *serial, fp);
         }
     }
 

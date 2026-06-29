@@ -22,7 +22,7 @@ src-tauri/               Rust backend
     ssrf_git/            Pure Rust logbook parser
       mod.rs             parse_logbook() tree-walker
       tokenize.rs        Lexer helpers
-      parse_header.rs    Units detection
+      settings.rs        00-Subsurface settings parser + writer (units, devices, fingerprints)
       parse_site.rs      Site file parser
       parse_divecomputer.rs  DC data + carry-forward samples
       parse_dive.rs      Dive overview + cylinders
@@ -33,7 +33,7 @@ src-tauri/               Rust backend
       descriptor.rs      DcDescriptor — vendor/model enumeration
       commands.rs        Tauri commands: list_dc_vendors, list_dc_models
       writer.rs          Write downloaded dives to ssrf_git format
-      fingerprint.rs     Persist download fingerprints in settings.json
+      fingerprint.rs     Fingerprint lookup/upsert helpers (reads/writes via settings.rs)
     lib.rs               Tauri command registration
   libdc/                 libdivecomputer C source (git submodule)
   libdc-cmake/           CMake wrapper that builds libdc as a static lib
@@ -96,6 +96,10 @@ Commands exposed from Rust to the frontend:
 | `sync_cloud_logbook` | Pulls latest from cloud; preserves selected dive if still present |
 | `list_dc_vendors` | Returns `Vec<String>` of supported dive computer vendors |
 | `list_dc_models { vendor }` | Returns `Vec<DcModelSer>` of models for a vendor |
+| `list_serial_ports` | Returns `Vec<String>` of available serial port names |
+| `scan_ble_devices { vendor, model }` | Emits `dc-ble-found { name, address }` events during 10s BLE scan |
+| `start_dc_download { vendor, model, transport }` | Downloads dives; emits `dc-progress`, `dc-devinfo`, `dc-error`, `dc-complete` |
+| `cancel_dc_download` | Sets cancel flag to abort an in-progress download |
 
 All return `Result<OpenResult, String>` and call `spawn_blocking` for all `std::fs` work.
 The logbook path is persisted in `settings.json` via `tauri-plugin-store`.
@@ -109,9 +113,20 @@ Android builds skip cmake/bindgen entirely (gated on `CARGO_CFG_TARGET_OS != "an
 
 **Prerequisites:** `cmake` must be installed (`brew install cmake` on macOS).
 
-**Fingerprint persistence:** `fingerprint.rs` stores per-device download cursors in
-`settings.json` under the key `dcFingerprints` (map of `device_id → hex-encoded bytes`).
-This prevents re-downloading already-imported dives.
+**Fingerprint persistence:** `fingerprint.rs` + `ssrf_git/settings.rs` store per-device
+download cursors in `00-Subsurface` under `fingerprint model=… serial=… data=…` lines.
+This is the same format as the Qt Subsurface app, enabling interop.
+
+**Fingerprint design — two layers:**
+- `dc_device_set_fingerprint` (set in `DC_EVENT_DEVINFO` callback): wire-level stop — tells
+  libdc to skip transmitting dives older than the cursor. Only works after first download.
+- `known_fingerprints` (built as SHA1 hashes from `dc_dive_id` of all logbook dives): write-level fallback —
+  prevents duplicate writes if the wire-level stop isn't active. Stored as `HashSet<u32>` (SHA1 values), compared via `sha1_u32(fp)`.
+- `newest_fingerprint` is captured from the **first** dive callback unconditionally (libdc
+  delivers newest-first), so it's saved even when all dives are skipped as already-known.
+
+**Qt interop:** Model hash uses `"Vendor Product"` (e.g. `"Shearwater Perdix AI"`) matching
+Qt Subsurface's `vendor + " " + product` convention. Do not change this to product-only.
 
 **FFI:** `ffi.rs` is a bindgen-generated shim (`include!(concat!(env!("OUT_DIR"), "/ffi.rs"))`).
 Do not edit it manually — regenerate via `cargo build` after changing the C headers.
@@ -204,6 +219,17 @@ a line. Only `time_sec` is required on every sample line.
 **Metric-only samples:** `parse_divecomputer.rs` parses only metric units in sample lines
 (m, bar, °C). Imperial sample tokens (ft, psi, °F) are silently ignored; the header
 `units` field still correctly reflects the logbook's unit system.
+
+## Qt Subsurface Reference
+
+For libdivecomputer integration questions, consult `/Users/agobi/github/agobi/subsurface`.
+Key file: `core/libdivecomputer.cpp` — event callbacks, fingerprint flow, `dive_cb` semantics
+(return `false` = abort foreach, return `1` = continue).
+Key files for exact git logbook field formats: `core/save-git.cpp` (write) and `core/load-git.cpp` (read).
+
+**Hash conventions in Divecomputer files:** `diveid` = `SHA1_uint32(fingerprint_bytes)`;
+`deviceid` = `SHA1_uint32(serial_as_string)`. Both use `sha1_u32()` from `settings.rs`.
+These are NOT raw values. Original functions: `calculate_diveid()` and `calculate_string_hash()` in `libdivecomputer.cpp`.
 
 ## Known Follow-ups
 

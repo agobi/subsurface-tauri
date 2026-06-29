@@ -101,8 +101,9 @@ fn parse_divecomputerid(rest: &str) -> DeviceRecord {
 }
 
 fn format_divecomputerid(d: &DeviceRecord) -> String {
+    // Original uses show_utf8() which always quotes — serial must be quoted to match.
     format!(
-        "divecomputerid \"{}\" deviceid={:08x} serial={} nickname=\"{}\"",
+        "divecomputerid \"{}\" deviceid={:08x} serial=\"{}\" nickname=\"{}\"",
         d.model, d.device_id, d.serial, d.nickname
     )
 }
