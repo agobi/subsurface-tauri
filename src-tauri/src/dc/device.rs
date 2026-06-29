@@ -45,6 +45,7 @@ struct DownloadCtx<R: tauri::Runtime> {
     newest_fingerprint: Option<Vec<u8>>,
     added: u32,
     skipped: u32,
+    dive_number: u32,
     cancel: Arc<AtomicBool>,
 }
 
@@ -75,6 +76,7 @@ unsafe extern "C" fn event_cb<R: tauri::Runtime>(
             dc_device_set_fingerprint(device, fp.as_ptr(), fp.len() as u32);
         }
 
+        log::info!("DC: devinfo model={} firmware={} serial={}", info.model, info.firmware, info.serial);
         ctx.device_serial = Some(info.serial);
         // Original Subsurface stores deviceid as SHA1_uint32(serial_string), matching
         // calculate_string_hash() in libdivecomputer.cpp.
@@ -113,6 +115,9 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
     userdata: *mut c_void,
 ) -> ::std::os::raw::c_int {
     let ctx = &mut *(userdata as *mut DownloadCtx<R>);
+    ctx.dive_number += 1;
+    let n = ctx.dive_number;
+
     let fp = std::slice::from_raw_parts(fingerprint, fsize as usize).to_vec();
 
     // libdc delivers dives newest-first, so the first dive delivered is the most recent.
@@ -127,6 +132,8 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
     // SHA1 hashes — the Divecomputer file stores SHA1_uint32(fingerprint), not raw bytes.
     let fp_hash = crate::ssrf_git::settings::sha1_u32(&fp);
     if ctx.known_fingerprints.contains(&fp_hash) {
+        log::debug!("DC: dive {} skipped (known)", n);
+        ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": null, "added": false })).ok();
         ctx.skipped += 1;
         return 1; // 1 = continue iterating
     }
@@ -145,25 +152,32 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
         size as usize,
     ) != dc_status_t_DC_STATUS_SUCCESS
     {
+        log::warn!("DC: dive {} error: parser creation failed", n);
+        ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": null, "added": false })).ok();
         return 1; // failed to create parser — skip this dive but continue
     }
 
     match parse_dive(parser, &model, &device_id, fp.clone()) {
         Ok(parsed) => {
+            let date_str = format!("{:04}-{:02}-{:02}", parsed.year, parsed.month, parsed.day);
             dc_parser_destroy(parser);
             match write_dive(&ctx.logbook_root, parsed) {
                 Ok(_) => {
                     ctx.added += 1;
+                    log::info!("DC: dive {} added ({})", n, date_str);
+                    ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": date_str, "added": true })).ok();
                 }
                 Err(e) => {
-                    ctx.app
-                        .emit("dc-error", serde_json::json!({ "message": e }))
-                        .ok();
+                    log::warn!("DC: dive {} error: {}", n, e);
+                    ctx.app.emit("dc-error", serde_json::json!({ "message": e })).ok();
+                    ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": null, "added": false })).ok();
                 }
             }
         }
-        Err(_) => {
+        Err(e) => {
+            log::warn!("DC: dive {} error: {}", n, e);
             dc_parser_destroy(parser);
+            ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": null, "added": false })).ok();
         }
     }
     1 // continue iterating
@@ -239,6 +253,7 @@ pub fn run_download<R: tauri::Runtime>(
         newest_fingerprint: None,
         added: 0,
         skipped: 0,
+        dive_number: 0,
         cancel,
     };
 
@@ -250,6 +265,7 @@ pub fn run_download<R: tauri::Runtime>(
             dc_descriptor_free(descriptor);
             return Err(format!("dc_device_open failed: {rc}"));
         }
+        log::info!("DC: opened {} {}", vendor, model);
 
         // Register event callback for progress and device-info events.
         dc_device_set_events(
@@ -284,6 +300,7 @@ pub fn run_download<R: tauri::Runtime>(
         if foreach_rc != crate::dc::ffi::dc_status_t_DC_STATUS_SUCCESS
             && !download_ctx.cancel.load(Ordering::Relaxed)
         {
+            log::error!("DC: foreach error status={}", foreach_rc);
             return Err(format!("device download interrupted: status {foreach_rc}"));
         }
     }
@@ -302,6 +319,7 @@ pub fn run_download<R: tauri::Runtime>(
         None
     };
 
+    log::info!("DC: complete added={} skipped={}", download_ctx.added, download_ctx.skipped);
     Ok(DownloadResult {
         added: download_ctx.added,
         skipped: download_ctx.skipped,
