@@ -23,9 +23,9 @@ unsafe extern "C" fn log_callback(
         log::error!("[libdc] {}:{} {}", file_str, line, msg_str);
     } else if loglevel == dc_loglevel_t_DC_LOGLEVEL_WARNING {
         log::warn!("[libdc] {}:{} {}", file_str, line, msg_str);
-    } else if loglevel == dc_loglevel_t_DC_LOGLEVEL_INFO {
-        log::info!("[libdc] {}:{} {}", file_str, line, msg_str);
     } else {
+        // DC_LOGLEVEL_INFO and DC_LOGLEVEL_DEBUG both map to debug: libdc's INFO
+        // includes raw byte-level I/O which is too verbose for Rust's info level.
         log::debug!("[libdc] {}:{} {}", file_str, line, msg_str);
     }
 }
