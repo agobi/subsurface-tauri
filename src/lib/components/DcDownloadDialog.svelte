@@ -25,6 +25,7 @@
   let resultAdded = $state(0);
   let resultSkipped = $state(0);
   let errorMsg = $state<string | null>(null);
+  let statusLabel = $state("Connecting…");
 
   let unlisteners: (() => void)[] = [];
 
@@ -33,6 +34,16 @@
     unlisteners.push(await listen<{ name: string; address: string }>("dc-ble-found", (e) => {
       const existing = bleDevices.find((d) => d.address === e.payload.address);
       if (!existing) bleDevices = [...bleDevices, e.payload];
+    }));
+    unlisteners.push(await listen<{ model: number; firmware: number; serial: number }>("dc-devinfo", () => {
+      statusLabel = `Connected: ${vendor} ${model}`;
+    }));
+    unlisteners.push(await listen<{ diveNumber: number; date: string | null; added: boolean }>("dc-dive", (e) => {
+      if (e.payload.date) {
+        statusLabel = `Dive ${e.payload.diveNumber}: ${e.payload.date}`;
+      } else {
+        statusLabel = `Skipping dive ${e.payload.diveNumber}…`;
+      }
     }));
     unlisteners.push(await listen<{ current: number; maximum: number }>("dc-progress", (e) => {
       progressCurrent = e.payload.current;
@@ -75,6 +86,7 @@
 
   async function startDownload() {
     errorMsg = null;
+    statusLabel = "Connecting…";
     step = "progress";
     progressCurrent = 0;
     progressMaximum = 0;
@@ -158,6 +170,7 @@
 
       {:else if step === "progress"}
         <h2>Downloading…</h2>
+        <p class="status">{statusLabel}</p>
         <progress value={progressCurrent} max={progressMaximum || undefined}></progress>
         <p>{fmtBytes(progressCurrent)} / {progressMaximum ? fmtBytes(progressMaximum) : "?"}</p>
         {#if errorMsg}
