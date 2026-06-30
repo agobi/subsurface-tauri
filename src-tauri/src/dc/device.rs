@@ -13,24 +13,24 @@ use tauri::{AppHandle, Emitter};
 use crate::dc::ffi::*;
 use crate::dc::context::DcContext;
 use crate::dc::descriptor::find_descriptor;
-use crate::dc::fingerprint::{lookup_fp, upsert_fp, known_dive_ids};
+use crate::dc::fingerprint::{lookup_fp, known_dive_ids};
 use crate::dc::parser::parse_dive;
 use crate::dc::transport::{open_iostream, TransportArg};
-use crate::dc::writer::write_dive;
+use crate::dc::writer::ParsedDive;
 
 /// Result returned by [`run_download`].
 pub struct DownloadResult {
-    pub added: u32,
+    /// New dives buffered in memory — not yet written to disk.
+    pub new_dives: Vec<ParsedDive>,
     pub skipped: u32,
     /// The serial number and raw fingerprint bytes of the newest dive seen, if any.
-    /// The caller uses this to update in-memory state after `upsert_fp` writes to disk.
+    /// Stored in pending state and written to disk only when the user confirms via `commit_dc_download`.
     pub newest_fp: Option<(u32, Vec<u8>)>,
 }
 
 /// Userdata passed through libdivecomputer callbacks.
 struct DownloadCtx<R: tauri::Runtime> {
     app: AppHandle<R>,
-    logbook_root: std::path::PathBuf,
     descriptor: *mut dc_descriptor_t,
     /// Raw pointer to the context owned by `run_download`'s `DcContext`. Valid
     /// for the entire lifetime of the download (i.e. until after `dc_device_foreach`).
@@ -43,7 +43,7 @@ struct DownloadCtx<R: tauri::Runtime> {
     // written to Divecomputer files and used by original Subsurface's has_dive() check.
     known_fingerprints: HashSet<u32>,
     newest_fingerprint: Option<Vec<u8>>,
-    added: u32,
+    new_dives: Vec<ParsedDive>,
     skipped: u32,
     dive_number: u32,
     cancel: Arc<AtomicBool>,
@@ -161,21 +161,12 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
         Ok(parsed) => {
             let date_str = format!("{:04}-{:02}-{:02}", parsed.year, parsed.month, parsed.day);
             dc_parser_destroy(parser);
-            match write_dive(&ctx.logbook_root, parsed) {
-                Ok(_) => {
-                    ctx.added += 1;
-                    log::info!("DC: dive {} added ({})", n, date_str);
-                    ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": date_str, "added": true })).ok();
-                }
-                Err(e) => {
-                    log::warn!("DC: dive {} error: {}", n, e);
-                    ctx.app.emit("dc-error", serde_json::json!({ "message": e })).ok();
-                    ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": null, "added": false })).ok();
-                }
-            }
+            log::info!("DC: dive {} buffered ({})", n, date_str);
+            ctx.new_dives.push(parsed);
+            ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": date_str, "added": true })).ok();
         }
         Err(e) => {
-            log::warn!("DC: dive {} error: {}", n, e);
+            log::warn!("DC: dive {} parse error: {}", n, e);
             dc_parser_destroy(parser);
             ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": null, "added": false })).ok();
         }
@@ -197,10 +188,8 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
 ///
 /// This function blocks the calling thread; call it via
 /// `tauri::async_runtime::spawn_blocking`.
-#[allow(clippy::too_many_arguments)]
 pub fn run_download<R: tauri::Runtime>(
     app: AppHandle<R>,
-    logbook_root: std::path::PathBuf,
     settings: crate::ssrf_git::settings::Settings,
     dives: Vec<crate::types::Dive>,
     vendor: String,
@@ -242,7 +231,6 @@ pub fn run_download<R: tauri::Runtime>(
 
     let mut download_ctx = DownloadCtx {
         app: app.clone(),
-        logbook_root,
         descriptor,
         ctx_ptr: ctx_dc.as_ptr(),
         dc_model: full_model,
@@ -251,7 +239,7 @@ pub fn run_download<R: tauri::Runtime>(
         settings,
         known_fingerprints,
         newest_fingerprint: None,
-        added: 0,
+        new_dives: Vec::new(),
         skipped: 0,
         dive_number: 0,
         cancel,
@@ -305,23 +293,15 @@ pub fn run_download<R: tauri::Runtime>(
         }
     }
 
-    // Persist the newest fingerprint to disk so the next download can skip already-seen dives.
-    let newest_fp = if !download_ctx.cancel.load(Ordering::Relaxed) {
-        if let (Some(serial), Some(fp)) =
-            (download_ctx.device_serial, download_ctx.newest_fingerprint)
-        {
-            upsert_fp(&download_ctx.logbook_root, &download_ctx.dc_model, serial, &fp).ok();
-            Some((serial, fp))
-        } else {
-            None
-        }
-    } else {
-        None
+    // Capture newest fingerprint for the caller to persist at commit time (not here).
+    let newest_fp = match (download_ctx.device_serial, download_ctx.newest_fingerprint) {
+        (Some(serial), Some(fp)) => Some((serial, fp)),
+        _ => None,
     };
 
-    log::info!("DC: complete added={} skipped={}", download_ctx.added, download_ctx.skipped);
+    log::info!("DC: complete new={} skipped={}", download_ctx.new_dives.len(), download_ctx.skipped);
     Ok(DownloadResult {
-        added: download_ctx.added,
+        new_dives: download_ctx.new_dives,
         skipped: download_ctx.skipped,
         newest_fp,
     })

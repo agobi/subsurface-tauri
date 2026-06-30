@@ -6,7 +6,7 @@
 
   let { open, onClose }: { open: boolean; onClose: () => void } = $props();
 
-  type Step = "select" | "connect" | "progress" | "result";
+  type Step = "select" | "connect" | "progress" | "review" | "result";
   let step = $state<Step>("select");
 
   let vendors = $state<string[]>([]);
@@ -24,8 +24,12 @@
   let progressMaximum = $state(0);
   let resultAdded = $state(0);
   let resultSkipped = $state(0);
+  let resultCancelled = $state(false);
   let errorMsg = $state<string | null>(null);
   let statusLabel = $state("Connecting…");
+
+  type DiveSummary = { date: string; durationSec: number; maxDepthM: number };
+  let pendingDives = $state<DiveSummary[]>([]);
 
   let unlisteners: (() => void)[] = [];
 
@@ -49,16 +53,24 @@
       progressCurrent = e.payload.current;
       progressMaximum = e.payload.maximum;
     }));
-    unlisteners.push(await listen<{ added: number; skipped: number }>("dc-complete", async (e) => {
-      resultAdded = e.payload.added;
+    unlisteners.push(await listen<{
+      dives: DiveSummary[];
+      skipped: number;
+      cancelled: boolean;
+    }>("dc-complete", (e) => {
       resultSkipped = e.payload.skipped;
+      resultCancelled = e.payload.cancelled;
       errorMsg = null;
-      step = "result";
-      await invoke("startup_logbook");
+      if (!e.payload.cancelled && e.payload.dives.length > 0) {
+        pendingDives = e.payload.dives;
+        step = "review";
+      } else {
+        resultAdded = 0;
+        step = "result";
+      }
     }));
     unlisteners.push(await listen<{ message: string }>("dc-error", (e) => {
       errorMsg = e.payload.message;
-      step = "result";
     }));
   });
 
@@ -90,6 +102,7 @@
     step = "progress";
     progressCurrent = 0;
     progressMaximum = 0;
+    pendingDives = [];
     const transportArg = transport === "Serial"
       ? { kind: "Serial", port: serialPort }
       : transport === "Bluetooth"
@@ -105,6 +118,24 @@
     }
   }
 
+  async function saveToLogbook() {
+    try {
+      const added = await invoke<number>("commit_dc_download");
+      resultAdded = added;
+      await invoke("startup_logbook");
+      step = "result";
+    } catch (e) {
+      errorMsg = e instanceof Error ? e.message : String(e);
+      step = "result";
+    }
+  }
+
+  async function discardDownload() {
+    await invoke("discard_dc_download").catch(() => {});
+    pendingDives = [];
+    step = "select";
+  }
+
   async function scanBle() {
     bleDevices = [];
     await invoke("scan_ble_devices", { vendor, model });
@@ -118,6 +149,10 @@
     if (n >= 1_024) return Math.round(n / 1_024) + " KiB";
     return n + " B";
   }
+
+  function fmtDuration(sec: number): string {
+    return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+  }
 </script>
 
 {#if open}
@@ -127,25 +162,25 @@
         <h2>Select Device</h2>
         <label>
           Vendor
-          <select aria-label="Vendor" bind:value={vendor} on:change={onVendorChange}>
+          <select aria-label="Vendor" bind:value={vendor} onchange={onVendorChange}>
             <option value="">— select —</option>
             {#each vendors as v}<option value={v}>{v}</option>{/each}
           </select>
         </label>
         <label>
           Model
-          <select bind:value={model} on:change={updateTransportDefault} disabled={!vendor}>
+          <select bind:value={model} onchange={updateTransportDefault} disabled={!vendor}>
             {#each models as m}<option value={m.product}>{m.product}</option>{/each}
           </select>
         </label>
-        <button disabled={!model} on:click={goConnect}>Next</button>
-        <button on:click={onClose}>Cancel</button>
+        <button disabled={!model} onclick={goConnect}>Next</button>
+        <button onclick={onClose}>Cancel</button>
 
       {:else if step === "connect"}
         <h2>Connect</h2>
         <label>
           Transport
-          <select bind:value={transport} on:change={onTransportChange}>
+          <select bind:value={transport} onchange={onTransportChange}>
             {#each (models.find((m2) => m2.product === model)?.transports ?? []) as t}
               <option value={t}>{t}</option>
             {/each}
@@ -156,17 +191,17 @@
         {:else if transport === "Bluetooth"}
           <label>Address <input bind:value={bluetoothAddress} placeholder="00:11:22:33:44:55" /></label>
         {:else if transport === "BLE"}
-          <button on:click={() => scanBle()}>Scan</button>
+          <button onclick={() => scanBle()}>Scan</button>
           {#each bleDevices as d}
             <label><input type="radio" bind:group={selectedBleDevice} value={d.address} />{d.name}</label>
           {/each}
         {/if}
-        <button on:click={() => startDownload()} disabled={
+        <button onclick={() => startDownload()} disabled={
           (transport === "Serial" && !serialPort) ||
           (transport === "Bluetooth" && !bluetoothAddress) ||
           (transport === "BLE" && !selectedBleDevice)
         }>Download</button>
-        <button on:click={() => (step = "select")}>Back</button>
+        <button onclick={() => (step = "select")}>Back</button>
 
       {:else if step === "progress"}
         <h2>Downloading…</h2>
@@ -176,16 +211,38 @@
         {#if errorMsg}
           <p class="warning">{errorMsg}</p>
         {/if}
-        <button on:click={cancel}>Cancel</button>
+        <button onclick={cancel}>Cancel</button>
+
+      {:else if step === "review"}
+        <h2>Review Downloaded Dives</h2>
+        <p>
+          {pendingDives.length} new dive{pendingDives.length !== 1 ? "s" : ""}
+          {#if resultSkipped > 0}, {resultSkipped} already in logbook{/if}.
+        </p>
+        <div class="dive-list" role="list">
+          {#each pendingDives as dive}
+            <div class="dive-item" role="listitem">
+              <span class="dive-date">{dive.date.replace("T", " ")}</span>
+              <span class="dive-depth">{dive.maxDepthM.toFixed(1)} m</span>
+              <span class="dive-dur">{fmtDuration(dive.durationSec)}</span>
+            </div>
+          {/each}
+        </div>
+        <button onclick={saveToLogbook}>
+          Save {pendingDives.length} dive{pendingDives.length !== 1 ? "s" : ""} to logbook
+        </button>
+        <button onclick={discardDownload}>Discard</button>
 
       {:else if step === "result"}
-        <h2>{errorMsg ? "Error" : "Done"}</h2>
+        <h2>{errorMsg ? "Error" : resultCancelled ? "Cancelled" : "Done"}</h2>
         {#if errorMsg}
           <p class="error">{errorMsg}</p>
+        {:else if resultCancelled}
+          <p>Download cancelled. No dives saved.</p>
         {:else}
           <p>{resultAdded} dive{resultAdded !== 1 ? "s" : ""} added, {resultSkipped} skipped.</p>
         {/if}
-        <button on:click={close}>Close</button>
+        <button onclick={close}>Close</button>
       {/if}
     </div>
   </div>
@@ -198,8 +255,19 @@
   }
   .dialog {
     background: var(--bg, #fff); padding: 1.5rem; border-radius: 8px;
-    min-width: 360px; display: flex; flex-direction: column; gap: 1rem;
+    min-width: 400px; max-width: 560px; display: flex; flex-direction: column; gap: 1rem;
   }
   .error { color: red; }
   .warning { color: #ff8800; font-size: 0.875rem; }
+  .dive-list {
+    border: 1px solid var(--border, #ddd); border-radius: 4px;
+    max-height: 260px; overflow-y: auto;
+  }
+  .dive-item {
+    display: grid; grid-template-columns: 1fr auto auto;
+    gap: 0.75rem; padding: 0.4rem 0.75rem; font-size: 0.875rem;
+    border-bottom: 1px solid var(--border, #eee);
+  }
+  .dive-item:last-child { border-bottom: none; }
+  .dive-depth, .dive-dur { color: var(--fg-muted, #666); white-space: nowrap; }
 </style>

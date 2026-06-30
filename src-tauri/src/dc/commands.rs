@@ -150,19 +150,49 @@ pub async fn scan_ble_devices(
     Ok(())
 }
 
-/// Result returned by [`start_dc_download`], serialized to the frontend.
+// ── Pending download state ──────────────────────────────────────────────────
+
+/// Dives buffered in memory after a completed download, waiting for user confirmation.
+pub struct PendingDownload {
+    pub dives: Vec<crate::dc::writer::ParsedDive>,
+    pub newest_fp: Option<(u32, Vec<u8>)>,
+    pub dc_model: String,
+    pub logbook_root: std::path::PathBuf,
+}
+
+pub type PendingDownloadState = std::sync::Mutex<Option<PendingDownload>>;
+
+// ── Download commands ───────────────────────────────────────────────────────
+
+/// Summary of a single buffered dive, sent to the frontend for the review step.
 #[cfg(not(target_os = "android"))]
-#[derive(serde::Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DownloadResultSer {
-    pub added: u32,
+pub struct DiveSummarySer {
+    pub date: String,
+    pub duration_sec: u32,
+    pub max_depth_m: f64,
+}
+
+/// Payload carried by both the `dc-complete` event and the `start_dc_download` return value.
+#[cfg(not(target_os = "android"))]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadCompleteSer {
+    /// New dives ready for review. Empty when cancelled or nothing new.
+    pub dives: Vec<DiveSummarySer>,
     pub skipped: u32,
+    pub cancelled: bool,
 }
 
 /// Start a dive-computer download.
 ///
 /// Resets the cancel flag, spawns a blocking task that calls
 /// [`crate::dc::device::run_download`], and emits `dc-complete` on success.
+///
+/// On success (not cancelled): buffers dives in [`PendingDownloadState`] and
+/// emits `dc-complete { dives, skipped, cancelled: false }` for the review step.
+/// On cancel: discards buffered dives and emits `dc-complete { cancelled: true }`.
 ///
 /// The frontend may call [`cancel_dc_download`] at any time to abort.
 #[cfg(not(target_os = "android"))]
@@ -174,7 +204,8 @@ pub async fn start_dc_download(
     transport: crate::dc::transport::TransportArg,
     cancel: tauri::State<'_, std::sync::Arc<std::sync::atomic::AtomicBool>>,
     logbook_state: tauri::State<'_, std::sync::Mutex<Option<crate::state::LogbookState>>>,
-) -> Result<DownloadResultSer, String> {
+    pending: tauri::State<'_, PendingDownloadState>,
+) -> Result<DownloadCompleteSer, String> {
     use std::sync::atomic::Ordering;
     use tauri::Emitter;
 
@@ -195,7 +226,6 @@ pub async fn start_dc_download(
     let result = tauri::async_runtime::spawn_blocking(move || {
         crate::dc::device::run_download(
             app_clone,
-            root,
             settings,
             dives,
             vendor_clone,
@@ -207,23 +237,90 @@ pub async fn start_dc_download(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Apply the newest fingerprint to the in-memory state (after disk write in run_download).
-    // Use the same "Vendor Product" string that run_download uses so the hash matches.
-    if let Some((serial, fp)) = &result.newest_fp {
+    let was_cancelled = cancel.load(Ordering::Relaxed);
+
+    let payload = if was_cancelled {
+        // Discard buffered dives; do not advance fingerprint.
+        *pending.lock().map_err(|e| e.to_string())? = None;
+        DownloadCompleteSer { dives: vec![], skipped: result.skipped, cancelled: true }
+    } else {
+        let summaries: Vec<DiveSummarySer> = result.new_dives.iter().map(|d| DiveSummarySer {
+            date: format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+                d.year, d.month, d.day, d.hour, d.minute, d.second),
+            duration_sec: d.duration_sec,
+            max_depth_m: d.max_depth_m,
+        }).collect();
+
+        *pending.lock().map_err(|e| e.to_string())? = Some(PendingDownload {
+            dives: result.new_dives,
+            newest_fp: result.newest_fp,
+            dc_model: format!("{vendor} {model}"),
+            logbook_root: root,
+        });
+
+        DownloadCompleteSer { dives: summaries, skipped: result.skipped, cancelled: false }
+    };
+
+    app.emit("dc-complete", &payload).ok();
+    Ok(payload)
+}
+
+/// Write buffered dives to disk, save fingerprint, and update in-memory logbook state.
+///
+/// Called by the frontend after the user confirms the review step.
+/// Returns the count of dives written so the frontend can call `startup_logbook`
+/// and show the result.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn commit_dc_download(
+    pending: tauri::State<'_, PendingDownloadState>,
+    logbook_state: tauri::State<'_, std::sync::Mutex<Option<crate::state::LogbookState>>>,
+) -> Result<u32, String> {
+    let pd = pending.lock().map_err(|e| e.to_string())?.take()
+        .ok_or_else(|| "no pending download to commit".to_string())?;
+
+    let added = pd.dives.len() as u32;
+    let root = pd.logbook_root;
+    let dc_model = pd.dc_model;
+    let newest_fp = pd.newest_fp;
+
+    let root_clone = root.clone();
+    let dc_model_clone = dc_model.clone();
+    let newest_fp_clone = newest_fp.clone();
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        for dive in pd.dives {
+            crate::dc::writer::write_dive(&root_clone, dive)?;
+        }
+        if let Some((serial, fp)) = newest_fp_clone {
+            crate::dc::fingerprint::upsert_fp(&root_clone, &dc_model_clone, serial, &fp).ok();
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    // Apply fingerprint to in-memory settings so subsequent downloads in this session use it.
+    if let Some((serial, fp)) = &newest_fp {
         let mut guard = logbook_state.lock().map_err(|e| e.to_string())?;
         if let Some(ref mut state) = *guard {
-            let full_model = format!("{vendor} {model}");
-            crate::dc::fingerprint::apply_fp(&mut state.settings, &full_model, *serial, fp);
+            crate::dc::fingerprint::apply_fp(&mut state.settings, &dc_model, *serial, fp);
         }
     }
 
-    app.emit(
-        "dc-complete",
-        serde_json::json!({ "added": result.added, "skipped": result.skipped }),
-    )
-    .ok();
+    Ok(added)
+}
 
-    Ok(DownloadResultSer { added: result.added, skipped: result.skipped })
+/// Discard buffered dives without saving anything.
+///
+/// Called by the frontend when the user dismisses the review step.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub fn discard_dc_download(
+    pending: tauri::State<'_, PendingDownloadState>,
+) -> Result<(), String> {
+    *pending.lock().map_err(|e| e.to_string())? = None;
+    Ok(())
 }
 
 /// Set the cancel flag to abort an in-progress download.

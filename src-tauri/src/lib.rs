@@ -228,6 +228,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .manage(Mutex::new(None::<LogbookState>))
         .manage(Arc::new(AtomicBool::new(false)))
+        .manage(Mutex::new(None::<dc::commands::PendingDownload>))
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -271,6 +272,10 @@ pub fn run() {
             dc::commands::scan_ble_devices,
             #[cfg(desktop)]
             dc::commands::start_dc_download,
+            #[cfg(desktop)]
+            dc::commands::commit_dc_download,
+            #[cfg(desktop)]
+            dc::commands::discard_dc_download,
             #[cfg(desktop)]
             dc::commands::cancel_dc_download,
         ])
