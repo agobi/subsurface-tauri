@@ -50,6 +50,34 @@ The recents list is currently unbounded and entries can only be added, not remov
 - [ ] **Remove individual entry** — right-click / context menu on a recent item to remove just that entry
 - [ ] **Cap list length** — optional: add a preference for max recents count (e.g. 10, 20, unlimited)
 
+## DC Download — Merge Overlapping Dive Segments
+
+Investigated 2026-06-30: short dives (e.g. CCR pre-dive loop checks — a few minutes,
+a few meters) reappear as "new" on every download even though the diver already has
+the real dive logged. Confirmed via direct comparison (date, time-of-day, duration,
+max depth) against the existing logbook entries — these segments are not duplicates
+of full dives, they're short overlapping/adjacent segments that the *original* import
+process folded away.
+
+Root cause: Qt Subsurface's `merge_imported_dives()` (`core/divelog.cpp:101-130`)
+merges any two consecutively-downloaded dives that overlap in time or where one has
+zero duration, via `try_to_merge()`. This collapses pre-dive checks into the adjacent
+real dive before anything is written to disk, so the short segment's fingerprint is
+never persisted standalone.
+
+This Tauri app's download path (`src-tauri/src/dc/device.rs` `dive_cb`, `writer.rs`)
+has no equivalent step — every manifest entry libdc delivers becomes its own
+`ParsedDive`, unconditionally. Since the short segment was never written standalone
+in the original logbook, it has nothing to dedupe against and gets rebuffered as
+"new" on every future download, indefinitely.
+
+- [ ] Port equivalent overlap-merge logic (or a simpler near-real-dive heuristic) into
+      the download pipeline — likely as a post-processing pass over `new_dives` in
+      `run_download` before they're returned to the review step, mirroring
+      `merge_imported_dives`'s overlap/zero-duration check and `try_to_merge` semantics.
+- [ ] Until implemented: short overlapping segments must be manually discarded in the
+      review dialog on each download.
+
 ## Backlog
 
 - [ ] **Android dive computer download** — currently desktop-only (libdivecomputer FFI + serial/USB/BLE stacks don't compile on Android). Deferred: would require Android-specific transport bindings (android.hardware.usb, Android BLE APIs), separate FFI layer, and UI entry point in place of the menu bar.

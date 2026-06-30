@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use crate::dc::ffi::*;
 use crate::dc::context::DcContext;
-use crate::dc::descriptor::find_descriptor;
+use crate::dc::descriptor::{find_descriptor, resolve_descriptor_for_model};
 use crate::dc::fingerprint::{lookup_fp, known_dive_ids};
 use crate::dc::parser::parse_dive;
 use crate::dc::transport::{open_iostream, TransportArg};
@@ -70,19 +70,49 @@ unsafe extern "C" fn event_cb<R: tauri::Runtime>(
     } else if event == dc_event_type_t_DC_EVENT_DEVINFO {
         let info = &*(data as *const dc_event_devinfo_t);
 
+        // The device's self-reported model id can differ from the descriptor the
+        // user picked in the download UI (e.g. "Perdix" vs "Perdix AI" — same
+        // family, same wire protocol, different model id). Re-resolve to the
+        // *actual* connected product so the fingerprint stays keyed to the real
+        // device, matching Qt Subsurface's auto-correction in DC_EVENT_DEVINFO.
+        let descriptor_model = dc_descriptor_get_model(ctx.descriptor);
+        if descriptor_model != info.model {
+            let family = dc_descriptor_get_type(ctx.descriptor);
+            if let Some((vendor, product)) = resolve_descriptor_for_model(family, info.model) {
+                let corrected = format!("{vendor} {product}");
+                log::info!(
+                    "DC: devinfo reports model={} (descriptor was model={}) — using {} for fingerprint lookup",
+                    info.model, descriptor_model, corrected
+                );
+                ctx.dc_model = corrected;
+            }
+        }
+
         // Use the stored fingerprint to tell libdivecomputer where to stop, so it
         // doesn't re-download dives we already have.
-        if let Some(fp) = lookup_fp(&ctx.settings, &ctx.dc_model, info.serial) {
-            dc_device_set_fingerprint(device, fp.as_ptr(), fp.len() as u32);
+        match lookup_fp(&ctx.settings, &ctx.dc_model, info.serial) {
+            Some(fp) => {
+                let fp_hex: String = fp.iter().map(|b| format!("{b:02x}")).collect();
+                log::info!(
+                    "DC: wire-level fingerprint cutoff set for {} serial={} data={}",
+                    ctx.dc_model, info.serial, fp_hex
+                );
+                dc_device_set_fingerprint(device, fp.as_ptr(), fp.len() as u32);
+            }
+            None => {
+                log::info!(
+                    "DC: no stored fingerprint for {} serial={} — downloading full dive history",
+                    ctx.dc_model, info.serial
+                );
+            }
         }
 
         log::info!("DC: devinfo model={} firmware={} serial={}", info.model, info.firmware, info.serial);
         ctx.device_serial = Some(info.serial);
-        // Original Subsurface stores deviceid as SHA1_uint32(serial_string), matching
-        // calculate_string_hash() in libdivecomputer.cpp.
-        let device_id_hash = crate::ssrf_git::settings::sha1_u32(
-            info.serial.to_string().as_bytes()
-        );
+        // Original Subsurface stores deviceid as SHA1_uint32(hex-formatted serial),
+        // matching calculate_string_hash() in libdivecomputer.cpp applied to the
+        // dive parser's own "Serial" string field (see device_id_hash doc comment).
+        let device_id_hash = crate::ssrf_git::settings::device_id_hash(info.serial);
         ctx.device_id = Some(format!("{:08x}", device_id_hash));
         ctx.app
             .emit(
@@ -161,7 +191,11 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
         Ok(parsed) => {
             let date_str = format!("{:04}-{:02}-{:02}", parsed.year, parsed.month, parsed.day);
             dc_parser_destroy(parser);
-            log::info!("DC: dive {} buffered ({})", n, date_str);
+            log::info!(
+                "DC: dive {} buffered ({} {:02}:{:02}:{:02}) duration={}s maxdepth={:.1}m diveid={:08x}",
+                n, date_str, parsed.hour, parsed.minute, parsed.second,
+                parsed.duration_sec, parsed.max_depth_m, fp_hash
+            );
             ctx.new_dives.push(parsed);
             ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": date_str, "added": true })).ok();
         }

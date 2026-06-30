@@ -3,6 +3,7 @@
   import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { app } from "$lib/stores/app.svelte.ts";
 
   let { open, onClose }: { open: boolean; onClose: () => void } = $props();
 
@@ -30,6 +31,8 @@
 
   type DiveSummary = { date: string; durationSec: number; maxDepthM: number };
   let pendingDives = $state<DiveSummary[]>([]);
+  let selectedDives = $state<boolean[]>([]);
+  let selectedCount = $derived(selectedDives.filter(Boolean).length);
 
   let unlisteners: (() => void)[] = [];
 
@@ -63,6 +66,7 @@
       errorMsg = null;
       if (!e.payload.cancelled && e.payload.dives.length > 0) {
         pendingDives = e.payload.dives;
+        selectedDives = e.payload.dives.map(() => true);
         step = "review";
       } else {
         resultAdded = 0;
@@ -120,9 +124,12 @@
 
   async function saveToLogbook() {
     try {
-      const added = await invoke<number>("commit_dc_download");
+      const selectedIndices = selectedDives
+        .map((isSelected, i) => (isSelected ? i : -1))
+        .filter((i) => i !== -1);
+      const added = await invoke<number>("commit_dc_download", { selectedIndices });
       resultAdded = added;
-      await invoke("startup_logbook");
+      await app.startup();
       step = "result";
     } catch (e) {
       errorMsg = e instanceof Error ? e.message : String(e);
@@ -215,21 +222,19 @@
 
       {:else if step === "review"}
         <h2>Review Downloaded Dives</h2>
-        <p>
-          {pendingDives.length} new dive{pendingDives.length !== 1 ? "s" : ""}
-          {#if resultSkipped > 0}, {resultSkipped} already in logbook{/if}.
-        </p>
+        <p>{pendingDives.length} new dive{pendingDives.length !== 1 ? "s" : ""}{resultSkipped > 0 ? `, ${resultSkipped} already in logbook` : ""}.</p>
         <div class="dive-list" role="list">
-          {#each pendingDives as dive}
+          {#each pendingDives as dive, i}
             <div class="dive-item" role="listitem">
+              <input type="checkbox" bind:checked={selectedDives[i]} aria-label={`Include dive on ${dive.date}`} />
               <span class="dive-date">{dive.date.replace("T", " ")}</span>
               <span class="dive-depth">{dive.maxDepthM.toFixed(1)} m</span>
               <span class="dive-dur">{fmtDuration(dive.durationSec)}</span>
             </div>
           {/each}
         </div>
-        <button onclick={saveToLogbook}>
-          Save {pendingDives.length} dive{pendingDives.length !== 1 ? "s" : ""} to logbook
+        <button onclick={saveToLogbook} disabled={selectedCount === 0}>
+          Save {selectedCount} dive{selectedCount !== 1 ? "s" : ""} to logbook
         </button>
         <button onclick={discardDownload}>Discard</button>
 
@@ -264,7 +269,8 @@
     max-height: 260px; overflow-y: auto;
   }
   .dive-item {
-    display: grid; grid-template-columns: 1fr auto auto;
+    display: grid; grid-template-columns: auto 1fr auto auto;
+    align-items: center;
     gap: 0.75rem; padding: 0.4rem 0.75rem; font-size: 0.875rem;
     border-bottom: 1px solid var(--border, #eee);
   }

@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from "@testing-library/svelte";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import DcDownloadDialog from "$lib/components/DcDownloadDialog.svelte";
+import { app } from "$lib/stores/app.svelte.ts";
 
 vi.mock("@tauri-apps/api/core");
 vi.mock("@tauri-apps/api/event");
@@ -51,7 +52,7 @@ describe("DcDownloadDialog", () => {
     expect(true).toBe(true); // placeholder; expand with testing-library interactions
   });
 
-  it("calls startup_logbook after dc-complete", async () => {
+  it("shows the review step with buffered dives after dc-complete", async () => {
     let completeCb: ((e: { payload: unknown }) => void) | undefined;
     vi.mocked(listen).mockImplementation(async (event, cb) => {
       if (event === "dc-complete") completeCb = cb as typeof completeCb;
@@ -59,8 +60,123 @@ describe("DcDownloadDialog", () => {
     });
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
     await vi.waitFor(() => expect(completeCb).toBeDefined());
-    completeCb!({ payload: { added: 3, skipped: 1 } });
-    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("startup_logbook"));
+    completeCb!({
+      payload: {
+        dives: [{ date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 }],
+        skipped: 1,
+        cancelled: false,
+      },
+    });
+    expect(await screen.findByText("Review Downloaded Dives")).toBeTruthy();
+  });
+
+  it("renders the review summary with no stray whitespace before the period", async () => {
+    let completeCb: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-complete") completeCb = cb as typeof completeCb;
+      return () => {};
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await vi.waitFor(() => expect(completeCb).toBeDefined());
+    completeCb!({
+      payload: {
+        dives: [
+          { date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 },
+          { date: "2026-06-13T08:00:00", durationSec: 900, maxDepthM: 8.0 },
+          { date: "2026-06-13T10:00:00", durationSec: 600, maxDepthM: 5.0 },
+        ],
+        skipped: 0,
+        cancelled: false,
+      },
+    });
+    await screen.findByText("Review Downloaded Dives");
+    expect(document.body.textContent).toContain("3 new dives.");
+    expect(document.body.textContent).not.toContain("dives .");
+    expect(document.body.textContent).not.toContain("dives  ,");
+  });
+
+  it("applies the reloaded logbook to the app store after saving", async () => {
+    let completeCb: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-complete") completeCb = cb as typeof completeCb;
+      return () => {};
+    });
+    const reloadedLogbook = {
+      dives: [{ number: 1, dateTime: "2026-06-14T08:00:00", durationSec: 1800 }],
+      trips: [],
+      sites: [],
+      units: "METRIC",
+    };
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
+      if (cmd === "commit_dc_download") return 1;
+      if (cmd === "startup_logbook") {
+        return { logbook: reloadedLogbook, displayName: "after-save", recents: [] };
+      }
+      return null;
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await vi.waitFor(() => expect(completeCb).toBeDefined());
+    completeCb!({
+      payload: {
+        dives: [{ date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 }],
+        skipped: 0,
+        cancelled: false,
+      },
+    });
+
+    const saveButton = await screen.findByText("Save 1 dive to logbook");
+    await fireEvent.click(saveButton);
+
+    await vi.waitFor(() => expect(app.displayName).toBe("after-save"));
+    expect(app.logbook.dives).toEqual(reloadedLogbook.dives);
+  });
+
+  it("lets the user deselect a dive and only commits the remaining selected indices", async () => {
+    let completeCb: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-complete") completeCb = cb as typeof completeCb;
+      return () => {};
+    });
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
+      if (cmd === "commit_dc_download") return 1;
+      if (cmd === "startup_logbook") {
+        return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "x", recents: [] };
+      }
+      return null;
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await vi.waitFor(() => expect(completeCb).toBeDefined());
+    completeCb!({
+      payload: {
+        dives: [
+          { date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 },
+          { date: "2026-06-11T16:32:00", durationSec: 199, maxDepthM: 3.6 },
+        ],
+        skipped: 0,
+        cancelled: false,
+      },
+    });
+
+    await screen.findByText("Save 2 dives to logbook");
+    const checkboxes = screen.getAllByRole("checkbox");
+    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes.every((c) => (c as HTMLInputElement).checked)).toBe(true);
+
+    // Deselect the short, suspicious 199s segment.
+    await fireEvent.click(checkboxes[1]);
+
+    const saveButton = await screen.findByText("Save 1 dive to logbook");
+    await fireEvent.click(saveButton);
+
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("commit_dc_download", { selectedIndices: [0] })
+    );
   });
 
   it("transitions status label: Connecting… → Connected → Dive", async () => {

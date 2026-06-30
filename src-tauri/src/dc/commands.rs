@@ -265,21 +265,40 @@ pub async fn start_dc_download(
     Ok(payload)
 }
 
+/// Keeps only the dives at the given indices, in the order the frontend showed
+/// them in the review step. Indices outside the range are ignored.
+///
+/// The fingerprint cutoff (`newest_fp`) always advances to the device's true
+/// newest dive in `commit_dc_download` regardless of selection, so deselected
+/// dives won't reappear on the next download even though they're skipped here.
+fn select_dives(dives: Vec<crate::dc::writer::ParsedDive>, selected: &[usize]) -> Vec<crate::dc::writer::ParsedDive> {
+    let selected: std::collections::HashSet<usize> = selected.iter().copied().collect();
+    dives.into_iter()
+        .enumerate()
+        .filter(|(i, _)| selected.contains(i))
+        .map(|(_, d)| d)
+        .collect()
+}
+
 /// Write buffered dives to disk, save fingerprint, and update in-memory logbook state.
 ///
 /// Called by the frontend after the user confirms the review step.
-/// Returns the count of dives written so the frontend can call `startup_logbook`
-/// and show the result.
+/// `selected_indices` are positions into the dive list as shown in the review
+/// step (matching `DownloadCompleteSer::dives` order); only those dives are
+/// written. Returns the count of dives written so the frontend can call
+/// `startup_logbook` and show the result.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn commit_dc_download(
+    selected_indices: Vec<usize>,
     pending: tauri::State<'_, PendingDownloadState>,
     logbook_state: tauri::State<'_, std::sync::Mutex<Option<crate::state::LogbookState>>>,
 ) -> Result<u32, String> {
     let pd = pending.lock().map_err(|e| e.to_string())?.take()
         .ok_or_else(|| "no pending download to commit".to_string())?;
 
-    let added = pd.dives.len() as u32;
+    let dives = select_dives(pd.dives, &selected_indices);
+    let added = dives.len() as u32;
     let root = pd.logbook_root;
     let dc_model = pd.dc_model;
     let newest_fp = pd.newest_fp;
@@ -289,7 +308,7 @@ pub async fn commit_dc_download(
     let newest_fp_clone = newest_fp.clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        for dive in pd.dives {
+        for dive in dives {
             crate::dc::writer::write_dive(&root_clone, dive)?;
         }
         if let Some((serial, fp)) = newest_fp_clone {
@@ -339,10 +358,52 @@ pub fn cancel_dc_download(
 
 #[cfg(test)]
 mod tests {
+    use crate::dc::writer::{ParsedCylinder, ParsedDive};
+    use crate::types::Sample;
+
     #[test]
     fn list_serial_ports_returns_vec() {
         // Just verify it doesn't panic; actual ports depend on hardware.
         let _ports = super::serial_ports_impl();
         // passes if it returns without panicking
+    }
+
+    fn make_dive(duration_sec: u32) -> ParsedDive {
+        ParsedDive {
+            year: 2026, month: 6, day: 11,
+            hour: 12, minute: 0, second: 0,
+            duration_sec,
+            max_depth_m: 10.0,
+            mean_depth_m: 5.0,
+            water_temp_c: None,
+            cylinders: Vec::<ParsedCylinder>::new(),
+            samples: Vec::<Sample>::new(),
+            events: vec![],
+            dc_model: "Shearwater Perdix AI".to_string(),
+            device_id: "a790cf6c".to_string(),
+            dive_id: vec![0, 0, 0, duration_sec as u8],
+        }
+    }
+
+    #[test]
+    fn select_dives_keeps_only_the_given_indices_in_order() {
+        let dives = vec![make_dive(100), make_dive(200), make_dive(300)];
+        let kept = super::select_dives(dives, &[0, 2]);
+        let kept_durations: Vec<u32> = kept.iter().map(|d| d.duration_sec).collect();
+        assert_eq!(kept_durations, vec![100, 300]);
+    }
+
+    #[test]
+    fn select_dives_with_no_indices_returns_empty() {
+        let dives = vec![make_dive(100), make_dive(200)];
+        let kept = super::select_dives(dives, &[]);
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn select_dives_ignores_out_of_range_indices() {
+        let dives = vec![make_dive(100)];
+        let kept = super::select_dives(dives, &[0, 5]);
+        assert_eq!(kept.len(), 1);
     }
 }

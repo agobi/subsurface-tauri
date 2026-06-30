@@ -119,6 +119,44 @@ pub fn find_descriptor(vendor: &str, product: &str) -> Option<*mut dc_descriptor
     }
 }
 
+/// Finds the (vendor, product) for a given family + libdc-reported model id.
+///
+/// Mirrors Qt Subsurface's auto-correction in `DC_EVENT_DEVINFO` handling
+/// (`core/libdivecomputer.cpp`): when the device's self-reported `model` id
+/// doesn't match the descriptor used to open the connection, the *actual*
+/// vendor/product must be looked up by (family, model) and used instead —
+/// otherwise sibling descriptors (e.g. "Perdix" vs "Perdix AI", same family,
+/// different model id, same wire protocol) silently fragment the fingerprint
+/// namespace depending only on which one the user happened to pick.
+pub fn resolve_descriptor_for_model(family: dc_family_t, model: u32) -> Option<(String, String)> {
+    let ctx = DcContext::new().ok()?;
+    unsafe {
+        let mut iterator = ptr::null_mut();
+        if dc_descriptor_iterator_new(&mut iterator, ctx.as_ptr()) != dc_status_t_DC_STATUS_SUCCESS {
+            return None;
+        }
+        loop {
+            let mut desc: *mut dc_descriptor_t = ptr::null_mut();
+            let rc = dc_iterator_next(
+                iterator,
+                &mut desc as *mut *mut dc_descriptor_t as *mut _,
+            );
+            if rc != dc_status_t_DC_STATUS_SUCCESS {
+                dc_iterator_free(iterator);
+                return None;
+            }
+            if dc_descriptor_get_type(desc) == family && dc_descriptor_get_model(desc) == model {
+                let vendor = CStr::from_ptr(dc_descriptor_get_vendor(desc)).to_string_lossy().into_owned();
+                let product = CStr::from_ptr(dc_descriptor_get_product(desc)).to_string_lossy().into_owned();
+                dc_descriptor_free(desc);
+                dc_iterator_free(iterator);
+                return Some((vendor, product));
+            }
+            dc_descriptor_free(desc);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -135,5 +173,24 @@ mod tests {
         assert!(perdix.is_some(), "Perdix must exist");
         let perdix = perdix.unwrap();
         assert!(perdix.transports.contains(&"BLE".to_string()), "Perdix must have BLE");
+    }
+
+    #[test]
+    fn resolve_descriptor_for_model_finds_exact_sibling() {
+        use crate::dc::ffi::dc_family_t_DC_FAMILY_SHEARWATER_PETREL;
+        // Model id 5 = "Perdix", id 6 = "Perdix AI" (libdc/src/descriptor.c).
+        // A DEVINFO event reporting model 6 while connected via the "Perdix"
+        // descriptor must resolve to the *actual* connected product, "Perdix AI" —
+        // this is what lets the fingerprint cutoff stay keyed to the real device
+        // regardless of which sibling entry the user picked in the download UI.
+        let resolved = super::resolve_descriptor_for_model(dc_family_t_DC_FAMILY_SHEARWATER_PETREL, 6);
+        assert_eq!(resolved, Some(("Shearwater".to_string(), "Perdix AI".to_string())));
+    }
+
+    #[test]
+    fn resolve_descriptor_for_model_returns_none_when_unknown() {
+        use crate::dc::ffi::dc_family_t_DC_FAMILY_SHEARWATER_PETREL;
+        let resolved = super::resolve_descriptor_for_model(dc_family_t_DC_FAMILY_SHEARWATER_PETREL, 9999);
+        assert_eq!(resolved, None);
     }
 }

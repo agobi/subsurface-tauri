@@ -60,6 +60,19 @@ pub fn sha1_u32(data: &[u8]) -> u32 {
     u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
 }
 
+/// Hashes a libdivecomputer `devinfo.serial` value the way Subsurface does for
+/// `deviceid`: as a hex string (`"%08x"`), not a decimal string.
+///
+/// Subsurface's deviceid normally comes from the dive parser's own embedded
+/// "Serial" string field (hex-formatted by libdivecomputer parsers, e.g.
+/// `shearwater_predator_parser.c`), falling back to a decimal-formatted
+/// `devinfo.serial` only when the parser provides no string. Since the common
+/// case (and the one we replicate here) is the hex-formatted parser string,
+/// hash that representation.
+pub fn device_id_hash(serial: u32) -> u32 {
+    sha1_u32(format!("{serial:08x}").as_bytes())
+}
+
 fn hex_decode(hex: &str) -> Option<Vec<u8>> {
     if hex.len() % 2 != 0 { return None; }
     (0..hex.len())
@@ -203,6 +216,17 @@ mod tests {
         assert_eq!(sha1_u32(b""), 0xeea3_39da);
         // Different inputs must produce different values.
         assert_ne!(sha1_u32(b"Shearwater Perdix"), sha1_u32(b"Shearwater Perdix AI"));
+    }
+
+    #[test]
+    fn device_id_hash_uses_hex_serial_format() {
+        // Shearwater's own dive parser embeds the serial as a hex string
+        // ("%08x", e.g. shearwater_predator_parser.c) and Subsurface hashes
+        // that hex string for deviceid — not a decimal-formatted string.
+        // Verified against a real device: raw serial 545362529 (0x20819261)
+        // must hash to the deviceid already present in this user's existing
+        // Divecomputer files (a790cf6c), not sha1_u32("545362529") (a2f7ccf7).
+        assert_eq!(device_id_hash(545362529), 0xa790cf6c);
     }
 
     #[test]
