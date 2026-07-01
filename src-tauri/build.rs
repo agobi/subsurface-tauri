@@ -4,14 +4,36 @@ fn main() {
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
-    // libdivecomputer is desktop-only; skip cmake and bindgen on Android.
-    if target_os != "android" {
+    // Android cross-compile is enabled deliberately, not experimentally: bindgen,
+    // the linked static lib, and a runtime FFI call have all been proven working
+    // on-device. Getting it right depends on the `cmake` crate seeing the right
+    // toolchain defines below — see the Android branch's comment for why.
+    {
         // Build libdivecomputer as a static library via CMake.
         // CMakeLists.txt is in src-tauri/libdc-cmake/ (tracked in the parent repo).
         // The actual C sources live in the sibling libdc/ git submodule.
-        let dst = cmake::Config::new("libdc-cmake")
-            .define("LIBDC_WITH_TESTS", "OFF")
-            .build();
+        let mut cmake_config = cmake::Config::new("libdc-cmake");
+        cmake_config.define("LIBDC_WITH_TESTS", "OFF");
+
+        if target_os == "android" {
+            // The `cmake` crate only drives CMake's own (fragile) built-in
+            // Android platform detection unless it sees `ANDROID_ABI` +
+            // `CMAKE_TOOLCHAIN_FILE=.../android.toolchain.cmake` — that
+            // combination switches it to defer entirely to the NDK's own
+            // toolchain file, which is what actually knows how to find the
+            // NDK's sysroot/compilers/make program.
+            let ndk_home =
+                std::env::var("ANDROID_NDK_HOME").expect("ANDROID_NDK_HOME not set");
+            cmake_config
+                .define(
+                    "CMAKE_TOOLCHAIN_FILE",
+                    format!("{ndk_home}/build/cmake/android.toolchain.cmake"),
+                )
+                .define("ANDROID_ABI", "arm64-v8a")
+                .define("ANDROID_PLATFORM", "android-24"); // matches gen/android/app/build.gradle.kts minSdk
+        }
+
+        let dst = cmake_config.build();
 
         // The cmake crate installs artifacts into dst/.
         // `install(TARGETS … ARCHIVE DESTINATION lib)` puts the .a there.
