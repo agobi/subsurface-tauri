@@ -1,7 +1,7 @@
 // AI-generated (Claude)
 use std::collections::HashSet;
 use std::path::Path;
-use crate::ssrf_git::settings::{read_settings, write_settings, sha1_u32, device_id_hash, FingerprintRecord, Settings};
+use crate::ssrf_git::settings::{read_settings, write_settings, sha1_u32, device_id_hash, FingerprintRecord, DeviceRecord, Settings};
 
 /// Returns the raw fingerprint bytes for the given device, or `None` if absent.
 pub fn lookup_fp(settings: &Settings, model_name: &str, serial: u32) -> Option<Vec<u8>> {
@@ -31,6 +31,33 @@ pub fn apply_fp(settings: &mut Settings, model_name: &str, serial: u32, fp_bytes
 pub fn upsert_fp(logbook_root: &Path, model_name: &str, serial: u32, fp_bytes: &[u8]) -> Result<(), String> {
     let mut settings = read_settings(logbook_root);
     apply_fp(&mut settings, model_name, serial, fp_bytes);
+    write_settings(logbook_root, &settings)
+}
+
+/// Inserts or replaces the device record for (model, serial) in `settings`
+/// (in-memory only). Preserves an existing nickname — this code never sets
+/// one, but Qt's UI may have.
+pub fn apply_device(settings: &mut Settings, model: &str, serial: u32) {
+    let device_id = device_id_hash(serial);
+    let serial_str = format!("{serial:08x}");
+    let nickname = settings.devices.iter()
+        .find(|d| d.model == model && d.serial == serial_str)
+        .map(|d| d.nickname.clone())
+        .unwrap_or_default();
+    settings.devices.retain(|d| !(d.model == model && d.serial == serial_str));
+    settings.devices.push(DeviceRecord {
+        model: model.to_string(),
+        device_id,
+        serial: serial_str,
+        nickname,
+    });
+}
+
+/// Reads `<logbook_root>/00-Subsurface`, inserts or replaces the device
+/// record for the given device, and writes the file back.
+pub fn upsert_device(logbook_root: &Path, model: &str, serial: u32) -> Result<(), String> {
+    let mut settings = read_settings(logbook_root);
+    apply_device(&mut settings, model, serial);
     write_settings(logbook_root, &settings)
 }
 
@@ -171,5 +198,69 @@ mod tests {
         // "76b9bc25" parsed as hex u32 = 0x76b9bc25
         assert!(ids.contains(&0x76b9bc25u32));
         assert_eq!(ids.len(), 1);
+    }
+
+    #[test]
+    fn apply_device_inserts_when_absent() {
+        let mut s = Settings::default();
+        apply_device(&mut s, "Shearwater Perdix", 123456);
+        assert_eq!(s.devices.len(), 1);
+        assert_eq!(s.devices[0].model, "Shearwater Perdix");
+        assert_eq!(s.devices[0].serial, "0001e240");
+        assert_eq!(s.devices[0].device_id, device_id_hash(123456));
+        assert_eq!(s.devices[0].nickname, "");
+    }
+
+    #[test]
+    fn apply_device_replaces_existing_without_duplicating() {
+        let mut s = Settings::default();
+        apply_device(&mut s, "Shearwater Perdix", 123456);
+        apply_device(&mut s, "Shearwater Perdix", 123456);
+        assert_eq!(s.devices.len(), 1, "second apply must replace, not append");
+    }
+
+    #[test]
+    fn apply_device_preserves_an_existing_nickname() {
+        use crate::ssrf_git::settings::DeviceRecord;
+        let mut s = Settings::default();
+        s.devices.push(DeviceRecord {
+            model: "Shearwater Perdix".to_string(),
+            device_id: device_id_hash(123456),
+            serial: "0001e240".to_string(),
+            nickname: "My Perdix".to_string(),
+        });
+        apply_device(&mut s, "Shearwater Perdix", 123456);
+        assert_eq!(s.devices.len(), 1);
+        assert_eq!(s.devices[0].nickname, "My Perdix", "a nickname set elsewhere (e.g. by Qt) must survive our upsert");
+    }
+
+    #[test]
+    fn apply_device_isolated_per_serial() {
+        let mut s = Settings::default();
+        apply_device(&mut s, "Shearwater Perdix", 111111);
+        apply_device(&mut s, "Shearwater Perdix", 222222);
+        assert_eq!(s.devices.len(), 2);
+    }
+
+    #[test]
+    fn upsert_device_then_read_back_roundtrip() {
+        let tmp = std::env::temp_dir().join("fp_upsert_device_rt");
+        std::fs::create_dir_all(&tmp).unwrap();
+        upsert_device(&tmp, "Shearwater Perdix", 123456).unwrap();
+        let s = read_settings(&tmp);
+        assert_eq!(s.devices.len(), 1);
+        assert_eq!(s.devices[0].model, "Shearwater Perdix");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn upsert_device_replaces_existing_on_disk() {
+        let tmp = std::env::temp_dir().join("fp_upsert_device_replace");
+        std::fs::create_dir_all(&tmp).unwrap();
+        upsert_device(&tmp, "Shearwater Perdix", 123456).unwrap();
+        upsert_device(&tmp, "Shearwater Perdix", 123456).unwrap();
+        let s = read_settings(&tmp);
+        assert_eq!(s.devices.len(), 1, "second upsert must replace, not append");
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }
