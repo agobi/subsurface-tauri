@@ -89,6 +89,20 @@ pub fn models_for_vendor(vendor: &str) -> Vec<DcModel> {
         .collect()
 }
 
+/// Splits a "Vendor Product" combined string (as stored in
+/// `DeviceRecord.model`, see `ssrf_git/settings.rs`) back into (vendor,
+/// product) by matching against the known descriptor table. Vendor names
+/// can themselves contain spaces ("Dive Rite", "Heinrichs Weikamp"), so this
+/// is a table lookup, not a string split. Returns `None` if no installed
+/// descriptor produces this exact combined string (e.g. a model this
+/// build's libdivecomputer doesn't know).
+pub fn resolve_vendor_product(combined: &str) -> Option<(String, String)> {
+    all_descriptors()
+        .iter()
+        .find(|d| format!("{} {}", d.vendor, d.product) == combined)
+        .map(|d| (d.vendor.clone(), d.product.clone()))
+}
+
 /// Walks every libdc descriptor reachable from `ctx_ptr`, calling `matches`
 /// on each one. Returns the first descriptor `matches` accepts (ownership
 /// passes to the caller, who must free it with `dc_descriptor_free`); every
@@ -210,5 +224,36 @@ mod tests {
         let ctx = super::DcContext::new().unwrap();
         let resolved = super::resolve_descriptor_for_model(ctx.as_ptr(), dc_family_t_DC_FAMILY_SHEARWATER_PETREL, 9999);
         assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn resolve_vendor_product_splits_a_known_model() {
+        let resolved = super::resolve_vendor_product("Shearwater Perdix");
+        assert_eq!(resolved, Some(("Shearwater".to_string(), "Perdix".to_string())));
+    }
+
+    #[test]
+    fn resolve_vendor_product_returns_none_for_an_unknown_model() {
+        let resolved = super::resolve_vendor_product("Nonexistent Vendor Model 9000");
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn resolve_vendor_product_handles_a_multi_word_vendor_if_one_is_present() {
+        // Vendor names can contain spaces (e.g. "Heinrichs Weikamp", "Dive
+        // Rite"), which is exactly why resolve_vendor_product looks the
+        // combined string up in the descriptor table instead of splitting
+        // on the first space. Only run this check if the linked libdc build
+        // actually has a multi-word vendor, so the test isn't tied to one
+        // specific vendor's continued presence in the descriptor table.
+        let vendors = super::vendors();
+        let Some(vendor) = vendors.iter().find(|v| v.contains(' ')).cloned() else {
+            return;
+        };
+        let models = super::models_for_vendor(&vendor);
+        let product = models[0].product.clone();
+        let combined = format!("{vendor} {product}");
+        let resolved = super::resolve_vendor_product(&combined);
+        assert_eq!(resolved, Some((vendor, product)));
     }
 }
