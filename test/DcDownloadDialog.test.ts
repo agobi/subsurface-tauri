@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import * as store from "@tauri-apps/plugin-store";
 import DcDownloadDialog from "$lib/components/DcDownloadDialog.svelte";
 import { app } from "$lib/stores/app.svelte.ts";
 
@@ -13,7 +14,13 @@ describe("DcDownloadDialog", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(listen).mockResolvedValue(() => {});
+    vi.mocked(store.load).mockResolvedValue({
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
     vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
       if (cmd === "list_dc_vendors") return ["Shearwater", "Suunto"];
       if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
       if (cmd === "list_serial_ports") return ["/dev/ttyUSB0"];
@@ -22,9 +29,10 @@ describe("DcDownloadDialog", () => {
     });
   });
 
-  it("renders vendor select on open", async () => {
+  it("goes straight to Add Device when there are no known devices", async () => {
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
-    expect(await screen.findByText("Select Device")).toBeTruthy();
+    expect(await screen.findByText("Add Device")).toBeTruthy();
+    expect(screen.queryByText("Select Device")).toBeNull();
   });
 
   it("calls list_dc_vendors on mount", async () => {
@@ -41,15 +49,103 @@ describe("DcDownloadDialog", () => {
 
   it("calls cancel_dc_download on Cancel click during progress", async () => {
     vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
       if (cmd === "list_dc_vendors") return ["Shearwater"];
-      if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["Serial"] }];
+      if (cmd === "list_serial_ports") return ["/dev/ttyUSB0"];
       if (cmd === "start_dc_download") return new Promise(() => {}); // never resolves
       return null;
     });
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
-    // Fast-forward to progress step by triggering download start
-    // (detailed interaction testing omitted for brevity — test cancel button appears and calls cancel_dc_download)
-    expect(true).toBe(true); // placeholder; expand with testing-library interactions
+
+    // Select vendor → loads models, defaults transport to Serial → loads serial ports
+    const vendorSelect = await screen.findByLabelText("Vendor");
+    await fireEvent.change(vendorSelect, { target: { value: "Shearwater" } });
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_dc_models", { vendor: "Shearwater" }));
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_serial_ports"));
+
+    // Select the serial port so Download is enabled
+    const portSelect = await screen.findByLabelText("Port");
+    await fireEvent.change(portSelect, { target: { value: "/dev/ttyUSB0" } });
+
+    // Start download → progress step
+    await fireEvent.click(await screen.findByText("Download"));
+    await vi.waitFor(() => expect(screen.getByText("Downloading…")).toBeTruthy());
+
+    // Click Cancel on the progress step
+    await fireEvent.click(await screen.findByText("Cancel"));
+
+    expect(invoke).toHaveBeenCalledWith("cancel_dc_download");
+  });
+
+  it("shows the known-devices list and a nickname when a remembered device has one", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", nickname: "My Perdix" }];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE", "Serial"] }];
+      return null;
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    expect(await screen.findByText("Select Device")).toBeTruthy();
+    expect(await screen.findByText("Shearwater Perdix AI")).toBeTruthy();
+    expect(screen.getByText("My Perdix")).toBeTruthy();
+  });
+
+  it("selecting a remembered device jumps to Connect with vendor/model fixed", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", nickname: "" }];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE", "Serial"] }];
+      return null;
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    const row = await screen.findByText("Shearwater Perdix AI");
+    await fireEvent.click(row);
+
+    expect(await screen.findByText("Connect")).toBeTruthy();
+    expect(screen.getByText("Shearwater Perdix AI")).toBeTruthy();
+    expect(screen.queryByLabelText("Vendor")).toBeNull();
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_dc_models", { vendor: "Shearwater" }));
+  });
+
+  it("lets the user return to the known-devices list from a remembered device's setup screen", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", nickname: "" }];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE", "Serial"] }];
+      return null;
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await fireEvent.click(await screen.findByText("Shearwater Perdix AI"));
+    await screen.findByText("Connect");
+
+    await fireEvent.click(await screen.findByText("Use a different device"));
+    expect(await screen.findByText("Select Device")).toBeTruthy();
+  });
+
+  it("prefills the cached transport and address for a remembered device", async () => {
+    vi.mocked(store.load).mockResolvedValue({
+      get: vi.fn().mockResolvedValue({
+        "Shearwater Perdix AI": { lastTransport: "Serial", addresses: { Serial: "/dev/ttyUSB0" } },
+      }),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", nickname: "" }];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE", "Serial"] }];
+      if (cmd === "list_serial_ports") return ["/dev/ttyUSB0"];
+      return null;
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await fireEvent.click(await screen.findByText("Shearwater Perdix AI"));
+
+    const transportSelect = await screen.findByLabelText("Transport") as HTMLSelectElement;
+    await vi.waitFor(() => expect(transportSelect.value).toBe("Serial"));
+    const portSelect = screen.getByLabelText("Port") as HTMLSelectElement;
+    expect(portSelect.value).toBe("/dev/ttyUSB0");
   });
 
   it("shows the review step with buffered dives after dc-complete", async () => {
@@ -142,6 +238,7 @@ describe("DcDownloadDialog", () => {
       units: "METRIC",
     };
     vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
       if (cmd === "list_dc_vendors") return ["Shearwater"];
       if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
       if (cmd === "commit_dc_download") return 1;
@@ -175,6 +272,7 @@ describe("DcDownloadDialog", () => {
       return () => {};
     });
     vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
       if (cmd === "list_dc_vendors") return ["Shearwater"];
       if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
       if (cmd === "commit_dc_download") return 1;
@@ -218,6 +316,7 @@ describe("DcDownloadDialog", () => {
     let diveCallback: ((e: { payload: unknown }) => void) | undefined;
 
     vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
       if (cmd === "list_dc_vendors") return ["Shearwater"];
       if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["Serial"] }];
       if (cmd === "list_serial_ports") return ["/dev/ttyUSB0"];
@@ -232,17 +331,14 @@ describe("DcDownloadDialog", () => {
 
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
 
-    // Select vendor → loads models
+    // Select vendor → loads models, defaults transport to Serial → loads serial ports
     const vendorSelect = await screen.findByLabelText("Vendor");
     await fireEvent.change(vendorSelect, { target: { value: "Shearwater" } });
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_dc_models", { vendor: "Shearwater" }));
-
-    // Advance to connect step (triggers list_serial_ports for Serial transport)
-    await fireEvent.click(await screen.findByText("Next"));
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_serial_ports"));
 
     // Select the serial port
-    const [, portSelect] = screen.getAllByRole("combobox");
+    const portSelect = await screen.findByLabelText("Port");
     await fireEvent.change(portSelect, { target: { value: "/dev/ttyUSB0" } });
 
     // Start download → progress step
@@ -261,10 +357,11 @@ describe("DcDownloadDialog", () => {
     await vi.waitFor(() => expect(screen.getByText("Dive 1: 2026-02-15")).toBeTruthy());
   });
 
-  it("shows a BLE scan failure on the connect step instead of swallowing it", async () => {
+  it("shows a BLE scan failure on the setup screen instead of swallowing it", async () => {
     let errorCallback: ((e: { payload: unknown }) => void) | undefined;
 
     vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
       if (cmd === "list_dc_vendors") return ["Shearwater"];
       if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE"] }];
       if (cmd === "scan_ble_devices") return null;
@@ -280,14 +377,13 @@ describe("DcDownloadDialog", () => {
     const vendorSelect = await screen.findByLabelText("Vendor");
     await fireEvent.change(vendorSelect, { target: { value: "Shearwater" } });
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_dc_models", { vendor: "Shearwater" }));
-    await fireEvent.click(await screen.findByText("Next"));
 
     await fireEvent.click(await screen.findByText("Scan"));
     await vi.waitFor(() => expect(errorCallback).toBeDefined());
     errorCallback!({ payload: { message: "no BLE adapter found" } });
 
     expect(await screen.findByText("no BLE adapter found")).toBeTruthy();
-    // Must stay on the connect step, not jump away with no context.
-    expect(screen.getByText("Connect")).toBeTruthy();
+    // Must stay on the setup screen, not jump away with no context.
+    expect(screen.getByText("Add Device")).toBeTruthy();
   });
 });
