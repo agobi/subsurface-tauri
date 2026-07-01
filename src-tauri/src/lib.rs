@@ -58,6 +58,9 @@ pub(crate) fn update_recents(
 }
 
 fn install_logbook(
+    // Only read on desktop, to check for a pending DC download (see below) —
+    // that flow doesn't exist on mobile.
+    #[cfg_attr(not(desktop), allow(unused_variables))]
     app: &tauri::AppHandle,
     logbook_state: &tauri::State<'_, Mutex<Option<LogbookState>>>,
     root: std::path::PathBuf,
@@ -243,7 +246,6 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .manage(Mutex::new(None::<LogbookState>))
         .manage(Arc::new(AtomicBool::new(false)))
-        .manage(Mutex::new(None::<dc::commands::PendingDownload>))
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -262,6 +264,11 @@ pub fn run() {
             }
             Ok(())
         });
+
+    // dc::commands::PendingDownload only exists on desktop (`mod dc;` is
+    // #[cfg(desktop)]-gated) — mobile has no dive-computer download flow.
+    #[cfg(desktop)]
+    let builder = builder.manage(Mutex::new(None::<dc::commands::PendingDownload>));
 
     #[cfg(desktop)]
     let builder = builder.on_menu_event(menu::handle_event);
