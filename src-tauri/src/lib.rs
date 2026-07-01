@@ -2,7 +2,6 @@
 #[cfg(desktop)]
 mod menu;
 mod cloud;
-#[cfg(desktop)]
 mod dc;
 mod ssrf_git;
 mod state;
@@ -284,9 +283,7 @@ pub fn run() {
             cloud::open_cloud_logbook,
             cloud::open_recent_cloud_logbook,
             cloud::sync_cloud_logbook,
-            #[cfg(desktop)]
             dc::commands::list_dc_vendors,
-            #[cfg(desktop)]
             dc::commands::list_dc_models,
             #[cfg(desktop)]
             dc::commands::list_serial_ports,

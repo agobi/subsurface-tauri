@@ -90,6 +90,13 @@
       const p = await platform();
       app.setPlatform(p === "android" || p === "ios" ? "mobile" : "desktop");
 
+      if (p === "android") {
+        const { invoke } = await import("@tauri-apps/api/core");
+        invoke("list_dc_vendors")
+          .then((v) => console.log("[SPIKE] list_dc_vendors:", v))
+          .catch((e) => console.error("[SPIKE] list_dc_vendors failed:", e));
+      }
+
       await app.startup();
       await setWindowTitle();
 
