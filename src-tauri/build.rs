@@ -4,9 +4,10 @@ fn main() {
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
-    // SPIKE (2026-07-01): temporarily attempt the cross-compile for every
-    // target, including Android, to find out what breaks. See
-    // docs/superpowers/specs/2026-07-01-android-libdc-build-spike-design.md.
+    // Android cross-compile is enabled deliberately, not experimentally: bindgen,
+    // the linked static lib, and a runtime FFI call have all been proven working
+    // on-device. Getting it right depends on the `cmake` crate seeing the right
+    // toolchain defines below — see the Android branch's comment for why.
     {
         // Build libdivecomputer as a static library via CMake.
         // CMakeLists.txt is in src-tauri/libdc-cmake/ (tracked in the parent repo).
