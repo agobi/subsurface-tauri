@@ -4,8 +4,10 @@ fn main() {
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
-    // libdivecomputer is desktop-only; skip cmake and bindgen on Android.
-    if target_os != "android" {
+    // SPIKE (2026-07-01): temporarily attempt the cross-compile for every
+    // target, including Android, to find out what breaks. See
+    // docs/superpowers/specs/2026-07-01-android-libdc-build-spike-design.md.
+    {
         // Build libdivecomputer as a static library via CMake.
         // CMakeLists.txt is in src-tauri/libdc-cmake/ (tracked in the parent repo).
         // The actual C sources live in the sibling libdc/ git submodule.
