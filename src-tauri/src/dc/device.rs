@@ -2,8 +2,10 @@
 //! Orchestrates a full dive-computer download session using libdivecomputer.
 //!
 //! `run_download` opens the device, registers event/cancel/dive callbacks,
-//! calls `dc_device_foreach`, and writes each new dive to the logbook via
-//! [`crate::dc::writer::write_dive`].
+//! and calls `dc_device_foreach`, buffering each new dive in memory (see
+//! [`DownloadResult::new_dives`]). Nothing is written to disk here — writing
+//! happens later, only once the user confirms via
+//! `crate::dc::commands::commit_dc_download`.
 use std::collections::HashSet;
 use std::ffi::c_void;
 use std::ptr;
@@ -12,25 +14,38 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use crate::dc::ffi::*;
 use crate::dc::context::DcContext;
-use crate::dc::descriptor::find_descriptor;
-use crate::dc::fingerprint::{lookup_fp, upsert_fp, known_dive_ids};
+use crate::dc::descriptor::{find_descriptor, resolve_descriptor_for_model};
+use crate::dc::fingerprint::{lookup_fp, known_dive_ids};
 use crate::dc::parser::parse_dive;
 use crate::dc::transport::{open_iostream, TransportArg};
-use crate::dc::writer::write_dive;
+use crate::dc::writer::ParsedDive;
 
 /// Result returned by [`run_download`].
 pub struct DownloadResult {
-    pub added: u32,
+    /// New dives buffered in memory — not yet written to disk.
+    pub new_dives: Vec<ParsedDive>,
     pub skipped: u32,
     /// The serial number and raw fingerprint bytes of the newest dive seen, if any.
-    /// The caller uses this to update in-memory state after `upsert_fp` writes to disk.
+    /// Stored in pending state and written to disk only when the user confirms via `commit_dc_download`.
     pub newest_fp: Option<(u32, Vec<u8>)>,
+    /// The "Vendor Product" string actually used for this session's fingerprint
+    /// lookups — may differ from the caller-supplied `vendor`/`model` if the
+    /// device's self-reported model corrected it (see `DC_EVENT_DEVINFO`
+    /// handling in `event_cb`). The caller must persist the fingerprint cutoff
+    /// under *this* string, not the original input, or the two can drift out
+    /// of sync (a fresh cutoff gets written under the wrong key and the next
+    /// download re-scans past it).
+    pub dc_model: String,
+    /// Whether the cancel flag was observed set by the time `dc_device_foreach`
+    /// returned. Captured synchronously here (not re-read by the caller after
+    /// an async boundary) so a cancel click can't race with — and wrongly
+    /// discard — a download that already finished successfully.
+    pub cancelled: bool,
 }
 
 /// Userdata passed through libdivecomputer callbacks.
 struct DownloadCtx<R: tauri::Runtime> {
     app: AppHandle<R>,
-    logbook_root: std::path::PathBuf,
     descriptor: *mut dc_descriptor_t,
     /// Raw pointer to the context owned by `run_download`'s `DcContext`. Valid
     /// for the entire lifetime of the download (i.e. until after `dc_device_foreach`).
@@ -43,7 +58,7 @@ struct DownloadCtx<R: tauri::Runtime> {
     // written to Divecomputer files and used by original Subsurface's has_dive() check.
     known_fingerprints: HashSet<u32>,
     newest_fingerprint: Option<Vec<u8>>,
-    added: u32,
+    new_dives: Vec<ParsedDive>,
     skipped: u32,
     dive_number: u32,
     cancel: Arc<AtomicBool>,
@@ -70,19 +85,59 @@ unsafe extern "C" fn event_cb<R: tauri::Runtime>(
     } else if event == dc_event_type_t_DC_EVENT_DEVINFO {
         let info = &*(data as *const dc_event_devinfo_t);
 
+        // The device's self-reported model id can differ from the descriptor the
+        // user picked in the download UI (e.g. "Perdix" vs "Perdix AI" — same
+        // family, same wire protocol, different model id). Re-resolve to the
+        // *actual* connected product so the fingerprint stays keyed to the real
+        // device, matching Qt Subsurface's auto-correction in DC_EVENT_DEVINFO.
+        let descriptor_model = dc_descriptor_get_model(ctx.descriptor);
+        if descriptor_model != info.model {
+            let family = dc_descriptor_get_type(ctx.descriptor);
+            if let Some((new_descriptor, vendor, product)) =
+                resolve_descriptor_for_model(ctx.ctx_ptr, family, info.model)
+            {
+                let corrected = format!("{vendor} {product}");
+                log::info!(
+                    "DC: devinfo reports model={} (descriptor was model={}) — using {} for fingerprint lookup and parsing",
+                    info.model, descriptor_model, corrected
+                );
+                // Swap the descriptor itself, not just the display string —
+                // dive_cb's dc_parser_new2 uses ctx.descriptor for every
+                // dive's parser, so leaving it uncorrected would keep
+                // decoding with the wrong model identity even though the
+                // fingerprint string above is now right (matches Qt's
+                // devdata->descriptor reassignment in DC_EVENT_DEVINFO).
+                dc_descriptor_free(ctx.descriptor);
+                ctx.descriptor = new_descriptor;
+                ctx.dc_model = corrected;
+            }
+        }
+
         // Use the stored fingerprint to tell libdivecomputer where to stop, so it
         // doesn't re-download dives we already have.
-        if let Some(fp) = lookup_fp(&ctx.settings, &ctx.dc_model, info.serial) {
-            dc_device_set_fingerprint(device, fp.as_ptr(), fp.len() as u32);
+        match lookup_fp(&ctx.settings, &ctx.dc_model, info.serial) {
+            Some(fp) => {
+                let fp_hex: String = fp.iter().map(|b| format!("{b:02x}")).collect();
+                log::info!(
+                    "DC: wire-level fingerprint cutoff set for {} serial={} data={}",
+                    ctx.dc_model, info.serial, fp_hex
+                );
+                dc_device_set_fingerprint(device, fp.as_ptr(), fp.len() as u32);
+            }
+            None => {
+                log::info!(
+                    "DC: no stored fingerprint for {} serial={} — downloading full dive history",
+                    ctx.dc_model, info.serial
+                );
+            }
         }
 
         log::info!("DC: devinfo model={} firmware={} serial={}", info.model, info.firmware, info.serial);
         ctx.device_serial = Some(info.serial);
-        // Original Subsurface stores deviceid as SHA1_uint32(serial_string), matching
-        // calculate_string_hash() in libdivecomputer.cpp.
-        let device_id_hash = crate::ssrf_git::settings::sha1_u32(
-            info.serial.to_string().as_bytes()
-        );
+        // Original Subsurface stores deviceid as SHA1_uint32(hex-formatted serial),
+        // matching calculate_string_hash() in libdivecomputer.cpp applied to the
+        // dive parser's own "Serial" string field (see device_id_hash doc comment).
+        let device_id_hash = crate::ssrf_git::settings::device_id_hash(info.serial);
         ctx.device_id = Some(format!("{:08x}", device_id_hash));
         ctx.app
             .emit(
@@ -161,21 +216,16 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
         Ok(parsed) => {
             let date_str = format!("{:04}-{:02}-{:02}", parsed.year, parsed.month, parsed.day);
             dc_parser_destroy(parser);
-            match write_dive(&ctx.logbook_root, parsed) {
-                Ok(_) => {
-                    ctx.added += 1;
-                    log::info!("DC: dive {} added ({})", n, date_str);
-                    ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": date_str, "added": true })).ok();
-                }
-                Err(e) => {
-                    log::warn!("DC: dive {} error: {}", n, e);
-                    ctx.app.emit("dc-error", serde_json::json!({ "message": e })).ok();
-                    ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": null, "added": false })).ok();
-                }
-            }
+            log::info!(
+                "DC: dive {} buffered ({} {:02}:{:02}:{:02}) duration={}s maxdepth={:.1}m diveid={:08x}",
+                n, date_str, parsed.hour, parsed.minute, parsed.second,
+                parsed.duration_sec, parsed.max_depth_m, fp_hash
+            );
+            ctx.new_dives.push(parsed);
+            ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": date_str, "added": true })).ok();
         }
         Err(e) => {
-            log::warn!("DC: dive {} error: {}", n, e);
+            log::warn!("DC: dive {} parse error: {}", n, e);
             dc_parser_destroy(parser);
             ctx.app.emit("dc-dive", serde_json::json!({ "diveNumber": n, "date": null, "added": false })).ok();
         }
@@ -183,24 +233,28 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
     1 // continue iterating
 }
 
-/// Download all new dives from a dive computer and write them to `logbook_root`.
+/// Download all new dives from a dive computer, buffering them in memory.
 ///
 /// `settings` is cloned from managed state before the call; it is not re-read from disk.
+/// Nothing is written to disk by this function — the caller (`start_dc_download`)
+/// buffers the returned dives in `PendingDownloadState`, and only
+/// `commit_dc_download` writes them, once the user confirms via the review step.
 ///
 /// Emits Tauri events:
 /// - `dc-progress { current, maximum }` — download progress
 /// - `dc-devinfo { model, firmware, serial }` — device identification
-/// - `dc-error { message }` — per-dive write error (non-fatal)
+/// - `dc-dive { diveNumber, date, added }` — per-dive outcome (`added: false`
+///   means skipped as already-known or failed to parse, not a write failure)
 ///
-/// Returns [`DownloadResult`] with the count of added and skipped dives, plus the
-/// newest fingerprint (serial, bytes) so the caller can update in-memory state.
+/// Returns [`DownloadResult`] with the buffered dives, skipped count, the
+/// newest fingerprint (serial, bytes) for the caller to persist at commit
+/// time, the session's corrected model identity, and whether cancellation
+/// was observed before `dc_device_foreach` returned.
 ///
 /// This function blocks the calling thread; call it via
 /// `tauri::async_runtime::spawn_blocking`.
-#[allow(clippy::too_many_arguments)]
 pub fn run_download<R: tauri::Runtime>(
     app: AppHandle<R>,
-    logbook_root: std::path::PathBuf,
     settings: crate::ssrf_git::settings::Settings,
     dives: Vec<crate::types::Dive>,
     vendor: String,
@@ -242,7 +296,6 @@ pub fn run_download<R: tauri::Runtime>(
 
     let mut download_ctx = DownloadCtx {
         app: app.clone(),
-        logbook_root,
         descriptor,
         ctx_ptr: ctx_dc.as_ptr(),
         dc_model: full_model,
@@ -251,7 +304,7 @@ pub fn run_download<R: tauri::Runtime>(
         settings,
         known_fingerprints,
         newest_fingerprint: None,
-        added: 0,
+        new_dives: Vec::new(),
         skipped: 0,
         dive_number: 0,
         cancel,
@@ -293,36 +346,39 @@ pub fn run_download<R: tauri::Runtime>(
 
         dc_device_close(device);
         dc_iostream_close(iostream);
-        dc_descriptor_free(descriptor);
+        // Free whichever descriptor is currently live — download_ctx.descriptor
+        // may have been swapped (and the original already freed) by event_cb's
+        // DEVINFO correction, in which case the local `descriptor` variable is
+        // stale and freeing it here would double-free.
+        dc_descriptor_free(download_ctx.descriptor);
+
+        // Capture cancellation state synchronously, right here, rather than
+        // leaving the caller to re-check the shared AtomicBool after crossing
+        // an async/thread boundary (spawn_blocking + await) — that gap lets a
+        // cancel click race with a foreach that already finished successfully,
+        // wrongly discarding a complete download's results.
+        let cancelled = download_ctx.cancel.load(Ordering::Relaxed);
 
         // If foreach failed (connection lost, timeout, etc.) and user didn't cancel,
         // report the error rather than silently returning partial results.
-        if foreach_rc != crate::dc::ffi::dc_status_t_DC_STATUS_SUCCESS
-            && !download_ctx.cancel.load(Ordering::Relaxed)
-        {
+        if foreach_rc != crate::dc::ffi::dc_status_t_DC_STATUS_SUCCESS && !cancelled {
             log::error!("DC: foreach error status={}", foreach_rc);
             return Err(format!("device download interrupted: status {foreach_rc}"));
         }
+
+        // Capture newest fingerprint for the caller to persist at commit time (not here).
+        let newest_fp = match (download_ctx.device_serial, download_ctx.newest_fingerprint) {
+            (Some(serial), Some(fp)) => Some((serial, fp)),
+            _ => None,
+        };
+
+        log::info!("DC: complete new={} skipped={} cancelled={}", download_ctx.new_dives.len(), download_ctx.skipped, cancelled);
+        Ok(DownloadResult {
+            new_dives: download_ctx.new_dives,
+            skipped: download_ctx.skipped,
+            newest_fp,
+            dc_model: download_ctx.dc_model,
+            cancelled,
+        })
     }
-
-    // Persist the newest fingerprint to disk so the next download can skip already-seen dives.
-    let newest_fp = if !download_ctx.cancel.load(Ordering::Relaxed) {
-        if let (Some(serial), Some(fp)) =
-            (download_ctx.device_serial, download_ctx.newest_fingerprint)
-        {
-            upsert_fp(&download_ctx.logbook_root, &download_ctx.dc_model, serial, &fp).ok();
-            Some((serial, fp))
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    log::info!("DC: complete added={} skipped={}", download_ctx.added, download_ctx.skipped);
-    Ok(DownloadResult {
-        added: download_ctx.added,
-        skipped: download_ctx.skipped,
-        newest_fp,
-    })
 }

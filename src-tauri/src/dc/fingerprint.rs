@@ -1,7 +1,7 @@
 // AI-generated (Claude)
 use std::collections::HashSet;
 use std::path::Path;
-use crate::ssrf_git::settings::{read_settings, write_settings, sha1_u32, FingerprintRecord, Settings};
+use crate::ssrf_git::settings::{read_settings, write_settings, sha1_u32, device_id_hash, FingerprintRecord, Settings};
 
 /// Returns the raw fingerprint bytes for the given device, or `None` if absent.
 pub fn lookup_fp(settings: &Settings, model_name: &str, serial: u32) -> Option<Vec<u8>> {
@@ -14,7 +14,7 @@ pub fn lookup_fp(settings: &Settings, model_name: &str, serial: u32) -> Option<V
 /// Inserts or replaces the fingerprint for the given device in `settings` (in-memory only).
 pub fn apply_fp(settings: &mut Settings, model_name: &str, serial: u32, fp_bytes: &[u8]) {
     let model_hash = sha1_u32(model_name.as_bytes());
-    let device_id = sha1_u32(serial.to_string().as_bytes());
+    let device_id = device_id_hash(serial);
     let dive_id = sha1_u32(fp_bytes);
     settings.fingerprints.retain(|r| !(r.model == model_hash && r.serial == serial));
     settings.fingerprints.push(FingerprintRecord {

@@ -402,7 +402,7 @@ pub async fn open_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
-    let logbook = crate::install_logbook(&logbook_state, root, parsed)?;
+    let logbook = crate::install_logbook(&app, &logbook_state, root, parsed)?;
 
     #[cfg(desktop)]
     crate::menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
@@ -458,7 +458,7 @@ pub async fn open_recent_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
-    let logbook = crate::install_logbook(&logbook_state, root, parsed)?;
+    let logbook = crate::install_logbook(&app, &logbook_state, root, parsed)?;
 
     #[cfg(desktop)]
     crate::menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
@@ -495,7 +495,7 @@ pub async fn sync_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
-    let logbook = crate::install_logbook(&logbook_state, root, parsed)?;
+    let logbook = crate::install_logbook(&app, &logbook_state, root, parsed)?;
 
     // Read recents AFTER the (potentially multi-second) fetch so a concurrent open
     // that wrote a new entry during the fetch is not overwritten with a stale snapshot.
