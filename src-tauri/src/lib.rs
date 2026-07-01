@@ -264,8 +264,9 @@ pub fn run() {
             Ok(())
         });
 
-    // dc::commands::PendingDownload only exists on desktop (`mod dc;` is
-    // #[cfg(desktop)]-gated) — mobile has no dive-computer download flow.
+    // The dive-computer download flow itself (start_dc_download et al.) is
+    // desktop-only, so PendingDownload state only needs registering there —
+    // `mod dc;` compiles on Android too, but exposes no download commands.
     #[cfg(desktop)]
     let builder = builder.manage(Mutex::new(None::<dc::commands::PendingDownload>));
 
