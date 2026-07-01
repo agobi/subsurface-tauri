@@ -26,6 +26,14 @@ pub struct DownloadResult {
     /// The serial number and raw fingerprint bytes of the newest dive seen, if any.
     /// Stored in pending state and written to disk only when the user confirms via `commit_dc_download`.
     pub newest_fp: Option<(u32, Vec<u8>)>,
+    /// The "Vendor Product" string actually used for this session's fingerprint
+    /// lookups — may differ from the caller-supplied `vendor`/`model` if the
+    /// device's self-reported model corrected it (see `DC_EVENT_DEVINFO`
+    /// handling in `event_cb`). The caller must persist the fingerprint cutoff
+    /// under *this* string, not the original input, or the two can drift out
+    /// of sync (a fresh cutoff gets written under the wrong key and the next
+    /// download re-scans past it).
+    pub dc_model: String,
 }
 
 /// Userdata passed through libdivecomputer callbacks.
@@ -338,5 +346,6 @@ pub fn run_download<R: tauri::Runtime>(
         new_dives: download_ctx.new_dives,
         skipped: download_ctx.skipped,
         newest_fp,
+        dc_model: download_ctx.dc_model,
     })
 }

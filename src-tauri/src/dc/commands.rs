@@ -162,6 +162,25 @@ pub struct PendingDownload {
 
 pub type PendingDownloadState = std::sync::Mutex<Option<PendingDownload>>;
 
+/// Builds the buffered state from a completed [`crate::dc::device::DownloadResult`].
+///
+/// Uses `result.dc_model` — the model string `run_download` actually used for
+/// its fingerprint lookups — rather than re-deriving it from the caller's raw
+/// vendor/model input, so the fingerprint saved at commit time always matches
+/// the key that was looked up this session (see `resolve_descriptor_for_model`
+/// in `descriptor.rs` for why the two can differ).
+fn build_pending_download(
+    result: crate::dc::device::DownloadResult,
+    logbook_root: std::path::PathBuf,
+) -> PendingDownload {
+    PendingDownload {
+        dc_model: result.dc_model,
+        dives: result.new_dives,
+        newest_fp: result.newest_fp,
+        logbook_root,
+    }
+}
+
 // ── Download commands ───────────────────────────────────────────────────────
 
 /// Summary of a single buffered dive, sent to the frontend for the review step.
@@ -244,6 +263,7 @@ pub async fn start_dc_download(
         *pending.lock().map_err(|e| e.to_string())? = None;
         DownloadCompleteSer { dives: vec![], skipped: result.skipped, cancelled: true }
     } else {
+        let skipped = result.skipped;
         let summaries: Vec<DiveSummarySer> = result.new_dives.iter().map(|d| DiveSummarySer {
             date: format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
                 d.year, d.month, d.day, d.hour, d.minute, d.second),
@@ -251,14 +271,9 @@ pub async fn start_dc_download(
             max_depth_m: d.max_depth_m,
         }).collect();
 
-        *pending.lock().map_err(|e| e.to_string())? = Some(PendingDownload {
-            dives: result.new_dives,
-            newest_fp: result.newest_fp,
-            dc_model: format!("{vendor} {model}"),
-            logbook_root: root,
-        });
+        *pending.lock().map_err(|e| e.to_string())? = Some(build_pending_download(result, root));
 
-        DownloadCompleteSer { dives: summaries, skipped: result.skipped, cancelled: false }
+        DownloadCompleteSer { dives: summaries, skipped, cancelled: false }
     };
 
     app.emit("dc-complete", &payload).ok();
@@ -366,6 +381,26 @@ mod tests {
         // Just verify it doesn't panic; actual ports depend on hardware.
         let _ports = super::serial_ports_impl();
         // passes if it returns without panicking
+    }
+
+    #[test]
+    fn build_pending_download_uses_the_session_dc_model_not_a_reconstruction() {
+        // Regression test: the fingerprint cutoff must be persisted under the
+        // model string run_download actually used for its lookups (which may
+        // have been auto-corrected from the device's self-reported model —
+        // see resolve_descriptor_for_model), not re-derived from the raw
+        // vendor/model strings the UI originally passed in. Using a
+        // reconstruction caused a fresh cutoff to be written under the wrong
+        // key, so the next download re-scanned past it and re-delivered dives
+        // that were already saved.
+        let result = crate::dc::device::DownloadResult {
+            new_dives: vec![],
+            skipped: 0,
+            newest_fp: Some((20819261, vec![0x6a, 0x2e, 0x80, 0x20])),
+            dc_model: "Shearwater Perdix AI".to_string(),
+        };
+        let pending = super::build_pending_download(result, std::path::PathBuf::from("/tmp/logbook"));
+        assert_eq!(pending.dc_model, "Shearwater Perdix AI");
     }
 
     fn make_dive(duration_sec: u32) -> ParsedDive {
