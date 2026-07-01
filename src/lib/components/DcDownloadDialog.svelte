@@ -64,11 +64,21 @@
       resultSkipped = e.payload.skipped;
       resultCancelled = e.payload.cancelled;
       errorMsg = null;
-      if (!e.payload.cancelled && e.payload.dives.length > 0) {
+      if (e.payload.dives.length > 0) {
+        // Show whatever was fetched for review, even if the download was
+        // cancelled partway through — a cancel shouldn't discard progress
+        // that was already downloaded.
         pendingDives = e.payload.dives;
         selectedDives = e.payload.dives.map(() => true);
         step = "review";
       } else {
+        if (!e.payload.cancelled) {
+          // Nothing new to review, but the device's fingerprint cutoff still
+          // needs to advance, or every future download re-scans its full
+          // history. commit_dc_download always does this regardless of an
+          // empty selection.
+          invoke("commit_dc_download", { selectedIndices: [] }).catch(() => {});
+        }
         resultAdded = 0;
         step = "result";
       }
@@ -145,6 +155,7 @@
 
   async function scanBle() {
     bleDevices = [];
+    errorMsg = null;
     await invoke("scan_ble_devices", { vendor, model });
   }
 
@@ -203,6 +214,9 @@
             <label><input type="radio" bind:group={selectedBleDevice} value={d.address} />{d.name}</label>
           {/each}
         {/if}
+        {#if errorMsg}
+          <p class="warning">{errorMsg}</p>
+        {/if}
         <button onclick={() => startDownload()} disabled={
           (transport === "Serial" && !serialPort) ||
           (transport === "Bluetooth" && !bluetoothAddress) ||
@@ -222,6 +236,9 @@
 
       {:else if step === "review"}
         <h2>Review Downloaded Dives</h2>
+        {#if resultCancelled}
+          <p class="warning">Download was cancelled — showing what was fetched before it stopped.</p>
+        {/if}
         <p>{pendingDives.length} new dive{pendingDives.length !== 1 ? "s" : ""}{resultSkipped > 0 ? `, ${resultSkipped} already in logbook` : ""}.</p>
         <div class="dive-list" role="list">
           {#each pendingDives as dive, i}

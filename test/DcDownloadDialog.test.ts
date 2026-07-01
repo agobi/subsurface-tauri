@@ -95,6 +95,40 @@ describe("DcDownloadDialog", () => {
     expect(document.body.textContent).not.toContain("dives  ,");
   });
 
+  it("still commits (with no dives) to advance the fingerprint cutoff when nothing new was found", async () => {
+    let completeCb: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-complete") completeCb = cb as typeof completeCb;
+      return () => {};
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await vi.waitFor(() => expect(completeCb).toBeDefined());
+    completeCb!({
+      payload: { dives: [], skipped: 50, cancelled: false },
+    });
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("commit_dc_download", { selectedIndices: [] })
+    );
+  });
+
+  it("shows the review step for dives fetched before a cancel, instead of discarding them", async () => {
+    let completeCb: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-complete") completeCb = cb as typeof completeCb;
+      return () => {};
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await vi.waitFor(() => expect(completeCb).toBeDefined());
+    completeCb!({
+      payload: {
+        dives: [{ date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 }],
+        skipped: 0,
+        cancelled: true,
+      },
+    });
+    expect(await screen.findByText("Save 1 dive to logbook")).toBeTruthy();
+  });
+
   it("applies the reloaded logbook to the app store after saving", async () => {
     let completeCb: ((e: { payload: unknown }) => void) | undefined;
     vi.mocked(listen).mockImplementation(async (event, cb) => {
@@ -225,5 +259,35 @@ describe("DcDownloadDialog", () => {
     await vi.waitFor(() => expect(diveCallback).toBeDefined());
     diveCallback!({ payload: { diveNumber: 1, date: "2026-02-15", added: true } });
     await vi.waitFor(() => expect(screen.getByText("Dive 1: 2026-02-15")).toBeTruthy());
+  });
+
+  it("shows a BLE scan failure on the connect step instead of swallowing it", async () => {
+    let errorCallback: ((e: { payload: unknown }) => void) | undefined;
+
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE"] }];
+      if (cmd === "scan_ble_devices") return null;
+      return null;
+    });
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-error") errorCallback = cb as typeof errorCallback;
+      return () => {};
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+
+    const vendorSelect = await screen.findByLabelText("Vendor");
+    await fireEvent.change(vendorSelect, { target: { value: "Shearwater" } });
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_dc_models", { vendor: "Shearwater" }));
+    await fireEvent.click(await screen.findByText("Next"));
+
+    await fireEvent.click(await screen.findByText("Scan"));
+    await vi.waitFor(() => expect(errorCallback).toBeDefined());
+    errorCallback!({ payload: { message: "no BLE adapter found" } });
+
+    expect(await screen.findByText("no BLE adapter found")).toBeTruthy();
+    // Must stay on the connect step, not jump away with no context.
+    expect(screen.getByText("Connect")).toBeTruthy();
   });
 });

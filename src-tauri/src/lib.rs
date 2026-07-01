@@ -58,10 +58,25 @@ pub(crate) fn update_recents(
 }
 
 fn install_logbook(
+    app: &tauri::AppHandle,
     logbook_state: &tauri::State<'_, Mutex<Option<LogbookState>>>,
     root: std::path::PathBuf,
     parsed: types::ParsedLogbook,
 ) -> Result<types::Logbook, String> {
+    // Refuse to swap logbooks out from under a dive-computer download that's
+    // still buffered awaiting review/commit — commit_dc_download snapshots
+    // the logbook root at download-start time, so switching here would write
+    // the buffered dives to one logbook while the fingerprint update lands
+    // in whichever logbook ends up open.
+    #[cfg(desktop)]
+    {
+        use tauri::Manager;
+        let pending = app.state::<dc::commands::PendingDownloadState>();
+        if pending.lock().map_err(|e| e.to_string())?.is_some() {
+            return Err("A dive computer download is waiting for review — save or discard it before switching logbooks.".to_string());
+        }
+    }
+
     let state = LogbookState {
         root,
         dives: parsed.dives,
@@ -131,7 +146,7 @@ async fn startup_logbook(
         .await
         .map_err(|e| e.to_string())??;
 
-    let logbook = install_logbook(&logbook_state, root, parsed)?;
+    let logbook = install_logbook(&app, &logbook_state, root, parsed)?;
 
     #[cfg(desktop)]
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
@@ -154,7 +169,7 @@ async fn open_logbook(
         .await
         .map_err(|e| e.to_string())??;
 
-    let logbook = install_logbook(&logbook_state, path.clone(), parsed)?;
+    let logbook = install_logbook(&app, &logbook_state, path.clone(), parsed)?;
 
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let display_name = path_basename(&path);
@@ -186,7 +201,7 @@ async fn new_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
-    let logbook = install_logbook(&logbook_state, path.clone(), parsed)?;
+    let logbook = install_logbook(&app, &logbook_state, path.clone(), parsed)?;
 
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let display_name = path_basename(&path);

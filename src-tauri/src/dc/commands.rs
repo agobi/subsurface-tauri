@@ -204,14 +204,24 @@ pub struct DownloadCompleteSer {
     pub cancelled: bool,
 }
 
+/// True only when there is genuinely nothing to save: the download was
+/// cancelled before a single dive was fetched. A cancel that already fetched
+/// some dives, or a normal completion with zero *new* dives (still needs its
+/// fingerprint cutoff committed), must both flow through to buffering.
+fn should_discard_without_saving(result: &crate::dc::device::DownloadResult) -> bool {
+    result.cancelled && result.new_dives.is_empty()
+}
+
 /// Start a dive-computer download.
 ///
 /// Resets the cancel flag, spawns a blocking task that calls
 /// [`crate::dc::device::run_download`], and emits `dc-complete` on success.
 ///
-/// On success (not cancelled): buffers dives in [`PendingDownloadState`] and
-/// emits `dc-complete { dives, skipped, cancelled: false }` for the review step.
-/// On cancel: discards buffered dives and emits `dc-complete { cancelled: true }`.
+/// Buffers dives in [`PendingDownloadState`] and emits `dc-complete { dives,
+/// skipped, cancelled }` for the review step whenever there's anything to
+/// save — including a cancelled run that still fetched some dives. Only a
+/// cancel with zero fetched dives discards outright (see
+/// [`should_discard_without_saving`]).
 ///
 /// The frontend may call [`cancel_dc_download`] at any time to abort.
 #[cfg(not(target_os = "android"))]
@@ -227,6 +237,11 @@ pub async fn start_dc_download(
 ) -> Result<DownloadCompleteSer, String> {
     use std::sync::atomic::Ordering;
     use tauri::Emitter;
+
+    // Refuse to clobber a prior batch that's still buffered awaiting review.
+    if pending.lock().map_err(|e| e.to_string())?.is_some() {
+        return Err("A previous dive computer download is still waiting for review — save or discard it first.".to_string());
+    }
 
     // Reset cancel flag from any previous download.
     cancel.store(false, Ordering::Relaxed);
@@ -256,14 +271,20 @@ pub async fn start_dc_download(
     .await
     .map_err(|e| e.to_string())??;
 
-    let was_cancelled = cancel.load(Ordering::Relaxed);
-
-    let payload = if was_cancelled {
-        // Discard buffered dives; do not advance fingerprint.
+    // `result.cancelled` was captured synchronously inside run_download, right
+    // as dc_device_foreach returned — not re-read from the shared flag here,
+    // which would race against a cancel click landing in the gap between
+    // run_download finishing and this line running.
+    let payload = if should_discard_without_saving(&result) {
+        // Nothing was fetched before the cancel took effect — nothing to save.
         *pending.lock().map_err(|e| e.to_string())? = None;
         DownloadCompleteSer { dives: vec![], skipped: result.skipped, cancelled: true }
     } else {
+        // Either a normal completion, or a cancel that still fetched some
+        // dives — buffer whatever arrived so the user can review/save it
+        // instead of losing already-fetched progress.
         let skipped = result.skipped;
+        let cancelled = result.cancelled;
         let summaries: Vec<DiveSummarySer> = result.new_dives.iter().map(|d| DiveSummarySer {
             date: format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
                 d.year, d.month, d.day, d.hour, d.minute, d.second),
@@ -273,7 +294,7 @@ pub async fn start_dc_download(
 
         *pending.lock().map_err(|e| e.to_string())? = Some(build_pending_download(result, root));
 
-        DownloadCompleteSer { dives: summaries, skipped, cancelled: false }
+        DownloadCompleteSer { dives: summaries, skipped, cancelled }
     };
 
     app.emit("dc-complete", &payload).ok();
@@ -295,13 +316,32 @@ fn select_dives(dives: Vec<crate::dc::writer::ParsedDive>, selected: &[usize]) -
         .collect()
 }
 
+/// Writes each dive, continuing past individual failures so one bad dive
+/// (disk full, permission error, a directory collision) doesn't lose the
+/// rest of an already-buffered, no-longer-retryable batch. Returns the
+/// count actually written and the error message for each dive that failed.
+fn write_all_dives(root: &std::path::Path, dives: Vec<crate::dc::writer::ParsedDive>) -> (u32, Vec<String>) {
+    let mut written = 0u32;
+    let mut errors = Vec::new();
+    for dive in dives {
+        match crate::dc::writer::write_dive(root, dive) {
+            Ok(()) => written += 1,
+            Err(e) => errors.push(e),
+        }
+    }
+    (written, errors)
+}
+
 /// Write buffered dives to disk, save fingerprint, and update in-memory logbook state.
 ///
 /// Called by the frontend after the user confirms the review step.
 /// `selected_indices` are positions into the dive list as shown in the review
 /// step (matching `DownloadCompleteSer::dives` order); only those dives are
-/// written. Returns the count of dives written so the frontend can call
-/// `startup_logbook` and show the result.
+/// written. A dive that fails to write does not abort the rest of the batch
+/// (see `write_all_dives`) or block the fingerprint update, since the
+/// buffered dives are already removed from `PendingDownloadState` and
+/// cannot be retried. Returns the count of dives actually written so the
+/// frontend can call `startup_logbook` and show the result.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn commit_dc_download(
@@ -313,7 +353,6 @@ pub async fn commit_dc_download(
         .ok_or_else(|| "no pending download to commit".to_string())?;
 
     let dives = select_dives(pd.dives, &selected_indices);
-    let added = dives.len() as u32;
     let root = pd.logbook_root;
     let dc_model = pd.dc_model;
     let newest_fp = pd.newest_fp;
@@ -322,17 +361,23 @@ pub async fn commit_dc_download(
     let dc_model_clone = dc_model.clone();
     let newest_fp_clone = newest_fp.clone();
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        for dive in dives {
-            crate::dc::writer::write_dive(&root_clone, dive)?;
+    let written = tauri::async_runtime::spawn_blocking(move || -> u32 {
+        let (written, errors) = write_all_dives(&root_clone, dives);
+        if !errors.is_empty() {
+            log::warn!("DC: {} of {} dive(s) failed to write: {}",
+                errors.len(), written as usize + errors.len(), errors.join("; "));
         }
+        // The fingerprint cutoff reflects the device's true newest dive, not
+        // which dives were successfully written — always advance it, even if
+        // some (or all) writes failed, so a partial-failure retry doesn't
+        // re-download dives that already made it to disk.
         if let Some((serial, fp)) = newest_fp_clone {
             crate::dc::fingerprint::upsert_fp(&root_clone, &dc_model_clone, serial, &fp).ok();
         }
-        Ok(())
+        written
     })
     .await
-    .map_err(|e| e.to_string())??;
+    .map_err(|e| e.to_string())?;
 
     // Apply fingerprint to in-memory settings so subsequent downloads in this session use it.
     if let Some((serial, fp)) = &newest_fp {
@@ -342,7 +387,7 @@ pub async fn commit_dc_download(
         }
     }
 
-    Ok(added)
+    Ok(written)
 }
 
 /// Discard buffered dives without saving anything.
@@ -398,6 +443,7 @@ mod tests {
             skipped: 0,
             newest_fp: Some((20819261, vec![0x6a, 0x2e, 0x80, 0x20])),
             dc_model: "Shearwater Perdix AI".to_string(),
+            cancelled: false,
         };
         let pending = super::build_pending_download(result, std::path::PathBuf::from("/tmp/logbook"));
         assert_eq!(pending.dc_model, "Shearwater Perdix AI");
@@ -440,5 +486,63 @@ mod tests {
         let dives = vec![make_dive(100)];
         let kept = super::select_dives(dives, &[0, 5]);
         assert_eq!(kept.len(), 1);
+    }
+
+    fn make_dive_on_day(day: u32) -> ParsedDive {
+        let mut d = make_dive(100);
+        d.day = day;
+        d
+    }
+
+    fn make_result(new_dives: Vec<ParsedDive>, cancelled: bool) -> crate::dc::device::DownloadResult {
+        crate::dc::device::DownloadResult {
+            new_dives,
+            skipped: 0,
+            newest_fp: None,
+            dc_model: "Shearwater Perdix AI".to_string(),
+            cancelled,
+        }
+    }
+
+    #[test]
+    fn cancelling_with_no_fetched_dives_has_nothing_to_save() {
+        let result = make_result(vec![], true);
+        assert!(super::should_discard_without_saving(&result));
+    }
+
+    #[test]
+    fn cancelling_after_fetching_dives_still_preserves_them() {
+        let result = make_result(vec![make_dive(100)], true);
+        assert!(!super::should_discard_without_saving(&result),
+            "a cancel that already fetched dives must not discard them");
+    }
+
+    #[test]
+    fn a_normal_completion_with_zero_new_dives_is_not_discarded() {
+        // Must still flow through to build_pending_download so the fingerprint
+        // cutoff can be committed even though there's nothing to review.
+        let result = make_result(vec![], false);
+        assert!(!super::should_discard_without_saving(&result));
+    }
+
+    #[test]
+    fn write_all_dives_continues_past_a_failing_dive_and_reports_the_error() {
+        let tmp = std::env::temp_dir().join("dc_write_all_dives_partial_failure");
+        std::fs::remove_dir_all(&tmp).ok();
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Dive on day 11 will succeed; dive on day 12 is blocked because a
+        // regular file already occupies the directory path it needs to create.
+        std::fs::create_dir_all(tmp.join("2026/06")).unwrap();
+        std::fs::write(tmp.join("2026/06/12-Fri-12=00=00"), b"blocking file").unwrap();
+
+        let dives = vec![make_dive_on_day(11), make_dive_on_day(12)];
+        let (written, errors) = super::write_all_dives(&tmp, dives);
+
+        assert_eq!(written, 1, "the succeeding dive must still be written");
+        assert_eq!(errors.len(), 1, "the failing dive's error must be reported, not silently dropped");
+        assert!(tmp.join("2026/06/11-Thu-12=00=00/Dive-001").exists());
+
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }
