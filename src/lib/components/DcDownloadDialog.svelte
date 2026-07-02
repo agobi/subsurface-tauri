@@ -16,7 +16,6 @@
   let selectedKnownDeviceKey = $state("");
   let isKnownDevice = $state(false);
   let dcConnections = $state<DcConnections>({});
-  let cachedBleAddress = $state<string | null>(null);
 
   function deviceKey(vendor: string, product: string, serial: string): string {
     return `${vendor} ${product} ${serial}`;
@@ -37,14 +36,10 @@
   let bleDevices = $state<{ name: string; address: string }[]>([]);
   let selectedBleDevice = $state<string | null>(null);
   let bleScanning = $state(false);
-  let bleScanTimedOut = $state(false);
   let bleScanTimer: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
-    if (selectedBleDevice) {
-      bleScanning = false;
-      bleScanTimedOut = false;
-    }
+    if (selectedBleDevice) bleScanning = false;
   });
 
   let progressCurrent = $state(0);
@@ -82,9 +77,6 @@
     unlisteners.push(await listen<{ name: string; address: string }>("dc-ble-found", (e) => {
       const existing = bleDevices.find((d) => d.address === e.payload.address);
       if (!existing) bleDevices = [...bleDevices, e.payload];
-      if (cachedBleAddress && !selectedBleDevice && e.payload.address === cachedBleAddress) {
-        selectedBleDevice = e.payload.address;
-      }
     }));
     unlisteners.push(await listen<{ model: number; firmware: number; serial: number }>("dc-devinfo", (e) => {
       statusLabel = `Connected: ${vendor} ${model}`;
@@ -164,7 +156,6 @@
 
   function goSetupNew() {
     isKnownDevice = false;
-    cachedBleAddress = null;
     vendor = "";
     model = "";
     models = [];
@@ -173,12 +164,15 @@
     selectedBleDevice = null;
     bleDevices = [];
     bleScanning = false;
-    bleScanTimedOut = false;
     clearTimeout(bleScanTimer);
     step = "setup";
   }
 
-  function applyCachedConnectionOrDefault(serial: string) {
+  /// Prefills transport + address from the cache when available, falling back
+  /// to updateTransportDefault(). Returns true when a full cached address was
+  /// found for the resolved transport — the caller uses this to decide
+  /// whether a connection can be attempted directly, skipping setup/scan.
+  function applyCachedConnectionOrDefault(serial: string): boolean {
     const supported = models.find((m) => m.product === model)?.transports ?? [];
     const cached = dcConnections[deviceKey(vendor, model, serial)];
     if (cached && supported.includes(cached.lastTransport)) {
@@ -189,13 +183,12 @@
     serialPort = "";
     bluetoothAddress = "";
     selectedBleDevice = null;
-    cachedBleAddress = null;
     const addr = cached?.addresses[transport];
-    if (addr) {
-      if (transport === "Serial") serialPort = addr;
-      else if (transport === "Bluetooth") bluetoothAddress = addr;
-      else if (transport === "BLE") cachedBleAddress = addr;
-    }
+    if (!addr) return false;
+    if (transport === "Serial") serialPort = addr;
+    else if (transport === "Bluetooth") bluetoothAddress = addr;
+    else if (transport === "BLE") selectedBleDevice = addr;
+    return true;
   }
 
   async function selectKnownDevice(d: KnownDevice) {
@@ -205,10 +198,14 @@
     isKnownDevice = true;
     bleDevices = [];
     errorMsg = null;
-    applyCachedConnectionOrDefault(d.serial);
-    step = "setup";
-    await onTransportChange();
-    if (transport === "BLE") scanBle();
+    const hasCachedAddress = applyCachedConnectionOrDefault(d.serial);
+    if (hasCachedAddress) {
+      // We already know how to reach this device — skip setup/scan and try connecting directly.
+      await startDownload();
+    } else {
+      step = "setup";
+      await onTransportChange();
+    }
   }
 
   async function connectToSelectedKnownDevice() {
@@ -267,13 +264,9 @@
     bleDevices = [];
     errorMsg = null;
     bleScanning = true;
-    bleScanTimedOut = false;
     clearTimeout(bleScanTimer);
     await invoke("scan_ble_devices", { vendor, model });
-    bleScanTimer = setTimeout(() => {
-      bleScanning = false;
-      if (!selectedBleDevice) bleScanTimedOut = true;
-    }, BLE_SCAN_DURATION_MS);
+    bleScanTimer = setTimeout(() => { bleScanning = false; }, BLE_SCAN_DURATION_MS);
   }
 
   function cancel() { invoke("cancel_dc_download").catch(() => {}); }
@@ -350,9 +343,7 @@
           {:else if transport === "BLE"}
             <button onclick={() => scanBle()} disabled={bleScanning}>Scan</button>
             {#if bleScanning}
-              <p class="status">Scanning{cachedBleAddress ? " for your remembered device" : ""}…</p>
-            {:else if bleScanTimedOut && cachedBleAddress}
-              <p class="warning">Remembered device not found — check it's powered on and in range, then try Scan again.</p>
+              <p class="status">Scanning…</p>
             {/if}
             {#each bleDevices as d}
               <label><input type="radio" bind:group={selectedBleDevice} value={d.address} />{d.name}</label>
