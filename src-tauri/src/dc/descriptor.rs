@@ -23,6 +23,11 @@ fn transport_names(mask: u32) -> Vec<String> {
     if mask & dc_transport_t_DC_TRANSPORT_USBHID != 0 { names.push("USBHID".to_string()); }
     if mask & dc_transport_t_DC_TRANSPORT_SERIAL != 0 { names.push("Serial".to_string()); }
     if mask & dc_transport_t_DC_TRANSPORT_USB != 0 { names.push("USB".to_string()); }
+    // libdivecomputer has no CoreBluetooth backend for classic (RFCOMM) Bluetooth
+    // on macOS — dc_bluetooth_open() always returns DC_STATUS_UNSUPPORTED there.
+    // Omit it from the reported transports so macOS builds never offer an option
+    // that can't work; Linux/Windows builds still list it.
+    #[cfg(not(target_os = "macos"))]
     if mask & dc_transport_t_DC_TRANSPORT_BLUETOOTH != 0 { names.push("Bluetooth".to_string()); }
     if mask & dc_transport_t_DC_TRANSPORT_BLE != 0 { names.push("BLE".to_string()); }
     names
@@ -182,6 +187,23 @@ pub fn resolve_descriptor_for_model(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn transport_names_excludes_bluetooth_on_macos() {
+        use crate::dc::ffi::{dc_transport_t_DC_TRANSPORT_BLUETOOTH, dc_transport_t_DC_TRANSPORT_BLE};
+        let names = super::transport_names(dc_transport_t_DC_TRANSPORT_BLUETOOTH | dc_transport_t_DC_TRANSPORT_BLE);
+        assert!(!names.contains(&"Bluetooth".to_string()), "classic Bluetooth can't work on macOS, so it must not be offered");
+        assert!(names.contains(&"BLE".to_string()), "BLE must still be offered on macOS");
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn transport_names_includes_bluetooth_off_macos() {
+        use crate::dc::ffi::dc_transport_t_DC_TRANSPORT_BLUETOOTH;
+        let names = super::transport_names(dc_transport_t_DC_TRANSPORT_BLUETOOTH);
+        assert!(names.contains(&"Bluetooth".to_string()), "classic Bluetooth is supported off macOS and must still be offered");
+    }
+
     #[test]
     fn vendor_list_is_non_empty_and_contains_shearwater() {
         let vendors = super::vendors();
