@@ -4,22 +4,43 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { app } from "$lib/stores/app.svelte.ts";
+  import { loadDcConnections, saveDcConnection, type DcConnections, type Transport } from "$lib/dcConnections.ts";
 
   let { open, onClose }: { open: boolean; onClose: () => void } = $props();
 
-  type Step = "select" | "connect" | "progress" | "review" | "result";
-  let step = $state<Step>("select");
+  type Step = "list" | "setup" | "progress" | "review" | "result";
+  let step = $state<Step>("list");
+
+  type KnownDevice = { vendor: string; product: string; serial: string; nickname: string };
+  let knownDevices = $state<KnownDevice[]>([]);
+  let selectedKnownDeviceKey = $state("");
+  let isKnownDevice = $state(false);
+  let dcConnections = $state<DcConnections>({});
+
+  function deviceKey(vendor: string, product: string, serial: string): string {
+    return `${vendor} ${product} ${serial}`;
+  }
+
+  function formatSerial(serial: number): string {
+    return serial.toString(16).padStart(8, "0");
+  }
 
   let vendors = $state<string[]>([]);
   let vendor = $state("");
   let models = $state<{ product: string; transports: string[] }[]>([]);
   let model = $state("");
-  let transport = $state<"Serial" | "BLE" | "Bluetooth" | "USBHID">("BLE");
+  let transport = $state<Transport>("BLE");
   let serialPort = $state("");
   let serialPorts = $state<string[]>([]);
   let bluetoothAddress = $state("");
   let bleDevices = $state<{ name: string; address: string }[]>([]);
   let selectedBleDevice = $state<string | null>(null);
+  let bleScanning = $state(false);
+  let bleScanTimer: ReturnType<typeof setTimeout> | undefined;
+
+  $effect(() => {
+    if (selectedBleDevice) bleScanning = false;
+  });
 
   let progressCurrent = $state(0);
   let progressMaximum = $state(0);
@@ -36,14 +57,30 @@
 
   let unlisteners: (() => void)[] = [];
 
+  function currentAddress(): string {
+    if (transport === "Serial") return serialPort;
+    if (transport === "Bluetooth") return bluetoothAddress;
+    if (transport === "BLE") return selectedBleDevice ?? "";
+    return "";
+  }
+
   onMount(async () => {
+    knownDevices = await invoke<KnownDevice[]>("list_known_devices");
+    dcConnections = await loadDcConnections();
+    if (knownDevices.length === 0) {
+      step = "setup";
+    } else {
+      // Backend already orders knownDevices most-recently-seen first.
+      selectedKnownDeviceKey = deviceKey(knownDevices[0].vendor, knownDevices[0].product, knownDevices[0].serial);
+    }
     vendors = await invoke<string[]>("list_dc_vendors");
     unlisteners.push(await listen<{ name: string; address: string }>("dc-ble-found", (e) => {
       const existing = bleDevices.find((d) => d.address === e.payload.address);
       if (!existing) bleDevices = [...bleDevices, e.payload];
     }));
-    unlisteners.push(await listen<{ model: number; firmware: number; serial: number }>("dc-devinfo", () => {
+    unlisteners.push(await listen<{ model: number; firmware: number; serial: number }>("dc-devinfo", (e) => {
       statusLabel = `Connected: ${vendor} ${model}`;
+      saveDcConnection(deviceKey(vendor, model, formatSerial(e.payload.serial)), transport, currentAddress());
     }));
     unlisteners.push(await listen<{ diveNumber: number; date: string | null; added: boolean }>("dc-dive", (e) => {
       if (e.payload.date) {
@@ -88,12 +125,16 @@
     }));
   });
 
-  onDestroy(() => unlisteners.forEach((u) => u()));
+  onDestroy(() => {
+    unlisteners.forEach((u) => u());
+    clearTimeout(bleScanTimer);
+  });
 
   async function onVendorChange() {
     models = await invoke<{ product: string; transports: string[] }[]>("list_dc_models", { vendor });
     model = models[0]?.product ?? "";
     updateTransportDefault();
+    await onTransportChange();
   }
 
   function updateTransportDefault() {
@@ -104,11 +145,73 @@
     else transport = "USBHID";
   }
 
+  async function onModelChange() {
+    updateTransportDefault();
+    await onTransportChange();
+  }
+
   async function onTransportChange() {
     if (transport === "Serial") serialPorts = await invoke<string[]>("list_serial_ports");
   }
 
-  function goConnect() { step = "connect"; onTransportChange(); }
+  function goSetupNew() {
+    isKnownDevice = false;
+    vendor = "";
+    model = "";
+    models = [];
+    serialPort = "";
+    bluetoothAddress = "";
+    selectedBleDevice = null;
+    bleDevices = [];
+    bleScanning = false;
+    clearTimeout(bleScanTimer);
+    step = "setup";
+  }
+
+  /// Prefills transport + address from the cache when available, falling back
+  /// to updateTransportDefault(). Returns true when a full cached address was
+  /// found for the resolved transport — the caller uses this to decide
+  /// whether a connection can be attempted directly, skipping setup/scan.
+  function applyCachedConnectionOrDefault(serial: string): boolean {
+    const supported = models.find((m) => m.product === model)?.transports ?? [];
+    const cached = dcConnections[deviceKey(vendor, model, serial)];
+    if (cached && supported.includes(cached.lastTransport)) {
+      transport = cached.lastTransport;
+    } else {
+      updateTransportDefault();
+    }
+    serialPort = "";
+    bluetoothAddress = "";
+    selectedBleDevice = null;
+    const addr = cached?.addresses[transport];
+    if (!addr) return false;
+    if (transport === "Serial") serialPort = addr;
+    else if (transport === "Bluetooth") bluetoothAddress = addr;
+    else if (transport === "BLE") selectedBleDevice = addr;
+    return true;
+  }
+
+  async function selectKnownDevice(d: KnownDevice) {
+    vendor = d.vendor;
+    models = await invoke<{ product: string; transports: string[] }[]>("list_dc_models", { vendor });
+    model = d.product;
+    isKnownDevice = true;
+    bleDevices = [];
+    errorMsg = null;
+    const hasCachedAddress = applyCachedConnectionOrDefault(d.serial);
+    if (hasCachedAddress) {
+      // We already know how to reach this device — skip setup/scan and try connecting directly.
+      await startDownload();
+    } else {
+      step = "setup";
+      await onTransportChange();
+    }
+  }
+
+  async function connectToSelectedKnownDevice() {
+    const d = knownDevices.find((d) => deviceKey(d.vendor, d.product, d.serial) === selectedKnownDeviceKey);
+    if (d) await selectKnownDevice(d);
+  }
 
   async function startDownload() {
     errorMsg = null;
@@ -150,17 +253,27 @@
   async function discardDownload() {
     await invoke("discard_dc_download").catch(() => {});
     pendingDives = [];
-    step = "select";
+    step = knownDevices.length > 0 ? "list" : "setup";
   }
+
+  // Matches the backend's fixed scan window (commands.rs: 20 × 500ms poll loop),
+  // plus a small margin for the final dc-ble-found emit to land.
+  const BLE_SCAN_DURATION_MS = 10_500;
 
   async function scanBle() {
     bleDevices = [];
     errorMsg = null;
+    bleScanning = true;
+    clearTimeout(bleScanTimer);
     await invoke("scan_ble_devices", { vendor, model });
+    bleScanTimer = setTimeout(() => { bleScanning = false; }, BLE_SCAN_DURATION_MS);
   }
 
   function cancel() { invoke("cancel_dc_download").catch(() => {}); }
-  function close() { step = "select"; onClose(); }
+  function close() {
+    step = knownDevices.length > 0 ? "list" : "setup";
+    onClose();
+  }
 
   function fmtBytes(n: number): string {
     if (n >= 1_048_576) return (n / 1_048_576).toFixed(1) + " MiB";
@@ -176,53 +289,77 @@
 {#if open}
   <div class="dialog-backdrop" role="dialog" aria-modal="true">
     <div class="dialog">
-      {#if step === "select"}
+      {#if step === "list"}
         <h2>Select Device</h2>
         <label>
-          Vendor
-          <select aria-label="Vendor" bind:value={vendor} onchange={onVendorChange}>
-            <option value="">— select —</option>
-            {#each vendors as v}<option value={v}>{v}</option>{/each}
-          </select>
-        </label>
-        <label>
-          Model
-          <select bind:value={model} onchange={updateTransportDefault} disabled={!vendor}>
-            {#each models as m}<option value={m.product}>{m.product}</option>{/each}
-          </select>
-        </label>
-        <button disabled={!model} onclick={goConnect}>Next</button>
-        <button onclick={onClose}>Cancel</button>
-
-      {:else if step === "connect"}
-        <h2>Connect</h2>
-        <label>
-          Transport
-          <select bind:value={transport} onchange={onTransportChange}>
-            {#each (models.find((m2) => m2.product === model)?.transports ?? []) as t}
-              <option value={t}>{t}</option>
+          Device
+          <select aria-label="Known device" bind:value={selectedKnownDeviceKey}>
+            {#each knownDevices as d}
+              <option value={deviceKey(d.vendor, d.product, d.serial)}>
+                {d.vendor} {d.product} ({d.nickname || `SN ${d.serial}`})
+              </option>
             {/each}
           </select>
         </label>
-        {#if transport === "Serial"}
-          <label>Port <select bind:value={serialPort}>{#each serialPorts as p}<option value={p}>{p}</option>{/each}</select></label>
-        {:else if transport === "Bluetooth"}
-          <label>Address <input bind:value={bluetoothAddress} placeholder="00:11:22:33:44:55" /></label>
-        {:else if transport === "BLE"}
-          <button onclick={() => scanBle()}>Scan</button>
-          {#each bleDevices as d}
-            <label><input type="radio" bind:group={selectedBleDevice} value={d.address} />{d.name}</label>
-          {/each}
+        <button onclick={connectToSelectedKnownDevice} disabled={!selectedKnownDeviceKey}>Continue</button>
+        <button onclick={goSetupNew}>Add new device</button>
+        <button onclick={onClose}>Cancel</button>
+
+      {:else if step === "setup"}
+        <h2>{isKnownDevice ? "Connect" : "Add Device"}</h2>
+        {#if isKnownDevice}
+          <p class="known-device-label">{vendor} {model}</p>
+          {#if knownDevices.length > 0}
+            <button type="button" onclick={() => (step = "list")}>Use a different device</button>
+          {/if}
+        {:else}
+          <label>
+            Vendor
+            <select aria-label="Vendor" bind:value={vendor} onchange={onVendorChange}>
+              <option value="">— select —</option>
+              {#each vendors as v}<option value={v}>{v}</option>{/each}
+            </select>
+          </label>
+          <label>
+            Model
+            <select bind:value={model} onchange={onModelChange} disabled={!vendor}>
+              {#each models as m}<option value={m.product}>{m.product}</option>{/each}
+            </select>
+          </label>
+        {/if}
+        {#if model}
+          <label>
+            Transport
+            <select bind:value={transport} onchange={onTransportChange}>
+              {#each (models.find((m2) => m2.product === model)?.transports ?? []) as t}
+                <option value={t}>{t}</option>
+              {/each}
+            </select>
+          </label>
+          {#if transport === "Serial"}
+            <label>Port <select bind:value={serialPort}>{#each serialPorts as p}<option value={p}>{p}</option>{/each}</select></label>
+          {:else if transport === "Bluetooth"}
+            <label>Address <input bind:value={bluetoothAddress} placeholder="00:11:22:33:44:55" /></label>
+          {:else if transport === "BLE"}
+            <button onclick={() => scanBle()} disabled={bleScanning}>Scan</button>
+            {#if bleScanning}
+              <p class="status">Scanning…</p>
+            {/if}
+            {#each bleDevices as d}
+              <label><input type="radio" bind:group={selectedBleDevice} value={d.address} />{d.name}</label>
+            {/each}
+          {/if}
         {/if}
         {#if errorMsg}
           <p class="warning">{errorMsg}</p>
         {/if}
         <button onclick={() => startDownload()} disabled={
+          !model ||
           (transport === "Serial" && !serialPort) ||
           (transport === "Bluetooth" && !bluetoothAddress) ||
           (transport === "BLE" && !selectedBleDevice)
         }>Download</button>
-        <button onclick={() => (step = "select")}>Back</button>
+        <button onclick={onClose}>Cancel</button>
 
       {:else if step === "progress"}
         <h2>Downloading…</h2>
@@ -276,21 +413,40 @@
     display: flex; align-items: center; justify-content: center; z-index: 100;
   }
   .dialog {
-    background: var(--bg, #fff); padding: 1.5rem; border-radius: 8px;
-    min-width: 400px; max-width: 560px; display: flex; flex-direction: column; gap: 1rem;
+    background: var(--panel); color: var(--txt);
+    border: 1px solid var(--hair); border-radius: var(--r-panel, 8px);
+    padding: 1.5rem; min-width: 400px; max-width: 560px;
+    display: flex; flex-direction: column; gap: 1rem;
   }
-  .error { color: red; }
-  .warning { color: #ff8800; font-size: 0.875rem; }
+  h2 { margin: 0; color: var(--txt); }
+  p { margin: 0; color: var(--txt-2); }
+  label { color: var(--txt-2); }
+  select,
+  input:not([type="checkbox"]):not([type="radio"]) {
+    background: var(--panel-2); border: 1px solid var(--hair);
+    border-radius: var(--r-control); color: var(--txt);
+    font: inherit; padding: 0.35rem 0.5rem;
+  }
+  select:focus, input:focus { border-color: var(--blue); outline: none; }
+  button {
+    background: var(--elev); border: 1px solid var(--hair);
+    border-radius: var(--r-control); color: var(--txt);
+    font: inherit; padding: 0.4rem 0.9rem; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .error { color: var(--rate-fast, #e5484d); }
+  .warning { color: var(--amber, #f2a33c); font-size: 0.875rem; }
+  .known-device-label { font-weight: 600; }
   .dive-list {
-    border: 1px solid var(--border, #ddd); border-radius: 4px;
+    border: 1px solid var(--hair); border-radius: 4px;
     max-height: 260px; overflow-y: auto;
   }
   .dive-item {
     display: grid; grid-template-columns: auto 1fr auto auto;
     align-items: center;
     gap: 0.75rem; padding: 0.4rem 0.75rem; font-size: 0.875rem;
-    border-bottom: 1px solid var(--border, #eee);
+    border-bottom: 1px solid var(--hair);
   }
   .dive-item:last-child { border-bottom: none; }
-  .dive-depth, .dive-dur { color: var(--fg-muted, #666); white-space: nowrap; }
+  .dive-depth, .dive-dur { color: var(--txt-3); white-space: nowrap; }
 </style>

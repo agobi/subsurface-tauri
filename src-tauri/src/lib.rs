@@ -289,6 +289,8 @@ pub fn run() {
             #[cfg(desktop)]
             dc::commands::list_dc_models,
             #[cfg(desktop)]
+            dc::commands::list_known_devices,
+            #[cfg(desktop)]
             dc::commands::list_serial_ports,
             #[cfg(desktop)]
             dc::commands::scan_ble_devices,

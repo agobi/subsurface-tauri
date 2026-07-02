@@ -23,6 +23,11 @@ fn transport_names(mask: u32) -> Vec<String> {
     if mask & dc_transport_t_DC_TRANSPORT_USBHID != 0 { names.push("USBHID".to_string()); }
     if mask & dc_transport_t_DC_TRANSPORT_SERIAL != 0 { names.push("Serial".to_string()); }
     if mask & dc_transport_t_DC_TRANSPORT_USB != 0 { names.push("USB".to_string()); }
+    // libdivecomputer has no CoreBluetooth backend for classic (RFCOMM) Bluetooth
+    // on macOS — dc_bluetooth_open() always returns DC_STATUS_UNSUPPORTED there.
+    // Omit it from the reported transports so macOS builds never offer an option
+    // that can't work; Linux/Windows builds still list it.
+    #[cfg(not(target_os = "macos"))]
     if mask & dc_transport_t_DC_TRANSPORT_BLUETOOTH != 0 { names.push("Bluetooth".to_string()); }
     if mask & dc_transport_t_DC_TRANSPORT_BLE != 0 { names.push("BLE".to_string()); }
     names
@@ -87,6 +92,20 @@ pub fn models_for_vendor(vendor: &str) -> Vec<DcModel> {
             transports: d.transports.clone(),
         })
         .collect()
+}
+
+/// Splits a "Vendor Product" combined string (as stored in
+/// `DeviceRecord.model`, see `ssrf_git/settings.rs`) back into (vendor,
+/// product) by matching against the known descriptor table. Vendor names
+/// can themselves contain spaces ("Dive Rite", "Heinrichs Weikamp"), so this
+/// is a table lookup, not a string split. Returns `None` if no installed
+/// descriptor produces this exact combined string (e.g. a model this
+/// build's libdivecomputer doesn't know).
+pub fn resolve_vendor_product(combined: &str) -> Option<(String, String)> {
+    all_descriptors()
+        .iter()
+        .find(|d| format!("{} {}", d.vendor, d.product) == combined)
+        .map(|d| (d.vendor.clone(), d.product.clone()))
 }
 
 /// Walks every libdc descriptor reachable from `ctx_ptr`, calling `matches`
@@ -169,6 +188,23 @@ pub fn resolve_descriptor_for_model(
 #[cfg(test)]
 mod tests {
     #[test]
+    #[cfg(target_os = "macos")]
+    fn transport_names_excludes_bluetooth_on_macos() {
+        use crate::dc::ffi::{dc_transport_t_DC_TRANSPORT_BLUETOOTH, dc_transport_t_DC_TRANSPORT_BLE};
+        let names = super::transport_names(dc_transport_t_DC_TRANSPORT_BLUETOOTH | dc_transport_t_DC_TRANSPORT_BLE);
+        assert!(!names.contains(&"Bluetooth".to_string()), "classic Bluetooth can't work on macOS, so it must not be offered");
+        assert!(names.contains(&"BLE".to_string()), "BLE must still be offered on macOS");
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn transport_names_includes_bluetooth_off_macos() {
+        use crate::dc::ffi::dc_transport_t_DC_TRANSPORT_BLUETOOTH;
+        let names = super::transport_names(dc_transport_t_DC_TRANSPORT_BLUETOOTH);
+        assert!(names.contains(&"Bluetooth".to_string()), "classic Bluetooth is supported off macOS and must still be offered");
+    }
+
+    #[test]
     fn vendor_list_is_non_empty_and_contains_shearwater() {
         let vendors = super::vendors();
         assert!(!vendors.is_empty(), "vendor list must not be empty");
@@ -210,5 +246,36 @@ mod tests {
         let ctx = super::DcContext::new().unwrap();
         let resolved = super::resolve_descriptor_for_model(ctx.as_ptr(), dc_family_t_DC_FAMILY_SHEARWATER_PETREL, 9999);
         assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn resolve_vendor_product_splits_a_known_model() {
+        let resolved = super::resolve_vendor_product("Shearwater Perdix");
+        assert_eq!(resolved, Some(("Shearwater".to_string(), "Perdix".to_string())));
+    }
+
+    #[test]
+    fn resolve_vendor_product_returns_none_for_an_unknown_model() {
+        let resolved = super::resolve_vendor_product("Nonexistent Vendor Model 9000");
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn resolve_vendor_product_handles_a_multi_word_vendor_if_one_is_present() {
+        // Vendor names can contain spaces (e.g. "Heinrichs Weikamp", "Dive
+        // Rite"), which is exactly why resolve_vendor_product looks the
+        // combined string up in the descriptor table instead of splitting
+        // on the first space. Only run this check if the linked libdc build
+        // actually has a multi-word vendor, so the test isn't tied to one
+        // specific vendor's continued presence in the descriptor table.
+        let vendors = super::vendors();
+        let Some(vendor) = vendors.iter().find(|v| v.contains(' ')).cloned() else {
+            return;
+        };
+        let models = super::models_for_vendor(&vendor);
+        let product = models[0].product.clone();
+        let combined = format!("{vendor} {product}");
+        let resolved = super::resolve_vendor_product(&combined);
+        assert_eq!(resolved, Some((vendor, product)));
     }
 }

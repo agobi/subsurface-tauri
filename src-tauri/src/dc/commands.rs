@@ -22,6 +22,39 @@ pub fn list_dc_models(vendor: String) -> Vec<DcModelSer> {
         .collect()
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownDeviceSer {
+    pub vendor: String,
+    pub product: String,
+    pub serial: String,
+    pub nickname: String,
+}
+
+/// Resolves every `DeviceRecord` in `settings.devices` back to a
+/// (vendor, product) pair via `resolve_vendor_product`, dropping any entry
+/// this build's libdivecomputer can't resolve (nothing to reconnect to).
+/// `apply_device` always moves a touched record to the end of the vec on
+/// commit, so `settings.devices` is already ordered oldest-to-newest by last
+/// use — iterating in reverse orders the result most-recently-seen first.
+pub fn known_devices_from_settings(settings: &crate::ssrf_git::settings::Settings) -> Vec<KnownDeviceSer> {
+    settings.devices.iter().rev()
+        .filter_map(|d| {
+            let (vendor, product) = crate::dc::descriptor::resolve_vendor_product(&d.model)?;
+            Some(KnownDeviceSer { vendor, product, serial: d.serial.clone(), nickname: d.nickname.clone() })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn list_known_devices(
+    logbook_state: tauri::State<'_, std::sync::Mutex<Option<crate::state::LogbookState>>>,
+) -> Result<Vec<KnownDeviceSer>, String> {
+    let guard = logbook_state.lock().map_err(|e| e.to_string())?;
+    let Some(state) = guard.as_ref() else { return Ok(vec![]); };
+    Ok(known_devices_from_settings(&state.settings))
+}
+
 pub fn serial_ports_impl() -> Vec<String> {
     serialport::available_ports()
         .unwrap_or_default()
@@ -373,6 +406,7 @@ pub async fn commit_dc_download(
         // re-download dives that already made it to disk.
         if let Some((serial, fp)) = newest_fp_clone {
             crate::dc::fingerprint::upsert_fp(&root_clone, &dc_model_clone, serial, &fp).ok();
+            crate::dc::fingerprint::upsert_device(&root_clone, &dc_model_clone, serial).ok();
         }
         written
     })
@@ -384,6 +418,7 @@ pub async fn commit_dc_download(
         let mut guard = logbook_state.lock().map_err(|e| e.to_string())?;
         if let Some(ref mut state) = *guard {
             crate::dc::fingerprint::apply_fp(&mut state.settings, &dc_model, *serial, fp);
+            crate::dc::fingerprint::apply_device(&mut state.settings, &dc_model, *serial);
         }
     }
 
@@ -544,5 +579,54 @@ mod tests {
         assert!(tmp.join("2026/06/11-Thu-12=00=00/Dive-001").exists());
 
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn known_devices_from_settings_resolves_and_filters_unknown_models() {
+        use crate::ssrf_git::settings::{Settings, DeviceRecord};
+        let mut settings = Settings::default();
+        settings.devices.push(DeviceRecord {
+            model: "Shearwater Perdix".to_string(),
+            device_id: 1,
+            serial: "0001e240".to_string(),
+            nickname: "My Perdix".to_string(),
+        });
+        settings.devices.push(DeviceRecord {
+            model: "Nonexistent Vendor Model 9000".to_string(),
+            device_id: 2,
+            serial: "00000002".to_string(),
+            nickname: "".to_string(),
+        });
+        let known = super::known_devices_from_settings(&settings);
+        assert_eq!(known.len(), 1, "the unresolvable model must be filtered out");
+        assert_eq!(known[0].vendor, "Shearwater");
+        assert_eq!(known[0].product, "Perdix");
+        assert_eq!(known[0].serial, "0001e240");
+        assert_eq!(known[0].nickname, "My Perdix");
+    }
+
+    #[test]
+    fn known_devices_from_settings_orders_most_recently_seen_first() {
+        use crate::ssrf_git::settings::{Settings, DeviceRecord};
+        let mut settings = Settings::default();
+        // apply_device always pushes the touched record to the end of the
+        // vec, so this insertion order simulates "Perdix" downloaded from
+        // first, "Perdix AI" downloaded from most recently.
+        settings.devices.push(DeviceRecord {
+            model: "Shearwater Perdix".to_string(),
+            device_id: 1,
+            serial: "00000001".to_string(),
+            nickname: "".to_string(),
+        });
+        settings.devices.push(DeviceRecord {
+            model: "Shearwater Perdix AI".to_string(),
+            device_id: 2,
+            serial: "00000002".to_string(),
+            nickname: "".to_string(),
+        });
+        let known = super::known_devices_from_settings(&settings);
+        assert_eq!(known.len(), 2);
+        assert_eq!(known[0].serial, "00000002", "most recently touched device must be first");
+        assert_eq!(known[1].serial, "00000001");
     }
 }
