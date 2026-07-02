@@ -34,15 +34,30 @@
   function tripDives(t: Trip) { return filtered.filter(d => t.diveNumbers.includes(d.number)); }
   let groupedNumbers = $derived(new Set(trips.flatMap(t => t.diveNumbers)));
   let ungrouped = $derived(filtered.filter(d => !groupedNumbers.has(d.number)));
-  // Order trips by position of their first dive in filtered (inherits sortDir from sortedDives).
-  let sortedTrips = $derived.by(() => {
+
+  type ListEntry =
+    | { kind: "trip"; trip: Trip; tds: DiveSummary[] }
+    | { kind: "dive"; dive: DiveSummary };
+
+  // Interleaves trips (as a block positioned at their first dive) with
+  // ungrouped dives, by position in `filtered` — so an ungrouped dive with
+  // a higher number than every trip's dives still sorts ahead of those
+  // trips when sorted "# desc" (previously all trips rendered before any
+  // ungrouped dive, regardless of sort order or dive number).
+  let combined = $derived.by(() => {
     const pos = new Map(filtered.map((d, i) => [d.number, i]));
-    return [...trips].sort((a, b) => {
-      const ai = a.diveNumbers.reduce((m, n) => Math.min(m, pos.get(n) ?? Infinity), Infinity);
-      const bi = b.diveNumbers.reduce((m, n) => Math.min(m, pos.get(n) ?? Infinity), Infinity);
-      return ai - bi;
+    const entries: { pos: number; entry: ListEntry }[] = trips.map((t) => {
+      const tds = tripDives(t);
+      const p = t.diveNumbers.reduce((m, n) => Math.min(m, pos.get(n) ?? Infinity), Infinity);
+      return { pos: p, entry: { kind: "trip", trip: t, tds } };
     });
+    for (const d of ungrouped) {
+      entries.push({ pos: pos.get(d.number) ?? Infinity, entry: { kind: "dive", dive: d } });
+    }
+    entries.sort((a, b) => a.pos - b.pos);
+    return entries.map((e) => e.entry);
   });
+
   let collapsed = $state<Record<number, boolean>>({});
   function toggleTrip(key: number) { collapsed = { ...collapsed, [key]: !collapsed[key] }; }
 
@@ -71,28 +86,30 @@
   </div>
 
   {#if prefs.sortKey === "nr"}
-    {#each sortedTrips as t}
-      {@const tds = tripDives(t)}
-      {@const tripKey = t.diveNumbers[0] ?? `trip-${t.label}`}
-      {#if tds.length}
-        <button class="trip" onclick={() => toggleTrip(tripKey)}>
-          <span class="tw">{collapsed[tripKey] ? "+" : "−"} {t.label}</span>
-          <span class="cnt">{tds.length} {tds.length === 1 ? "dive" : "dives"}</span>
-        </button>
-        {#if !collapsed[tripKey]}
-          {#each tds as d, i (d.number)}
-            {@render row(d, i, true)}
-          {/each}
+    {#each combined as entry, gi (entry.kind === "trip" ? `trip-${entry.trip.diveNumbers[0] ?? entry.trip.label}` : `dive-${entry.dive.number}`)}
+      {#if entry.kind === "trip"}
+        {@const t = entry.trip}
+        {@const tds = entry.tds}
+        {@const tripKey = t.diveNumbers[0] ?? `trip-${t.label}`}
+        {#if tds.length}
+          <button class="trip" onclick={() => toggleTrip(tripKey)}>
+            <span class="tw">{collapsed[tripKey] ? "+" : "−"} {t.label}</span>
+            <span class="cnt">{tds.length} {tds.length === 1 ? "dive" : "dives"}</span>
+          </button>
+          {#if !collapsed[tripKey]}
+            {#each tds as d, i (d.number)}
+              {@render row(d, i, true)}
+            {/each}
+          {/if}
+        {:else}
+          <div class="trip trip--empty">
+            <span class="tw">− {t.label}</span>
+            <span class="cnt">(no dives parsed)</span>
+          </div>
         {/if}
       {:else}
-        <div class="trip trip--empty">
-          <span class="tw">− {t.label}</span>
-          <span class="cnt">(no dives parsed)</span>
-        </div>
+        {@render row(entry.dive, gi)}
       {/if}
-    {/each}
-    {#each ungrouped as d, i (d.number)}
-      {@render row(d, i)}
     {/each}
   {:else}
     {#each filtered as d, i (d.number)}
