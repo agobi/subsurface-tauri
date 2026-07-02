@@ -78,29 +78,54 @@ describe("DcDownloadDialog", () => {
     expect(invoke).toHaveBeenCalledWith("cancel_dc_download");
   });
 
-  it("shows the known-devices list and a nickname when a remembered device has one", async () => {
+  it("shows the known-devices dropdown with a nickname when a remembered device has one", async () => {
     vi.mocked(invoke).mockImplementation(async (cmd) => {
-      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", nickname: "My Perdix" }];
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", serial: "0001e240", nickname: "My Perdix" }];
       if (cmd === "list_dc_vendors") return ["Shearwater"];
       if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE", "Serial"] }];
       return null;
     });
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
     expect(await screen.findByText("Select Device")).toBeTruthy();
-    expect(await screen.findByText("Shearwater Perdix AI")).toBeTruthy();
-    expect(screen.getByText("My Perdix")).toBeTruthy();
+    expect(await screen.findByText("Shearwater Perdix AI (My Perdix)")).toBeTruthy();
   });
 
-  it("selecting a remembered device jumps to Connect with vendor/model fixed", async () => {
+  it("shows the serial when a remembered device has no nickname", async () => {
     vi.mocked(invoke).mockImplementation(async (cmd) => {
-      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", nickname: "" }];
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", serial: "0001e240", nickname: "" }];
       if (cmd === "list_dc_vendors") return ["Shearwater"];
       if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE", "Serial"] }];
       return null;
     });
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
-    const row = await screen.findByText("Shearwater Perdix AI");
-    await fireEvent.click(row);
+    expect(await screen.findByText("Shearwater Perdix AI (SN 0001e240)")).toBeTruthy();
+  });
+
+  it("defaults the dropdown to the most-recently-seen device (first in the list)", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [
+        { vendor: "Shearwater", product: "Perdix AI", serial: "00000002", nickname: "" },
+        { vendor: "Shearwater", product: "Perdix", serial: "00000001", nickname: "" },
+      ];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE"] }];
+      return null;
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    const select = await screen.findByLabelText("Known device") as HTMLSelectElement;
+    await vi.waitFor(() => expect(select.value).toBe("Shearwater Perdix AI 00000002"));
+  });
+
+  it("selecting a remembered device jumps to Connect with vendor/model fixed", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", serial: "0001e240", nickname: "" }];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE", "Serial"] }];
+      return null;
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await screen.findByText("Select Device");
+    await fireEvent.click(await screen.findByText("Continue"));
 
     expect(await screen.findByText("Connect")).toBeTruthy();
     expect(screen.getByText("Shearwater Perdix AI")).toBeTruthy();
@@ -110,13 +135,14 @@ describe("DcDownloadDialog", () => {
 
   it("lets the user return to the known-devices list from a remembered device's setup screen", async () => {
     vi.mocked(invoke).mockImplementation(async (cmd) => {
-      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", nickname: "" }];
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", serial: "0001e240", nickname: "" }];
       if (cmd === "list_dc_vendors") return ["Shearwater"];
       if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE", "Serial"] }];
       return null;
     });
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
-    await fireEvent.click(await screen.findByText("Shearwater Perdix AI"));
+    await screen.findByText("Select Device");
+    await fireEvent.click(await screen.findByText("Continue"));
     await screen.findByText("Connect");
 
     await fireEvent.click(await screen.findByText("Use a different device"));
@@ -126,13 +152,13 @@ describe("DcDownloadDialog", () => {
   it("prefills the cached transport and address for a remembered device", async () => {
     vi.mocked(store.load).mockResolvedValue({
       get: vi.fn().mockResolvedValue({
-        "Shearwater Perdix AI": { lastTransport: "Serial", addresses: { Serial: "/dev/ttyUSB0" } },
+        "Shearwater Perdix AI 0001e240": { lastTransport: "Serial", addresses: { Serial: "/dev/ttyUSB0" } },
       }),
       set: vi.fn(),
       save: vi.fn(),
     } as any);
     vi.mocked(invoke).mockImplementation(async (cmd) => {
-      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", nickname: "" }];
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", serial: "0001e240", nickname: "" }];
       if (cmd === "list_dc_vendors") return ["Shearwater"];
       if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE", "Serial"] }];
       if (cmd === "list_serial_ports") return ["/dev/ttyUSB0"];
@@ -140,12 +166,51 @@ describe("DcDownloadDialog", () => {
     });
 
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
-    await fireEvent.click(await screen.findByText("Shearwater Perdix AI"));
+    await screen.findByText("Select Device");
+    await fireEvent.click(await screen.findByText("Continue"));
 
     const transportSelect = await screen.findByLabelText("Transport") as HTMLSelectElement;
     await vi.waitFor(() => expect(transportSelect.value).toBe("Serial"));
     const portSelect = screen.getByLabelText("Port") as HTMLSelectElement;
     expect(portSelect.value).toBe("/dev/ttyUSB0");
+  });
+
+  it("saves the connection address keyed by serial so two devices of the same model don't collide", async () => {
+    let devinfoCallback: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-devinfo") devinfoCallback = cb as typeof devinfoCallback;
+      return () => {};
+    });
+    const setSpy = vi.fn();
+    vi.mocked(store.load).mockResolvedValue({
+      get: vi.fn().mockResolvedValue(null),
+      set: setSpy,
+      save: vi.fn(),
+    } as any);
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", serial: "0001e240", nickname: "" }];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["Serial"] }];
+      if (cmd === "list_serial_ports") return ["/dev/ttyUSB0"];
+      return null;
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await screen.findByText("Select Device");
+    await fireEvent.click(await screen.findByText("Continue"));
+    await screen.findByText("Connect");
+    const portSelect = await screen.findByLabelText("Port");
+    await fireEvent.change(portSelect, { target: { value: "/dev/ttyUSB0" } });
+    await fireEvent.click(await screen.findByText("Download"));
+
+    await vi.waitFor(() => expect(devinfoCallback).toBeDefined());
+    devinfoCallback!({ payload: { model: 6, firmware: 1, serial: 0x0001e241 } });
+
+    await vi.waitFor(() =>
+      expect(setSpy).toHaveBeenCalledWith("dcConnections", expect.objectContaining({
+        "Shearwater Perdix AI 0001e241": expect.anything(),
+      })),
+    );
   });
 
   it("shows the review step with buffered dives after dc-complete", async () => {

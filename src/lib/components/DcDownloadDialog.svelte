@@ -11,11 +11,20 @@
   type Step = "list" | "setup" | "progress" | "review" | "result";
   let step = $state<Step>("list");
 
-  type KnownDevice = { vendor: string; product: string; nickname: string };
+  type KnownDevice = { vendor: string; product: string; serial: string; nickname: string };
   let knownDevices = $state<KnownDevice[]>([]);
+  let selectedKnownDeviceKey = $state("");
   let isKnownDevice = $state(false);
   let dcConnections = $state<DcConnections>({});
   let cachedBleAddress = $state<string | null>(null);
+
+  function deviceKey(vendor: string, product: string, serial: string): string {
+    return `${vendor} ${product} ${serial}`;
+  }
+
+  function formatSerial(serial: number): string {
+    return serial.toString(16).padStart(8, "0");
+  }
 
   let vendors = $state<string[]>([]);
   let vendor = $state("");
@@ -53,7 +62,12 @@
   onMount(async () => {
     knownDevices = await invoke<KnownDevice[]>("list_known_devices");
     dcConnections = await loadDcConnections();
-    if (knownDevices.length === 0) step = "setup";
+    if (knownDevices.length === 0) {
+      step = "setup";
+    } else {
+      // Backend already orders knownDevices most-recently-seen first.
+      selectedKnownDeviceKey = deviceKey(knownDevices[0].vendor, knownDevices[0].product, knownDevices[0].serial);
+    }
     vendors = await invoke<string[]>("list_dc_vendors");
     unlisteners.push(await listen<{ name: string; address: string }>("dc-ble-found", (e) => {
       const existing = bleDevices.find((d) => d.address === e.payload.address);
@@ -62,9 +76,9 @@
         selectedBleDevice = e.payload.address;
       }
     }));
-    unlisteners.push(await listen<{ model: number; firmware: number; serial: number }>("dc-devinfo", () => {
+    unlisteners.push(await listen<{ model: number; firmware: number; serial: number }>("dc-devinfo", (e) => {
       statusLabel = `Connected: ${vendor} ${model}`;
-      saveDcConnection(`${vendor} ${model}`, transport, currentAddress());
+      saveDcConnection(deviceKey(vendor, model, formatSerial(e.payload.serial)), transport, currentAddress());
     }));
     unlisteners.push(await listen<{ diveNumber: number; date: string | null; added: boolean }>("dc-dive", (e) => {
       if (e.payload.date) {
@@ -148,9 +162,9 @@
     step = "setup";
   }
 
-  function applyCachedConnectionOrDefault() {
+  function applyCachedConnectionOrDefault(serial: string) {
     const supported = models.find((m) => m.product === model)?.transports ?? [];
-    const cached = dcConnections[`${vendor} ${model}`];
+    const cached = dcConnections[deviceKey(vendor, model, serial)];
     if (cached && supported.includes(cached.lastTransport)) {
       transport = cached.lastTransport;
     } else {
@@ -175,10 +189,15 @@
     isKnownDevice = true;
     bleDevices = [];
     errorMsg = null;
-    applyCachedConnectionOrDefault();
+    applyCachedConnectionOrDefault(d.serial);
     step = "setup";
     await onTransportChange();
     if (transport === "BLE") scanBle();
+  }
+
+  async function connectToSelectedKnownDevice() {
+    const d = knownDevices.find((d) => deviceKey(d.vendor, d.product, d.serial) === selectedKnownDeviceKey);
+    if (d) await selectKnownDevice(d);
   }
 
   async function startDownload() {
@@ -252,14 +271,17 @@
     <div class="dialog">
       {#if step === "list"}
         <h2>Select Device</h2>
-        <div class="known-device-list" role="list">
-          {#each knownDevices as d}
-            <button type="button" class="known-device-row" role="listitem" onclick={() => selectKnownDevice(d)}>
-              <span class="known-device-name">{d.vendor} {d.product}</span>
-              {#if d.nickname}<span class="known-device-nickname">{d.nickname}</span>{/if}
-            </button>
-          {/each}
-        </div>
+        <label>
+          Device
+          <select aria-label="Known device" bind:value={selectedKnownDeviceKey}>
+            {#each knownDevices as d}
+              <option value={deviceKey(d.vendor, d.product, d.serial)}>
+                {d.vendor} {d.product} ({d.nickname || `SN ${d.serial}`})
+              </option>
+            {/each}
+          </select>
+        </label>
+        <button onclick={connectToSelectedKnownDevice} disabled={!selectedKnownDeviceKey}>Continue</button>
         <button onclick={goSetupNew}>Add new device</button>
         <button onclick={onClose}>Cancel</button>
 
@@ -391,19 +413,6 @@
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .error { color: var(--rate-fast, #e5484d); }
   .warning { color: var(--amber, #f2a33c); font-size: 0.875rem; }
-  .known-device-list {
-    border: 1px solid var(--hair); border-radius: 4px;
-    max-height: 260px; overflow-y: auto;
-  }
-  .known-device-row {
-    display: flex; justify-content: space-between; align-items: center;
-    width: 100%; text-align: left; gap: 0.75rem;
-    padding: 0.5rem 0.75rem; border: none; border-bottom: 1px solid var(--hair);
-    border-radius: 0; background: transparent; color: var(--txt);
-  }
-  .known-device-row:hover { background: var(--elev); }
-  .known-device-row:last-child { border-bottom: none; }
-  .known-device-nickname { color: var(--txt-3); font-size: 0.875rem; }
   .known-device-label { font-weight: 600; }
   .dive-list {
     border: 1px solid var(--hair); border-radius: 4px;
