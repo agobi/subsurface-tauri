@@ -132,3 +132,26 @@ describe("DiveList — sorting and columns", () => {
     expect(row!.textContent).toContain("Austria");
   });
 });
+
+describe("DiveList — interleaving ungrouped dives with trips (regression)", () => {
+  beforeEach(() => app.reset());
+
+  it("renders an ungrouped dive with a higher number ahead of an older trip, when sorted # desc", () => {
+    // Reproduces: a freshly-downloaded standalone dive (461, no trip) must appear
+    // before an older trip's dives when sorted by dive number descending — not
+    // pushed to the bottom of the whole list regardless of its number.
+    const tDives = [
+      { number: 461, dateTime: "2026-06-14T10:19:12", durationSec: 300, tags: [], cylinders: [], samples: [], events: [] },
+      { number: 100, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], samples: [], events: [] },
+    ] satisfies Dive[];
+    const tTrips: Trip[] = [{ label: "Old trip", diveNumbers: [100] }];
+    const { container } = render(DiveList, { props: { dives: tDives, trips: tTrips, sites: [], query: "" } });
+    const rowsAndHeaders = Array.from(container.querySelectorAll("[data-testid='dive-row'], .trip"));
+    const labels = rowsAndHeaders.map((el) => el.textContent);
+    const ungroupedIdx = labels.findIndex((t) => t?.includes("461"));
+    const tripIdx = labels.findIndex((t) => t?.includes("Old trip"));
+    expect(ungroupedIdx).toBeGreaterThanOrEqual(0);
+    expect(tripIdx).toBeGreaterThanOrEqual(0);
+    expect(ungroupedIdx).toBeLessThan(tripIdx);
+  });
+});
