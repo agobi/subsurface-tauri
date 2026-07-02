@@ -175,6 +175,92 @@ describe("DcDownloadDialog", () => {
     expect(portSelect.value).toBe("/dev/ttyUSB0");
   });
 
+  it("shows a scanning indicator immediately after auto-scanning for a remembered BLE device", async () => {
+    vi.mocked(store.load).mockResolvedValue({
+      get: vi.fn().mockResolvedValue({
+        "Shearwater Perdix AI 0001e240": { lastTransport: "BLE", addresses: { BLE: "AA:BB:CC:DD:EE:FF" } },
+      }),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", serial: "0001e240", nickname: "" }];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE"] }];
+      if (cmd === "scan_ble_devices") return null;
+      return null;
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await screen.findByText("Select Device");
+    await fireEvent.click(await screen.findByText("Continue"));
+
+    expect(await screen.findByText("Scanning for your remembered device…")).toBeTruthy();
+    expect((screen.getByText("Scan") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows a not-found message if the remembered BLE device doesn't appear within the scan window", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(store.load).mockResolvedValue({
+        get: vi.fn().mockResolvedValue({
+          "Shearwater Perdix AI 0001e240": { lastTransport: "BLE", addresses: { BLE: "AA:BB:CC:DD:EE:FF" } },
+        }),
+        set: vi.fn(),
+        save: vi.fn(),
+      } as any);
+      vi.mocked(invoke).mockImplementation(async (cmd) => {
+        if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", serial: "0001e240", nickname: "" }];
+        if (cmd === "list_dc_vendors") return ["Shearwater"];
+        if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE"] }];
+        if (cmd === "scan_ble_devices") return null;
+        return null;
+      });
+      render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+      await screen.findByText("Select Device");
+      await fireEvent.click(await screen.findByText("Continue"));
+      await screen.findByText("Scanning for your remembered device…");
+
+      await vi.advanceTimersByTimeAsync(11_000);
+
+      expect(screen.getByText(/Remembered device not found/)).toBeTruthy();
+      expect((screen.getByText("Scan") as HTMLButtonElement).disabled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the scanning/not-found status once the device is found and selected", async () => {
+    let bleFoundCallback: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-ble-found") bleFoundCallback = cb as typeof bleFoundCallback;
+      return () => {};
+    });
+    vi.mocked(store.load).mockResolvedValue({
+      get: vi.fn().mockResolvedValue({
+        "Shearwater Perdix AI 0001e240": { lastTransport: "BLE", addresses: { BLE: "AA:BB:CC:DD:EE:FF" } },
+      }),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", serial: "0001e240", nickname: "" }];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE"] }];
+      if (cmd === "scan_ble_devices") return null;
+      return null;
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await screen.findByText("Select Device");
+    await fireEvent.click(await screen.findByText("Continue"));
+    await screen.findByText("Scanning for your remembered device…");
+
+    await vi.waitFor(() => expect(bleFoundCallback).toBeDefined());
+    bleFoundCallback!({ payload: { name: "Perdix AI", address: "AA:BB:CC:DD:EE:FF" } });
+
+    await vi.waitFor(() => expect(screen.queryByText("Scanning for your remembered device…")).toBeNull());
+    expect(screen.queryByText(/Remembered device not found/)).toBeNull();
+  });
+
   it("saves the connection address keyed by serial so two devices of the same model don't collide", async () => {
     let devinfoCallback: ((e: { payload: unknown }) => void) | undefined;
     vi.mocked(listen).mockImplementation(async (event, cb) => {

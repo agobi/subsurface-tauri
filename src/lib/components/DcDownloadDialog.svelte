@@ -36,6 +36,16 @@
   let bluetoothAddress = $state("");
   let bleDevices = $state<{ name: string; address: string }[]>([]);
   let selectedBleDevice = $state<string | null>(null);
+  let bleScanning = $state(false);
+  let bleScanTimedOut = $state(false);
+  let bleScanTimer: ReturnType<typeof setTimeout> | undefined;
+
+  $effect(() => {
+    if (selectedBleDevice) {
+      bleScanning = false;
+      bleScanTimedOut = false;
+    }
+  });
 
   let progressCurrent = $state(0);
   let progressMaximum = $state(0);
@@ -123,7 +133,10 @@
     }));
   });
 
-  onDestroy(() => unlisteners.forEach((u) => u()));
+  onDestroy(() => {
+    unlisteners.forEach((u) => u());
+    clearTimeout(bleScanTimer);
+  });
 
   async function onVendorChange() {
     models = await invoke<{ product: string; transports: string[] }[]>("list_dc_models", { vendor });
@@ -159,6 +172,9 @@
     bluetoothAddress = "";
     selectedBleDevice = null;
     bleDevices = [];
+    bleScanning = false;
+    bleScanTimedOut = false;
+    clearTimeout(bleScanTimer);
     step = "setup";
   }
 
@@ -243,10 +259,21 @@
     step = knownDevices.length > 0 ? "list" : "setup";
   }
 
+  // Matches the backend's fixed scan window (commands.rs: 20 × 500ms poll loop),
+  // plus a small margin for the final dc-ble-found emit to land.
+  const BLE_SCAN_DURATION_MS = 10_500;
+
   async function scanBle() {
     bleDevices = [];
     errorMsg = null;
+    bleScanning = true;
+    bleScanTimedOut = false;
+    clearTimeout(bleScanTimer);
     await invoke("scan_ble_devices", { vendor, model });
+    bleScanTimer = setTimeout(() => {
+      bleScanning = false;
+      if (!selectedBleDevice) bleScanTimedOut = true;
+    }, BLE_SCAN_DURATION_MS);
   }
 
   function cancel() { invoke("cancel_dc_download").catch(() => {}); }
@@ -321,7 +348,12 @@
           {:else if transport === "Bluetooth"}
             <label>Address <input bind:value={bluetoothAddress} placeholder="00:11:22:33:44:55" /></label>
           {:else if transport === "BLE"}
-            <button onclick={() => scanBle()}>Scan</button>
+            <button onclick={() => scanBle()} disabled={bleScanning}>Scan</button>
+            {#if bleScanning}
+              <p class="status">Scanning{cachedBleAddress ? " for your remembered device" : ""}…</p>
+            {:else if bleScanTimedOut && cachedBleAddress}
+              <p class="warning">Remembered device not found — check it's powered on and in range, then try Scan again.</p>
+            {/if}
             {#each bleDevices as d}
               <label><input type="radio" bind:group={selectedBleDevice} value={d.address} />{d.name}</label>
             {/each}
