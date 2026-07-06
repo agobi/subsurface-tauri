@@ -202,6 +202,7 @@ pub type PendingDownloadState = std::sync::Mutex<Option<PendingDownload>>;
 /// vendor/model input, so the fingerprint saved at commit time always matches
 /// the key that was looked up this session (see `resolve_descriptor_for_model`
 /// in `descriptor.rs` for why the two can differ).
+#[cfg(not(target_os = "android"))]
 fn build_pending_download(
     result: crate::dc::device::DownloadResult,
     logbook_root: std::path::PathBuf,
@@ -241,6 +242,7 @@ pub struct DownloadCompleteSer {
 /// cancelled before a single dive was fetched. A cancel that already fetched
 /// some dives, or a normal completion with zero *new* dives (still needs its
 /// fingerprint cutoff committed), must both flow through to buffering.
+#[cfg(not(target_os = "android"))]
 fn should_discard_without_saving(result: &crate::dc::device::DownloadResult) -> bool {
     result.cancelled && result.new_dives.is_empty()
 }
