@@ -80,7 +80,33 @@ in the original logbook, it has nothing to dedupe against and gets rebuffered as
 
 ## Backlog
 
-- [ ] **Android dive computer download** — currently desktop-only (libdivecomputer FFI + serial/USB/BLE stacks don't compile on Android). Deferred: would require Android-specific transport bindings (android.hardware.usb, Android BLE APIs), separate FFI layer, and UI entry point in place of the menu bar.
+- [ ] **Android dive computer download** — currently desktop-only. Full design deferred until the
+      build spike (see below) reports back, but scope decisions already made during brainstorming
+      on 2026-07-01:
+      - **Transport: BLE only for v1.** Covers modern dive computers (Shearwater, Suunto, Garmin);
+        classic Bluetooth RFCOMM and USB-OTG serial deferred.
+      - **BLE bridge: Tauri mobile plugin (Kotlin)**, not direct JNI. Kotlin does BLE scan/connect/
+        GATT read-write via `android.bluetooth.le`, exposed to Rust via Tauri's mobile plugin
+        channel (invoke + `Channel<T>` for notifications). Rust's `dc_custom_io_t` read/write
+        blocks on that channel — same shape as the existing desktop `btleplug` bridge
+        (`src-tauri/src/dc/transport/ble.rs`), just swapping the Rust crate for a Kotlin plugin.
+      - **Integration point already exists as a stub:** `src-tauri/src/dc/device.rs`'s
+        `run_download` has a `#[cfg(target_os = "android")]` branch for opening the iostream, and
+        `dc/mod.rs` gates `device.rs`/`parser.rs` with `#[cfg(not(target_os = "android"))]` even
+        though `device.rs` internally expects to compile on Android — these gates need removing
+        once the Android BLE transport module exists, so `device.rs` picks up its existing branch.
+      - **UI entry point:** header icon on the Dives tab in `MobileLayout.svelte`, next to the
+        existing "Open logbook" (⊞) and "Cloud logbook" (☁) buttons — reuses the same
+        `DcDownloadDialog.svelte`, which already filters transport options to what
+        `list_dc_models` reports per model, so Android just needs that list to report BLE-only.
+      - **Biggest unknown:** libdivecomputer has never been cross-compiled for Android
+        (`build.rs` currently skips `cmake`/`bindgen` entirely for `target_os == "android"`), and
+        this project has no Tauri mobile plugin yet. See the build spike spec below before
+        attempting the full feature.
+      - Spec: `docs/superpowers/specs/2026-07-01-android-libdc-build-spike-design.md` (build
+        spike) and `docs/superpowers/specs/2026-07-06-android-ble-dc-download-design.md`
+        (full feature design). Implemented via
+        `docs/superpowers/plans/2026-07-06-android-ble-dc-download.md`.
 - [ ] **Release workflow: signed Android APK/AAB** — debug APKs are already built and uploaded on release (see `release.yml`). Remaining: switch to `--release`, add keystore secrets, and optionally produce an AAB for Play Store. Only needed if Play Store distribution becomes a goal.
 - [ ] Imperial units support in `parse_divecomputer.rs` sample parsing (currently metric-only: m, bar, °C — ft, psi, °F sample lines are silently ignored)
 - [ ] Surface unreadable Dive/Divecomputer parse errors instead of silently dropping dives (`ssrf_git/mod.rs:69/73`)
