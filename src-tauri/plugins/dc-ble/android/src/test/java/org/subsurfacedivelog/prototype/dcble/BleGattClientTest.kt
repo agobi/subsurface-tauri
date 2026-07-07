@@ -2,7 +2,9 @@
 package org.subsurfacedivelog.prototype.dcble
 
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothGattService
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -55,5 +57,29 @@ class BleGattClientTest {
     fun returnsNullWhenNoServiceHasBothWriteAndNotify() {
         val writeOnly = serviceWith("33333333-3333-3333-3333-333333333333", hasWrite = true, hasNotify = false)
         assertNull(findPreferredService(listOf(writeOnly)))
+    }
+
+    @Test
+    fun cccdValueForNotifyOnlyUsesEnableNotification() {
+        assertArrayEquals(
+            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE,
+            cccdValueFor(BluetoothGattCharacteristic.PROPERTY_NOTIFY),
+        )
+    }
+
+    @Test
+    fun cccdValueForIndicateOnlyUsesEnableIndication() {
+        assertArrayEquals(
+            BluetoothGattDescriptor.ENABLE_INDICATION_VALUE,
+            cccdValueFor(BluetoothGattCharacteristic.PROPERTY_INDICATE),
+        )
+    }
+
+    @Test
+    fun cccdValueForBothNotifyAndIndicatePrefersNotification() {
+        assertArrayEquals(
+            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE,
+            cccdValueFor(BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE),
+        )
     }
 }

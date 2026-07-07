@@ -40,6 +40,17 @@ fun hasReadAndWrite(svc: BluetoothGattService): Boolean {
     return hasWrite && hasNotify
 }
 
+/** Picks the CCCD value to enable delivery on a notify/indicate characteristic: an
+ * indicate-only characteristic (PROPERTY_INDICATE without PROPERTY_NOTIFY) requires
+ * ENABLE_INDICATION_VALUE — writing ENABLE_NOTIFICATION_VALUE to it silently gets no
+ * data. Pure function — no Android framework calls beyond flag checks. */
+fun cccdValueFor(properties: Int): ByteArray =
+    if (properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) {
+        BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+    } else {
+        BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+    }
+
 class BleConnectException(message: String) : Exception(message)
 
 /** Bridges one BLE dive-computer connection's async `BluetoothGatt` callbacks to a
@@ -94,8 +105,9 @@ class BleGattClient(
                 connectDeferred?.completeExceptionally(BleConnectException("notify characteristic has no CCCD descriptor"))
                 return
             }
+            val cccdValue = cccdValueFor(notify.properties)
             @Suppress("DEPRECATION")
-            cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            cccd.value = cccdValue
             @Suppress("DEPRECATION")
             g.writeDescriptor(cccd)
         }
