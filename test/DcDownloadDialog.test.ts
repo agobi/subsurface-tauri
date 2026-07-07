@@ -504,4 +504,29 @@ describe("DcDownloadDialog", () => {
     // Must stay on the setup screen, not jump away with no context.
     expect(screen.getByText("Add Device")).toBeTruthy();
   });
+
+  it("shows an Open Settings recovery button when scan_ble_devices rejects with PermissionDenied", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE"] }];
+      if (cmd === "scan_ble_devices") throw new Error("PermissionDenied");
+      if (cmd === "open_app_settings") return null;
+      return null;
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+
+    const vendorSelect = await screen.findByLabelText("Vendor");
+    await fireEvent.change(vendorSelect, { target: { value: "Shearwater" } });
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_dc_models", { vendor: "Shearwater" }));
+
+    await fireEvent.click(await screen.findByText("Scan"));
+
+    const settingsButton = await screen.findByText("Open Settings");
+    expect(screen.getByText("Bluetooth permission is required to scan for devices.")).toBeTruthy();
+
+    await fireEvent.click(settingsButton);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("open_app_settings"));
+  });
 });

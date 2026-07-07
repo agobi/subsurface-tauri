@@ -47,6 +47,7 @@
           <div class="header-actions">
             <button class="header-btn" aria-label="Open logbook" onclick={handleOpenLogbook} title="Open logbook">⊞</button>
             <button class="header-btn" aria-label="Cloud logbook" onclick={() => (app.showCloudDialog = { email: "" })} title="Cloud logbook">☁</button>
+            <button class="header-btn" aria-label="Download from dive computer" onclick={() => (app.showDcDialog = true)} title="Download from dive computer">⇩</button>
             <button class="gear-btn" aria-label="Settings" onclick={() => (screen = "settings")}>⚙</button>
           </div>
         </div>
