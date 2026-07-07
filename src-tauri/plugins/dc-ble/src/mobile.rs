@@ -24,7 +24,7 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct DcBle<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> DcBle<R> {
-    pub fn connect(&self, address: &str, channel: Channel<Vec<u8>>) -> crate::Result<()> {
+    pub fn connect(&self, address: &str, channel: Channel<BleEvent>) -> crate::Result<()> {
         self.0
             .run_mobile_plugin(
                 "connect",

@@ -6,7 +6,7 @@ use tauri::ipc::Channel;
 #[serde(rename_all = "camelCase")]
 pub struct ConnectArgs {
     pub address: String,
-    pub channel: Channel<Vec<u8>>,
+    pub channel: Channel<BleEvent>,
 }
 
 #[derive(Serialize)]
