@@ -280,7 +280,12 @@ pub fn run_download<R: tauri::Runtime>(
             _ => open_iostream(&ctx_dc, descriptor, &transport_arg),
         };
         #[cfg(target_os = "android")]
-        let result = open_iostream(&ctx_dc, descriptor, &transport_arg);
+        let result = match &transport_arg {
+            TransportArg::Ble { address } => {
+                crate::dc::transport::ble::open_ble_iostream(&ctx_dc, address, &app)
+            }
+            _ => open_iostream(&ctx_dc, descriptor, &transport_arg),
+        };
         result
     };
     let iostream = iostream.inspect_err(|_| {
