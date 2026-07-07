@@ -14,6 +14,20 @@ pub fn list_dc_vendors() -> Vec<String> {
     vendors()
 }
 
+/// On Android, only BLE is a supported transport (see FUTURE.md's 2026-07-01 scope
+/// decision) — models with no BLE transport at all are dropped entirely rather than
+/// shown with an empty transport list the UI can't do anything with.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub fn list_dc_models(vendor: String) -> Vec<DcModelSer> {
+    models_for_vendor(&vendor)
+        .into_iter()
+        .filter(|m| m.transports.iter().any(|t| t == "BLE"))
+        .map(|m| DcModelSer { product: m.product, transports: vec!["BLE".to_string()] })
+        .collect()
+}
+
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub fn list_dc_models(vendor: String) -> Vec<DcModelSer> {
     models_for_vendor(&vendor)
@@ -69,14 +83,13 @@ pub fn list_serial_ports() -> Vec<String> {
 }
 
 /// BLE scan result emitted as the `dc-ble-found` event payload.
-#[cfg(not(target_os = "android"))]
 #[derive(Clone, serde::Serialize)]
 struct BleScanResult {
     name: String,
     address: String,
 }
 
-/// Scan for BLE dive computers matching `vendor`/`model`.
+/// Scan for BLE dive computers matching `vendor`/`model` (desktop: btleplug).
 ///
 /// Emits `dc-ble-found` events with `{ name, address }` for each matching
 /// peripheral found during a 10-second scan window. Returns immediately;
@@ -178,6 +191,70 @@ pub async fn scan_ble_devices(
         } else if let Err(e) = manager_result {
             app.emit("dc-error", serde_json::json!({ "message": e })).ok();
         }
+    });
+
+    Ok(())
+}
+
+/// Scan for BLE dive computers matching `vendor`/`model` (Android: dc-ble plugin).
+///
+/// Checks BLE permissions first via `ensure_permissions` — returns
+/// `Err("PermissionDenied".to_string())` immediately if denied, which
+/// `DcDownloadDialog.svelte` recognizes and shows an inline recovery UI for
+/// (see the frontend task). Otherwise mirrors desktop's behavior: returns
+/// immediately, emits `dc-ble-found` events for up to ~10 seconds.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn scan_ble_devices(
+    app: tauri::AppHandle,
+    vendor: String,
+    model: String,
+) -> Result<(), String> {
+    use tauri::Emitter;
+
+    {
+        let ptr = crate::dc::descriptor::find_descriptor(&vendor, &model)
+            .ok_or_else(|| format!("unknown device: {vendor} {model}"))?;
+        unsafe { crate::dc::ffi::dc_descriptor_free(ptr) };
+    }
+
+    let permissions = dc_ble::DcBleExt::dc_ble(&app)
+        .ensure_permissions()
+        .map_err(|e| e.to_string())?;
+    if !permissions.granted {
+        return Err("PermissionDenied".to_string());
+    }
+
+    let app_clone = app.clone();
+    let vendor_clone = vendor.clone();
+    let model_clone = model.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let channel = tauri::ipc::Channel::new(move |body| {
+            if let Ok(result) = body.deserialize::<dc_ble::ScanResult>() {
+                let matches = (|| {
+                    let desc = crate::dc::descriptor::find_descriptor(&vendor_clone, &model_clone)?;
+                    let c_name = std::ffi::CString::new(result.name.as_str()).ok()?;
+                    let matched = unsafe {
+                        crate::dc::ffi::dc_descriptor_filter(
+                            desc,
+                            crate::dc::ffi::dc_transport_t_DC_TRANSPORT_BLE,
+                            c_name.as_ptr() as *const _,
+                        ) != 0
+                    };
+                    unsafe { crate::dc::ffi::dc_descriptor_free(desc) };
+                    Some(matched)
+                })()
+                .unwrap_or(false);
+
+                if matches {
+                    app_clone
+                        .emit("dc-ble-found", BleScanResult { name: result.name, address: result.address })
+                        .ok();
+                }
+            }
+            Ok(())
+        });
+        dc_ble::DcBleExt::dc_ble(&app).scan(vendor, model, channel).ok();
     });
 
     Ok(())
@@ -443,6 +520,16 @@ pub fn cancel_dc_download(
     use std::sync::atomic::Ordering;
     cancel.store(true, Ordering::Relaxed);
     Ok(())
+}
+
+/// Opens this app's system settings page so the user can grant BLE permissions
+/// manually after a `PermissionDenied` scan error.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub fn open_app_settings(app: tauri::AppHandle) -> Result<(), String> {
+    dc_ble::DcBleExt::dc_ble(&app)
+        .open_app_settings()
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

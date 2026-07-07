@@ -284,6 +284,8 @@ pub fn run() {
             dc::commands::list_known_devices,
             dc::commands::list_serial_ports,
             dc::commands::scan_ble_devices,
+            #[cfg(target_os = "android")]
+            dc::commands::open_app_settings,
             dc::commands::start_dc_download,
             dc::commands::commit_dc_download,
             dc::commands::discard_dc_download,
