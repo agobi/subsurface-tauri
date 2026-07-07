@@ -78,6 +78,10 @@ class DcBlePlugin(private val activity: Activity) : Plugin(activity) {
     fun connect(invoke: Invoke) {
         val args = invoke.parseArgs(ConnectArgs::class.java)
         val notifyChannel = args.channel
+        if (!hasBlePermissions()) {
+            invoke.reject("PermissionDenied")
+            return
+        }
         scope.launch {
             try {
                 val c = BleGattClient(

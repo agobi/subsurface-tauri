@@ -529,4 +529,34 @@ describe("DcDownloadDialog", () => {
     await fireEvent.click(settingsButton);
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("open_app_settings"));
   });
+
+  it("shows the Open Settings recovery on the cached-connection fast path when start_dc_download rejects with PermissionDenied", async () => {
+    vi.mocked(store.load).mockResolvedValue({
+      get: vi.fn().mockResolvedValue({
+        "Shearwater Perdix AI 0001e240": { lastTransport: "BLE", addresses: { BLE: "AA:BB:CC:DD:EE:FF" } },
+      }),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", serial: "0001e240", nickname: "" }];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE"] }];
+      if (cmd === "start_dc_download") throw new Error("PermissionDenied");
+      if (cmd === "open_app_settings") return null;
+      return null;
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await screen.findByText("Select Device");
+    await fireEvent.click(await screen.findByText("Continue"));
+
+    // Must land back on the setup screen with the same recovery UI scanBle() uses,
+    // not the generic error result screen.
+    expect(await screen.findByText("Bluetooth permission is required to scan for devices.")).toBeTruthy();
+    expect(screen.getByText("Connect")).toBeTruthy();
+    const settingsButton = await screen.findByText("Open Settings");
+    await fireEvent.click(settingsButton);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("open_app_settings"));
+  });
 });

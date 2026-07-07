@@ -231,8 +231,17 @@
     try {
       await invoke("start_dc_download", { vendor, model, transport: transportArg });
     } catch (e) {
-      errorMsg = e instanceof Error ? e.message : String(e);
-      step = "result";
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === "PermissionDenied") {
+        // The cached-device fast path (selectKnownDevice) can land here with
+        // no scan ever having run — route to "setup" so the BLE permission
+        // recovery UI (warning + Open Settings) is reachable, same as scanBle().
+        permissionDenied = true;
+        step = "setup";
+      } else {
+        errorMsg = msg;
+        step = "result";
+      }
     }
   }
 
