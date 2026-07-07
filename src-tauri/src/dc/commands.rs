@@ -202,7 +202,6 @@ pub type PendingDownloadState = std::sync::Mutex<Option<PendingDownload>>;
 /// vendor/model input, so the fingerprint saved at commit time always matches
 /// the key that was looked up this session (see `resolve_descriptor_for_model`
 /// in `descriptor.rs` for why the two can differ).
-#[cfg(not(target_os = "android"))]
 fn build_pending_download(
     result: crate::dc::device::DownloadResult,
     logbook_root: std::path::PathBuf,
@@ -218,7 +217,6 @@ fn build_pending_download(
 // ── Download commands ───────────────────────────────────────────────────────
 
 /// Summary of a single buffered dive, sent to the frontend for the review step.
-#[cfg(not(target_os = "android"))]
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiveSummarySer {
@@ -228,7 +226,6 @@ pub struct DiveSummarySer {
 }
 
 /// Payload carried by both the `dc-complete` event and the `start_dc_download` return value.
-#[cfg(not(target_os = "android"))]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadCompleteSer {
@@ -242,7 +239,6 @@ pub struct DownloadCompleteSer {
 /// cancelled before a single dive was fetched. A cancel that already fetched
 /// some dives, or a normal completion with zero *new* dives (still needs its
 /// fingerprint cutoff committed), must both flow through to buffering.
-#[cfg(not(target_os = "android"))]
 fn should_discard_without_saving(result: &crate::dc::device::DownloadResult) -> bool {
     result.cancelled && result.new_dives.is_empty()
 }
@@ -259,7 +255,6 @@ fn should_discard_without_saving(result: &crate::dc::device::DownloadResult) -> 
 /// [`should_discard_without_saving`]).
 ///
 /// The frontend may call [`cancel_dc_download`] at any time to abort.
-#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn start_dc_download(
     app: tauri::AppHandle,
@@ -377,7 +372,6 @@ fn write_all_dives(root: &std::path::Path, dives: Vec<crate::dc::writer::ParsedD
 /// buffered dives are already removed from `PendingDownloadState` and
 /// cannot be retried. Returns the count of dives actually written so the
 /// frontend can call `startup_logbook` and show the result.
-#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn commit_dc_download(
     selected_indices: Vec<usize>,
@@ -430,7 +424,6 @@ pub async fn commit_dc_download(
 /// Discard buffered dives without saving anything.
 ///
 /// Called by the frontend when the user dismisses the review step.
-#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub fn discard_dc_download(
     pending: tauri::State<'_, PendingDownloadState>,
@@ -443,7 +436,6 @@ pub fn discard_dc_download(
 ///
 /// The next call to the libdivecomputer cancel callback will return 1, causing
 /// `dc_device_foreach` to stop after the current dive completes.
-#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub fn cancel_dc_download(
     cancel: tauri::State<'_, std::sync::Arc<std::sync::atomic::AtomicBool>>,
