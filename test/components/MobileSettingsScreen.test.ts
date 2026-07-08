@@ -1,11 +1,15 @@
 // AI-generated (Claude)
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
+import { invoke } from "@tauri-apps/api/core";
 import MobileSettingsScreen from "$lib/components/MobileSettingsScreen.svelte";
 import { app } from "$lib/stores/app.svelte.ts";
 
 describe("MobileSettingsScreen", () => {
-  beforeEach(() => app.reset());
+  beforeEach(() => {
+    app.reset();
+    vi.mocked(invoke).mockReset().mockResolvedValue("INFO");
+  });
 
   it("renders the Settings title", () => {
     render(MobileSettingsScreen, { props: { onBack: vi.fn() } });
@@ -30,5 +34,18 @@ describe("MobileSettingsScreen", () => {
     render(MobileSettingsScreen, { props: { onBack: vi.fn() } });
     await fireEvent.change(screen.getByLabelText("Light"));
     expect(app.theme).toBe("light");
+  });
+
+  it("renders logging section with level radios reflecting the backend's current level", async () => {
+    vi.mocked(invoke).mockResolvedValue("DEBUG");
+    render(MobileSettingsScreen, { props: { onBack: vi.fn() } });
+    expect(await screen.findByLabelText("Debug")).toBeChecked();
+    expect(screen.getByLabelText("Trace")).not.toBeChecked();
+  });
+
+  it("invokes set_log_level when a log level radio changes", async () => {
+    render(MobileSettingsScreen, { props: { onBack: vi.fn() } });
+    await fireEvent.change(screen.getByLabelText("Trace"));
+    expect(invoke).toHaveBeenCalledWith("set_log_level", { level: "trace" });
   });
 });

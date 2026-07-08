@@ -1,6 +1,7 @@
 // AI-generated (Claude)
 import { load } from "@tauri-apps/plugin-store";
 import { emit } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import type { Theme } from "$lib/stores/app.svelte.ts";
 import type { ColId } from "$lib/diveListColumns.ts";
 import { DEFAULT_COL_ORDER, ALL_COLS } from "$lib/diveListColumns.ts";
@@ -71,4 +72,15 @@ export async function saveDiveListPrefs(prefs: DiveListPrefs): Promise<void> {
   const store = await load("settings.json");
   await store.set("diveList", prefs);
   await store.save();
+}
+
+export type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
+
+export async function loadLoggingPrefs(): Promise<LogLevel> {
+  const level = await invoke<string>("get_log_level");
+  return level.toLowerCase() as LogLevel;
+}
+
+export async function applyLogLevel(level: LogLevel): Promise<void> {
+  await invoke("set_log_level", { level });
 }

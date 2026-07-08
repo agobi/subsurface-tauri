@@ -58,6 +58,8 @@ export async function invoke<T>(cmd: string, args?: unknown): Promise<T> {
       return (fixtureDc().models ?? [{ product: 'TestModel', transports: ['Serial'] }]) as T;
     case 'list_serial_ports':
       return (fixtureDc().serialPorts ?? ['/dev/ttyUSB0']) as T;
+    case 'get_log_level':
+      return 'INFO' as T;
     case 'start_dc_download': {
       const dc = fixtureDc();
       if (dc.devinfo) emitToListeners('dc-devinfo', dc.devinfo);

@@ -236,6 +236,27 @@ async fn get_recents(app: tauri::AppHandle) -> Result<Vec<RecentEntry>, String> 
         .unwrap_or_default())
 }
 
+fn default_log_level() -> log::LevelFilter {
+    if cfg!(debug_assertions) { log::LevelFilter::Debug } else { log::LevelFilter::Info }
+}
+
+#[tauri::command]
+fn get_log_level() -> String {
+    log::max_level().to_string()
+}
+
+#[tauri::command]
+fn set_log_level(app: tauri::AppHandle, level: String) -> Result<(), String> {
+    let parsed: log::LevelFilter = level
+        .parse()
+        .map_err(|_| format!("invalid log level: {level}"))?;
+    log::set_max_level(parsed);
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    store.set("logging", serde_json::json!({ "level": level.to_lowercase() }));
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -245,13 +266,18 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Debug)
-                        .build(),
-                )?;
-            }
+            let level = app
+                .store("settings.json")
+                .ok()
+                .and_then(|s| s.get("logging"))
+                .and_then(|v| v.get("level").and_then(|l| l.as_str()).map(str::to_owned))
+                .and_then(|s| s.parse::<log::LevelFilter>().ok())
+                .unwrap_or_else(default_log_level);
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(level)
+                    .build(),
+            )?;
             #[cfg(desktop)]
             {
                 let m = menu::build(app.handle(), &[])?;
@@ -275,6 +301,8 @@ pub fn run() {
             new_logbook,
             get_dive,
             get_recents,
+            get_log_level,
+            set_log_level,
             cloud::get_cloud_credentials,
             cloud::open_cloud_logbook,
             cloud::open_recent_cloud_logbook,
@@ -293,4 +321,19 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_log_level_matches_build_profile() {
+        let expected = if cfg!(debug_assertions) {
+            log::LevelFilter::Debug
+        } else {
+            log::LevelFilter::Info
+        };
+        assert_eq!(default_log_level(), expected);
+    }
 }

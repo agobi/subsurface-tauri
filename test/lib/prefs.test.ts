@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import * as store from "@tauri-apps/plugin-store";
 import * as event from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import {
   resolveTheme,
   applyTheme,
@@ -9,6 +10,8 @@ import {
   saveAndEmitAppearance,
   loadDiveListPrefs,
   saveDiveListPrefs,
+  loadLoggingPrefs,
+  applyLogLevel,
   DEFAULT_DIVE_LIST_PREFS,
   type DiveListPrefs,
 } from "$lib/prefs.ts";
@@ -164,5 +167,26 @@ describe("saveDiveListPrefs", () => {
     await saveDiveListPrefs(prefs);
     expect(mockSet).toHaveBeenCalledWith("diveList", prefs);
     expect(mockSave).toHaveBeenCalled();
+  });
+});
+
+describe("loadLoggingPrefs", () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it("returns the lowercased level reported by the backend", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce("DEBUG");
+    const level = await loadLoggingPrefs();
+    expect(level).toBe("debug");
+    expect(invoke).toHaveBeenCalledWith("get_log_level");
+  });
+});
+
+describe("applyLogLevel", () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it("invokes set_log_level with the chosen level", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+    await applyLogLevel("trace");
+    expect(invoke).toHaveBeenCalledWith("set_log_level", { level: "trace" });
   });
 });

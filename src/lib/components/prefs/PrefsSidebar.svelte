@@ -3,7 +3,7 @@
   let {
     activeSection,
     onSelect,
-  }: { activeSection: string; onSelect: (id: "appearance") => void } = $props();
+  }: { activeSection: string; onSelect: (id: "appearance" | "logging") => void } = $props();
 </script>
 
 <nav class="sidebar">
@@ -13,6 +13,13 @@
     onclick={() => onSelect("appearance")}
   >
     Appearance
+  </button>
+  <button
+    class="nav-item"
+    class:active={activeSection === "logging"}
+    onclick={() => onSelect("logging")}
+  >
+    Logging
   </button>
 </nav>
 
