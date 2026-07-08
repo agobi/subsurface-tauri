@@ -69,7 +69,9 @@
   <div class="settings-body">
     <AppearanceSection currentTheme={app.theme} onThemeChange={handleThemeChange} />
 
-    <LoggingSection currentLevel={currentLogLevel} onLevelChange={handleLogLevelChange} />
+    <div class="logging-section-wrap">
+      <LoggingSection currentLevel={currentLogLevel} onLevelChange={handleLogLevelChange} />
+    </div>
 
     <section class="recents-section">
       <h3 class="section-label">Recent Logbooks</h3>
@@ -139,6 +141,7 @@
     padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
   }
 
+  .logging-section-wrap,
   .recents-section {
     margin-top: var(--space-6, 24px);
   }
