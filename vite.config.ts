@@ -35,6 +35,7 @@ export default defineConfig({
         main: path.resolve(import.meta.dirname, 'index.html'),
         prefs: path.resolve(import.meta.dirname, 'prefs.html'),
         'toolbar-harness': path.resolve(import.meta.dirname, 'toolbar-harness.html'),
+        'dc-download-harness': path.resolve(import.meta.dirname, 'dc-download-harness.html'),
       },
     },
   },

@@ -466,6 +466,7 @@
     font: inherit; padding: 0.4rem 0.9rem; cursor: pointer;
   }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  progress { width: 100%; }
   .error { color: var(--rate-fast, #e5484d); }
   .warning { color: var(--amber, #f2a33c); font-size: 0.875rem; }
   .known-device-label { font-weight: 600; }
