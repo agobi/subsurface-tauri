@@ -1,12 +1,29 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { Theme } from "$lib/stores/app.svelte.ts";
   import { app } from "$lib/stores/app.svelte.ts";
   import type { RecentEntry } from "$lib/types.ts";
-  import { saveAndEmitAppearance } from "$lib/prefs.ts";
+  import { saveAndEmitAppearance, loadLoggingPrefs, applyLogLevel, type LogLevel } from "$lib/prefs.ts";
   import AppearanceSection from "./prefs/AppearanceSection.svelte";
+  import LoggingSection from "./prefs/LoggingSection.svelte";
 
   let { onBack }: { onBack: () => void } = $props();
+
+  let currentLogLevel = $state<LogLevel>("info");
+
+  onMount(async () => {
+    try {
+      currentLogLevel = await loadLoggingPrefs();
+    } catch (e) {
+      console.error("Failed to load logging prefs:", e);
+    }
+  });
+
+  async function handleLogLevelChange(level: LogLevel) {
+    currentLogLevel = level;
+    await applyLogLevel(level);
+  }
 
   function recentLabel(entry: RecentEntry): string {
     if (entry.kind === "Local") {
@@ -51,6 +68,8 @@
   </header>
   <div class="settings-body">
     <AppearanceSection currentTheme={app.theme} onThemeChange={handleThemeChange} />
+
+    <LoggingSection currentLevel={currentLogLevel} onLevelChange={handleLogLevelChange} />
 
     <section class="recents-section">
       <h3 class="section-label">Recent Logbooks</h3>
