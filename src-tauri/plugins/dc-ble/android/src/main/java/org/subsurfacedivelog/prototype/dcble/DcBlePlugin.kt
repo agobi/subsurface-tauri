@@ -27,7 +27,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private const val PERMISSION_ALIAS_BLE = "ble"
+// Split into two aliases, not one, because Tauri's plugin framework validates every
+// string in a requested alias against AndroidManifest.xml — and ACCESS_FINE_LOCATION
+// is deliberately declared there with maxSdkVersion=30 (BLUETOOTH_SCAN/CONNECT cover
+// modern OSes instead). A single alias listing all three fails that validation outright
+// on API 31+, since the merged manifest omits ACCESS_FINE_LOCATION there entirely.
+private const val PERMISSION_ALIAS_BLE_MODERN = "ble"
+private const val PERMISSION_ALIAS_BLE_LEGACY = "ble_legacy"
+
+private fun bleAlias(): String =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PERMISSION_ALIAS_BLE_MODERN else PERMISSION_ALIAS_BLE_LEGACY
 
 private fun requiredPermissions(): Array<String> =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -60,10 +69,15 @@ class ScanArgs {
             strings = [
                 Manifest.permission.BLUETOOTH_SCAN,
                 Manifest.permission.BLUETOOTH_CONNECT,
+            ],
+            alias = PERMISSION_ALIAS_BLE_MODERN,
+        ),
+        Permission(
+            strings = [
                 Manifest.permission.ACCESS_FINE_LOCATION,
             ],
-            alias = PERMISSION_ALIAS_BLE,
-        )
+            alias = PERMISSION_ALIAS_BLE_LEGACY,
+        ),
     ]
 )
 class DcBlePlugin(private val activity: Activity) : Plugin(activity) {
@@ -99,7 +113,7 @@ class DcBlePlugin(private val activity: Activity) : Plugin(activity) {
                 )
                 c.connect(args.address)
                 client = c
-                invoke.resolve(JSObject())
+                invoke.resolve()
             } catch (e: Exception) {
                 invoke.reject(e.message ?: "BLE connect failed")
             }
@@ -118,7 +132,7 @@ class DcBlePlugin(private val activity: Activity) : Plugin(activity) {
         scope.launch {
             try {
                 c.write(bytes)
-                invoke.resolve(JSObject())
+                invoke.resolve()
             } catch (e: Exception) {
                 invoke.reject(e.message ?: "BLE write failed")
             }
@@ -129,7 +143,7 @@ class DcBlePlugin(private val activity: Activity) : Plugin(activity) {
     fun disconnect(invoke: Invoke) {
         client?.disconnect()
         client = null
-        invoke.resolve(JSObject())
+        invoke.resolve()
     }
 
     @Command
@@ -140,7 +154,7 @@ class DcBlePlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve(ret)
             return
         }
-        requestPermissionForAlias(PERMISSION_ALIAS_BLE, invoke, "blePermissionCallback")
+        requestPermissionForAlias(bleAlias(), invoke, "blePermissionCallback")
     }
 
     @PermissionCallback
@@ -157,7 +171,7 @@ class DcBlePlugin(private val activity: Activity) : Plugin(activity) {
             Uri.fromParts("package", activity.packageName, null),
         )
         activity.startActivity(intent)
-        invoke.resolve(JSObject())
+        invoke.resolve()
     }
 
     @SuppressLint("MissingPermission")
@@ -186,7 +200,7 @@ class DcBlePlugin(private val activity: Activity) : Plugin(activity) {
             }
         }
         scanner.startScan(callback)
-        invoke.resolve(JSObject())
+        invoke.resolve()
         // Matches desktop's fixed 10s scan window (dc/commands.rs's 20 x 500ms poll loop).
         scope.launch {
             delay(10_000)
