@@ -57,9 +57,6 @@ pub(crate) fn update_recents(
 }
 
 fn install_logbook(
-    // Only read on desktop, to check for a pending DC download (see below) —
-    // that flow doesn't exist on mobile.
-    #[cfg_attr(not(desktop), allow(unused_variables))]
     app: &tauri::AppHandle,
     logbook_state: &tauri::State<'_, Mutex<Option<LogbookState>>>,
     root: std::path::PathBuf,
@@ -70,7 +67,6 @@ fn install_logbook(
     // the logbook root at download-start time, so switching here would write
     // the buffered dives to one logbook while the fingerprint update lands
     // in whichever logbook ends up open.
-    #[cfg(desktop)]
     {
         use tauri::Manager;
         let pending = app.state::<dc::commands::PendingDownloadState>();
@@ -252,7 +248,7 @@ pub fn run() {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
+                        .level(log::LevelFilter::Debug)
                         .build(),
                 )?;
             }
@@ -264,11 +260,10 @@ pub fn run() {
             Ok(())
         });
 
-    // The dive-computer download flow itself (start_dc_download et al.) is
-    // desktop-only, so PendingDownload state only needs registering there —
-    // `mod dc;` compiles on Android too, but exposes no download commands.
-    #[cfg(desktop)]
     let builder = builder.manage(Mutex::new(None::<dc::commands::PendingDownload>));
+
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(dc_ble::init());
 
     #[cfg(desktop)]
     let builder = builder.on_menu_event(menu::handle_event);
@@ -284,23 +279,16 @@ pub fn run() {
             cloud::open_cloud_logbook,
             cloud::open_recent_cloud_logbook,
             cloud::sync_cloud_logbook,
-            #[cfg(desktop)]
             dc::commands::list_dc_vendors,
-            #[cfg(desktop)]
             dc::commands::list_dc_models,
-            #[cfg(desktop)]
             dc::commands::list_known_devices,
-            #[cfg(desktop)]
             dc::commands::list_serial_ports,
-            #[cfg(desktop)]
             dc::commands::scan_ble_devices,
-            #[cfg(desktop)]
+            #[cfg(target_os = "android")]
+            dc::commands::open_app_settings,
             dc::commands::start_dc_download,
-            #[cfg(desktop)]
             dc::commands::commit_dc_download,
-            #[cfg(desktop)]
             dc::commands::discard_dc_download,
-            #[cfg(desktop)]
             dc::commands::cancel_dc_download,
         ])
         .run(tauri::generate_context!())

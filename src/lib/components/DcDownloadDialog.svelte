@@ -164,6 +164,7 @@
     selectedBleDevice = null;
     bleDevices = [];
     bleScanning = false;
+    permissionDenied = false;
     clearTimeout(bleScanTimer);
     step = "setup";
   }
@@ -230,8 +231,17 @@
     try {
       await invoke("start_dc_download", { vendor, model, transport: transportArg });
     } catch (e) {
-      errorMsg = e instanceof Error ? e.message : String(e);
-      step = "result";
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === "PermissionDenied") {
+        // The cached-device fast path (selectKnownDevice) can land here with
+        // no scan ever having run — route to "setup" so the BLE permission
+        // recovery UI (warning + Open Settings) is reachable, same as scanBle().
+        permissionDenied = true;
+        step = "setup";
+      } else {
+        errorMsg = msg;
+        step = "result";
+      }
     }
   }
 
@@ -260,13 +270,30 @@
   // plus a small margin for the final dc-ble-found emit to land.
   const BLE_SCAN_DURATION_MS = 10_500;
 
+  let permissionDenied = $state(false);
+
   async function scanBle() {
     bleDevices = [];
     errorMsg = null;
+    permissionDenied = false;
     bleScanning = true;
     clearTimeout(bleScanTimer);
-    await invoke("scan_ble_devices", { vendor, model });
-    bleScanTimer = setTimeout(() => { bleScanning = false; }, BLE_SCAN_DURATION_MS);
+    try {
+      await invoke("scan_ble_devices", { vendor, model });
+      bleScanTimer = setTimeout(() => { bleScanning = false; }, BLE_SCAN_DURATION_MS);
+    } catch (e) {
+      bleScanning = false;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === "PermissionDenied") {
+        permissionDenied = true;
+      } else {
+        errorMsg = msg;
+      }
+    }
+  }
+
+  async function openAppSettings() {
+    await invoke("open_app_settings").catch(() => {});
   }
 
   function cancel() { invoke("cancel_dc_download").catch(() => {}); }
@@ -344,6 +371,10 @@
             <button onclick={() => scanBle()} disabled={bleScanning}>Scan</button>
             {#if bleScanning}
               <p class="status">Scanning…</p>
+            {/if}
+            {#if permissionDenied}
+              <p class="warning">Bluetooth permission is required to scan for devices.</p>
+              <button type="button" onclick={openAppSettings}>Open Settings</button>
             {/if}
             {#each bleDevices as d}
               <label><input type="radio" bind:group={selectedBleDevice} value={d.address} />{d.name}</label>

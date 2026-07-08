@@ -1,0 +1,17 @@
+[package]
+name = "dc-ble"
+version = "0.1.0"
+authors = ["Attila Gobi <attila.gobi@gmail.com>"]
+description = "Android BLE transport bridge for libdivecomputer dive-computer downloads"
+edition = "2021"
+rust-version = "1.77.2"
+links = "dc-ble"
+
+[dependencies]
+tauri = { version = "2.11.3" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2.6.3", features = ["build"] }
