@@ -24,8 +24,14 @@ unsafe extern "C" fn log_callback(
     } else if loglevel == dc_loglevel_t_DC_LOGLEVEL_WARNING {
         log::warn!("[libdc] {}:{} {}", file_str, line, msg_str);
     } else {
-        // DC_LOGLEVEL_INFO and DC_LOGLEVEL_DEBUG both map to debug: libdc's INFO
-        // includes raw byte-level I/O which is too verbose for Rust's info level.
+        // DC_LOGLEVEL_INFO and DC_LOGLEVEL_DEBUG both map to Rust debug. Audited against
+        // libdc source (src-tauri/libdc, commit bae1fc97): iostream.c logs every raw
+        // Read/Write/Ioctl transfer plus transport events (Open/Configure/Poll/...) at
+        // DC_LOGLEVEL_INFO exclusively (see the INFO()/HEXDUMP() call sites there and in
+        // device.c's Fingerprint dump); DC_LOGLEVEL_DEBUG is used only by per-vendor
+        // parsers for already-decoded artifacts (Version/Model/Firmware/cmd-rcv frames).
+        // So libdc's INFO *is* the raw byte-level firehose — there's no finer-grained
+        // level to promote to Rust's info without also promoting the hex dumps.
         log::debug!("[libdc] {}:{} {}", file_str, line, msg_str);
     }
 }
