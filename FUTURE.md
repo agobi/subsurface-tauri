@@ -1,5 +1,17 @@
 # Future Projects
 
+## Android Logging Coverage Audit
+
+During Android BLE dive-computer download debugging (PR #66, issue #70), ad-hoc
+`Log.d(...)` calls added to `BleGattClient.kt` were essential and are being kept, but
+were reactive — added only once a bug was already suspected. Worth a broader pass on
+what's logged by default vs. what required manual instrumentation, especially for other
+Android-specific code paths (cloud sync, git operations) that haven't had the same
+scrutiny. See #70 for full context.
+
+- [ ] Audit `gen/android/` + Kotlin plugin code logging coverage outside the BLE path
+- [ ] Audit cloud-sync and git-operation code paths for missing operational logging
+
 ## Dive List Columns — Deferred
 
 These columns were scoped out of the initial sorting/columns implementation (2026-06-18)
