@@ -80,33 +80,36 @@ in the original logbook, it has nothing to dedupe against and gets rebuffered as
 
 ## Backlog
 
-- [ ] **Android dive computer download** — currently desktop-only. Full design deferred until the
-      build spike (see below) reports back, but scope decisions already made during brainstorming
-      on 2026-07-01:
-      - **Transport: BLE only for v1.** Covers modern dive computers (Shearwater, Suunto, Garmin);
-        classic Bluetooth RFCOMM and USB-OTG serial deferred.
-      - **BLE bridge: Tauri mobile plugin (Kotlin)**, not direct JNI. Kotlin does BLE scan/connect/
-        GATT read-write via `android.bluetooth.le`, exposed to Rust via Tauri's mobile plugin
-        channel (invoke + `Channel<T>` for notifications). Rust's `dc_custom_io_t` read/write
-        blocks on that channel — same shape as the existing desktop `btleplug` bridge
-        (`src-tauri/src/dc/transport/ble.rs`), just swapping the Rust crate for a Kotlin plugin.
-      - **Integration point already exists as a stub:** `src-tauri/src/dc/device.rs`'s
-        `run_download` has a `#[cfg(target_os = "android")]` branch for opening the iostream, and
-        `dc/mod.rs` gates `device.rs`/`parser.rs` with `#[cfg(not(target_os = "android"))]` even
-        though `device.rs` internally expects to compile on Android — these gates need removing
-        once the Android BLE transport module exists, so `device.rs` picks up its existing branch.
-      - **UI entry point:** header icon on the Dives tab in `MobileLayout.svelte`, next to the
-        existing "Open logbook" (⊞) and "Cloud logbook" (☁) buttons — reuses the same
-        `DcDownloadDialog.svelte`, which already filters transport options to what
-        `list_dc_models` reports per model, so Android just needs that list to report BLE-only.
-      - **Biggest unknown:** libdivecomputer has never been cross-compiled for Android
-        (`build.rs` currently skips `cmake`/`bindgen` entirely for `target_os == "android"`), and
-        this project has no Tauri mobile plugin yet. See the build spike spec below before
-        attempting the full feature.
-      - Spec: `docs/superpowers/specs/2026-07-01-android-libdc-build-spike-design.md` (build
-        spike) and `docs/superpowers/specs/2026-07-06-android-ble-dc-download-design.md`
-        (full feature design). Implemented via
-        `docs/superpowers/plans/2026-07-06-android-ble-dc-download.md`.
+- [ ] **Android dive computer download — residual gaps** (PR #66). Core feature (scan,
+      connect, download, save, permission-revocation recovery, fingerprint dedup) is
+      implemented and verified end-to-end on a real Shearwater Petrel 2 + Pixel 10a.
+      Two things not yet confirmed:
+      - **Indicate-only BLE characteristic** — the CCCD `ENABLE_INDICATION_VALUE` branch
+        (`BleGattClient.kt`'s `cccdValueFor`) is only covered by a Robolectric unit test;
+        no indicate-only dive computer was available to verify on real hardware. The
+        Petrel 2 tested is notify-based.
+      - **Full cancellation mid-download** — attempted once during testing but not
+        confirmed end-to-end (partial dives still offered for review afterward).
+      - Download throughput is slow (~125–135ms per protocol block) but this was
+        investigated and is not considered fixable on our end: it's the dive computer's
+        own firmware processing time, not the Android BLE stack — MTU (247) and
+        connection-priority (HIGH) are already tuned; connection interval dropped
+        49ms→15ms with no meaningful change to per-block latency.
+      - Three Android/Tauri integration bugs were found only via on-device testing
+        (none catchable by unit tests or static review — worth remembering for any
+        future Tauri-mobile-plugin work in this codebase):
+        1. A single permission alias listing `ACCESS_FINE_LOCATION` alongside
+           `BLUETOOTH_SCAN`/`CONNECT` makes Tauri's plugin framework reject the *entire*
+           permission request on API 31+, since the manifest correctly scopes
+           `ACCESS_FINE_LOCATION` to `maxSdkVersion="30"` and the framework validates
+           every alias string against the manifest regardless of OS version. Fix: split
+           into two aliases, request whichever matches `Build.VERSION.SDK_INT`.
+        2. `invoke.resolve(JSObject())` (sends `{}`) is not the same as `invoke.resolve()`
+           (sends `null`) — Rust's `Result<()>` commands need the latter, or every call
+           fails with `failed to deserialize map: invalid type: map, expected unit`.
+        3. Android needs an explicit `gatt.requestMtu(247)` after connecting; unlike
+           macOS/CoreBluetooth, it defaults to a 23-byte ATT MTU (20 usable bytes),
+           silently truncating any BLE notification longer than that.
 - [ ] **Release workflow: signed Android APK/AAB** — debug APKs are already built and uploaded on release (see `release.yml`). Remaining: switch to `--release`, add keystore secrets, and optionally produce an AAB for Play Store. Only needed if Play Store distribution becomes a goal.
 - [ ] Imperial units support in `parse_divecomputer.rs` sample parsing (currently metric-only: m, bar, °C — ft, psi, °F sample lines are silently ignored)
 - [ ] Surface unreadable Dive/Divecomputer parse errors instead of silently dropping dives (`ssrf_git/mod.rs:69/73`)
