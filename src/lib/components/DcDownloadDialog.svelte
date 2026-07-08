@@ -252,6 +252,7 @@
         .filter((i) => i !== -1);
       const added = await invoke<number>("commit_dc_download", { selectedIndices });
       resultAdded = added;
+      resultCancelled = false;
       await app.startup();
       step = "result";
     } catch (e) {

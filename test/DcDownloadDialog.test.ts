@@ -343,6 +343,41 @@ describe("DcDownloadDialog", () => {
     expect(await screen.findByText("Save 1 dive to logbook")).toBeTruthy();
   });
 
+  it("shows the real save outcome, not a stale cancelled message, after saving dives fetched before a cancel", async () => {
+    let completeCb: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-complete") completeCb = cb as typeof completeCb;
+      return () => {};
+    });
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
+      if (cmd === "commit_dc_download") return 1;
+      if (cmd === "startup_logbook") {
+        return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "x", recents: [] };
+      }
+      return null;
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await vi.waitFor(() => expect(completeCb).toBeDefined());
+    completeCb!({
+      payload: {
+        dives: [{ date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 }],
+        skipped: 0,
+        cancelled: true,
+      },
+    });
+
+    const saveButton = await screen.findByText("Save 1 dive to logbook");
+    await fireEvent.click(saveButton);
+
+    expect(await screen.findByText("Done")).toBeTruthy();
+    expect(screen.queryByText("Download cancelled. No dives saved.")).toBeNull();
+    expect(await screen.findByText("1 dive added, 0 skipped.")).toBeTruthy();
+  });
+
   it("applies the reloaded logbook to the app store after saving", async () => {
     let completeCb: ((e: { payload: unknown }) => void) | undefined;
     vi.mocked(listen).mockImplementation(async (event, cb) => {
