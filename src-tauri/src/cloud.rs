@@ -301,6 +301,26 @@ fn make_fetch_opts<'a>(email: &'a str, password: &'a str) -> git2::FetchOptions<
     opts
 }
 
+// Vendored OpenSSL has no CA store on Android (openssl-probe only checks desktop/Linux
+// paths, none of which exist there). Point it at Android's own OS-managed trust store —
+// already in OpenSSL's c_rehash directory format — instead of vendoring/maintaining a
+// separate CA bundle.
+#[cfg(target_os = "android")]
+fn init_android_tls() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        for dir in [
+            "/apex/com.android.conscrypt/cacerts",
+            "/system/etc/security/cacerts",
+        ] {
+            if std::path::Path::new(dir).is_dir() {
+                std::env::set_var("SSL_CERT_DIR", dir);
+                break;
+            }
+        }
+    });
+}
+
 fn clone_or_fetch(
     url: &str,
     branch: &str,
@@ -308,6 +328,9 @@ fn clone_or_fetch(
     email: &str,
     password: &str,
 ) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    init_android_tls();
+
     if cache_dir.is_dir() {
         let repo = git2::Repository::open(cache_dir).map_err(|e| e.to_string())?;
         // Always sync the remote URL — the cache may have been written by an older version
