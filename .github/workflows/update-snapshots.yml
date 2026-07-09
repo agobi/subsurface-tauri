@@ -55,15 +55,10 @@ jobs:
           GREP: ${{ inputs.grep }}
           PLAYWRIGHT_BASE_URL: http://localhost:1420
         run: |
-          ARGS="--update-snapshots"
-          [ -n "$PROJECT" ] && ARGS="$ARGS --project=$PROJECT"
-          [ -n "$GREP" ]    && ARGS="$ARGS --grep=$GREP"
-          npx playwright test $ARGS
-
-      - name: DEBUG list snapshot dir
-        run: |
-          ls -la test/__snapshots__/main-app.spec.ts-snapshots/ || true
-          git status --porcelain
+          ARGS=(--update-snapshots)
+          [ -n "$PROJECT" ] && ARGS+=(--project="$PROJECT")
+          [ -n "$GREP" ]    && ARGS+=(--grep="$GREP")
+          npx playwright test "${ARGS[@]}"
 
       - name: Commit updated snapshots
         run: |
