@@ -206,6 +206,7 @@ pub struct ParsedLogbook {
     pub trips: Vec<Trip>,
     pub sites: Vec<Site>,
     pub settings: crate::ssrf_git::settings::Settings,
+    pub warnings: Vec<String>,
 }
 
 /// Logbook as returned over IPC: dives are summaries only; samples/events are fetched on demand.
@@ -235,6 +236,7 @@ pub struct OpenResult {
     pub logbook: Logbook,
     pub display_name: String,
     pub recents: Vec<RecentEntry>,
+    pub warnings: Vec<String>,
 }
 
 #[cfg(test)]
@@ -370,6 +372,7 @@ mod tests {
             trips: vec![],
             sites: vec![],
             settings,
+            warnings: vec![],
         };
         assert_eq!(parsed.settings.units, "IMPERIAL");
         assert_eq!(parsed.dives.len(), 2);

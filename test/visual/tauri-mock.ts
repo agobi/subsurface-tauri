@@ -10,7 +10,7 @@ function fixtureLogbook(): Logbook {
 }
 
 function fixtureResult(): OpenResult {
-  return { logbook: fixtureLogbook(), displayName: 'Test Logbook', recents: [] };
+  return { logbook: fixtureLogbook(), displayName: 'Test Logbook', recents: [], warnings: [] };
 }
 
 type DcFixtures = {
@@ -44,7 +44,7 @@ export async function invoke<T>(cmd: string, args?: unknown): Promise<T> {
     case 'sync_cloud_logbook':
       return fixtureResult() as T;
     case 'new_logbook':
-      return { logbook: EMPTY, displayName: '', recents: [] } as T;
+      return { logbook: EMPTY, displayName: '', recents: [], warnings: [] } as T;
     case 'get_dive': {
       const a = args as { number: number } | undefined;
       const dive = fixtureLogbook().dives.find(d => d.number === a?.number);

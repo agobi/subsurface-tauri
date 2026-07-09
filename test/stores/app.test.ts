@@ -6,7 +6,7 @@ import type { Dive, OpenResult } from "$lib/types.ts";
 import sample from "$lib/fixtures/logbook.sample.json";
 
 function openResult(overrides: Partial<OpenResult> = {}): OpenResult {
-  return { logbook: sample as any, displayName: "test", recents: [], ...overrides };
+  return { logbook: sample as any, displayName: "test", recents: [], warnings: [], ...overrides };
 }
 
 const cloudRecents = [{ kind: "Cloud" as const, email: "user@example.com", url: "https://ssrf-cloud-eu.subsurface-divelog.org" }];
@@ -291,5 +291,42 @@ describe("cloud logbook", () => {
     vi.mocked(invoke).mockResolvedValueOnce(openResult({ recents: localRecents }));
     await app.openRecent({ kind: "Local", path: "/some/local/path" });
     expect(invoke).toHaveBeenCalledWith("open_logbook", { root: "/some/local/path" });
+  });
+});
+
+describe("parseWarnings", () => {
+  beforeEach(() => app.reset());
+
+  it("startup() sets parseWarnings from result.warnings", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(
+      openResult({ warnings: ["2024/03/16-Sat-09=00=00/Dive-2: Permission denied (os error 13)"] })
+    );
+    await app.startup();
+    expect(app.parseWarnings).toEqual(["2024/03/16-Sat-09=00=00/Dive-2: Permission denied (os error 13)"]);
+  });
+
+  it("startup() sets parseWarnings to an empty array when result.warnings is empty", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ warnings: [] }));
+    await app.startup();
+    expect(app.parseWarnings).toEqual([]);
+  });
+
+  it("open() overwrites a stale parseWarnings left over from a previous operation", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ warnings: ["stale warning"] }));
+    await app.startup();
+    expect(app.parseWarnings).toEqual(["stale warning"]);
+
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ warnings: [] }));
+    await app.open("/some/local/path");
+    expect(app.parseWarnings).toEqual([]);
+  });
+
+  it("reset() clears parseWarnings", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ warnings: ["a warning"] }));
+    await app.startup();
+    expect(app.parseWarnings).toEqual(["a warning"]);
+
+    app.reset();
+    expect(app.parseWarnings).toEqual([]);
   });
 });

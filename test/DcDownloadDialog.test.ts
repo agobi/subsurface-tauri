@@ -24,7 +24,7 @@ describe("DcDownloadDialog", () => {
       if (cmd === "list_dc_vendors") return ["Shearwater", "Suunto"];
       if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
       if (cmd === "list_serial_ports") return ["/dev/ttyUSB0"];
-      if (cmd === "startup_logbook") return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "test", recents: [] };
+      if (cmd === "startup_logbook") return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "test", recents: [], warnings: [] };
       return null;
     });
   });
@@ -355,7 +355,7 @@ describe("DcDownloadDialog", () => {
       if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
       if (cmd === "commit_dc_download") return 1;
       if (cmd === "startup_logbook") {
-        return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "x", recents: [] };
+        return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "x", recents: [], warnings: [] };
       }
       return null;
     });
@@ -396,7 +396,7 @@ describe("DcDownloadDialog", () => {
       if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
       if (cmd === "commit_dc_download") return 1;
       if (cmd === "startup_logbook") {
-        return { logbook: reloadedLogbook, displayName: "after-save", recents: [] };
+        return { logbook: reloadedLogbook, displayName: "after-save", recents: [], warnings: [] };
       }
       return null;
     });
@@ -430,7 +430,7 @@ describe("DcDownloadDialog", () => {
       if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
       if (cmd === "commit_dc_download") return 1;
       if (cmd === "startup_logbook") {
-        return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "x", recents: [] };
+        return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "x", recents: [], warnings: [] };
       }
       return null;
     });
