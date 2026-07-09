@@ -133,6 +133,17 @@
   $effect(() => {
     applyTheme(app.theme);
   });
+
+  $effect(() => {
+    if (app.parseWarnings.length === 0) return;
+    const warnings = app.parseWarnings;
+    app.parseWarnings = [];
+    const n = warnings.length;
+    showMessage(
+      `${n} dive${n === 1 ? "" : "s"} could not be read:\n\n${warnings.join("\n")}`,
+      { title: "Some Dives Skipped", kind: "warning" }
+    );
+  });
 </script>
 
 {#if initialized}
