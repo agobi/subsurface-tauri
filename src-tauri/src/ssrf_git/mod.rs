@@ -389,7 +389,7 @@ mod tests {
         let tmp = std::env::temp_dir().join("ssrf_test_media_no_pictures");
         std::fs::create_dir_all(&tmp).unwrap();
         std::fs::write(tmp.join("Dive-1"), "").unwrap();
-        let dive = parse_dive_dir(&tmp, "2024", "03", "15-Fri-12=28=43").unwrap();
+        let dive = parse_dive_dir(&tmp, "2024", "03", "15-Fri-12=28=43", &mut Vec::new()).unwrap();
         assert_eq!(dive.media_count, 0);
         std::fs::remove_dir_all(&tmp).ok();
     }
@@ -403,7 +403,7 @@ mod tests {
         std::fs::write(pics.join("+00=00=05"), "filename \"a.jpg\"\n").unwrap();
         std::fs::write(pics.join("+00=01=30"), "filename \"b.jpg\"\n").unwrap();
         std::fs::write(pics.join("+00=02=00"), "filename \"c.jpg\"\n").unwrap();
-        let dive = parse_dive_dir(&tmp, "2024", "03", "15-Fri-12=28=43").unwrap();
+        let dive = parse_dive_dir(&tmp, "2024", "03", "15-Fri-12=28=43", &mut Vec::new()).unwrap();
         assert_eq!(dive.media_count, 3);
         std::fs::remove_dir_all(&tmp).ok();
     }
