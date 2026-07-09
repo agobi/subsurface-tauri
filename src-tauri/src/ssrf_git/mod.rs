@@ -106,11 +106,24 @@ fn parse_dive_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
     let dive_entry = dive_entries.into_iter().next()?;
     let dive_name = dive_entry.file_name().to_string_lossy().to_string();
     let number: i32 = dive_name[5..].parse().ok()?;
-    let overview = parse_dive(&read_file(&dive_entry.path()).ok()?);
+    let overview_text = match read_file(&dive_entry.path()) {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("skipping dive, cannot read {}: {}", dive_name, e);
+            return None;
+        }
+    };
+    let overview = parse_dive(&overview_text);
 
     let dc_path = dir.join("Divecomputer");
     let dc = if dc_path.exists() {
-        parse_divecomputer(&read_file(&dc_path).ok()?)
+        match read_file(&dc_path) {
+            Ok(t) => parse_divecomputer(&t),
+            Err(e) => {
+                log::warn!("skipping dive, cannot read Divecomputer: {}", e);
+                return None;
+            }
+        }
     } else {
         parse_divecomputer("")
     };
@@ -432,6 +445,47 @@ mod tests {
         let lb = lb.unwrap();
         assert_eq!(lb.trips.len(), 1, "trip must survive read_dir failure");
         assert_eq!(lb.trips[0].dive_numbers.len(), 0);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn parse_dive_dir_unreadable_dive_file_returns_none_not_panic() {
+        // An unreadable Dive-N file (e.g. permission denied) must be skipped gracefully
+        // rather than panicking; a warning is logged instead of failing silently.
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = std::env::temp_dir().join("ssrf_test_unreadable_dive_file");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let dive_file = tmp.join("Dive-1");
+        std::fs::write(&dive_file, "").unwrap();
+        std::fs::set_permissions(&dive_file, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result = parse_dive_dir(&tmp, "2024", "03", "15-Fri-12=28=43");
+
+        std::fs::set_permissions(&dive_file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::remove_dir_all(&tmp).ok();
+
+        assert!(result.is_none(), "unreadable Dive-N file must be skipped, not panic");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn parse_dive_dir_unreadable_divecomputer_file_returns_none_not_panic() {
+        // An unreadable Divecomputer file must be skipped gracefully rather than panicking;
+        // a warning is logged instead of failing silently.
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = std::env::temp_dir().join("ssrf_test_unreadable_dc_file");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("Dive-1"), "").unwrap();
+        let dc_file = tmp.join("Divecomputer");
+        std::fs::write(&dc_file, "").unwrap();
+        std::fs::set_permissions(&dc_file, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result = parse_dive_dir(&tmp, "2024", "03", "15-Fri-12=28=43");
+
+        std::fs::set_permissions(&dc_file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::remove_dir_all(&tmp).ok();
+
+        assert!(result.is_none(), "unreadable Divecomputer file must be skipped, not panic");
     }
 
     #[test]
