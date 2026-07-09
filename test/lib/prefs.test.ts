@@ -112,7 +112,7 @@ describe("loadDiveListPrefs", () => {
     } as any);
     const prefs = await loadDiveListPrefs();
     expect(prefs.hiddenCols).toEqual(expect.arrayContaining(["temp", "suit", "cylinder"]));
-    expect(prefs.colOrder.length).toBe(17);
+    expect(prefs.colOrder.length).toBe(18);
   });
 
   it("migrates old format (no hiddenCols): infers hiddenCols from absent ids", async () => {

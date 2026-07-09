@@ -34,6 +34,16 @@ fn read_file(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| format!("{}: {}", path.display(), e))
 }
 
+// Each file under a dive dir's "Pictures" subdir is one photo/video attachment
+// (see save-git.cpp's save_one_picture); count them without parsing contents.
+fn count_media(dir: &Path) -> i32 {
+    let Ok(entries) = std::fs::read_dir(dir.join("Pictures")) else { return 0; };
+    entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .count() as i32
+}
+
 fn parse_sites(root: &Path) -> Vec<Site> {
     let dir = root.join("01-Divesites");
     let Ok(entries) = std::fs::read_dir(&dir) else { return vec![]; };
@@ -126,6 +136,7 @@ fn parse_dive_dir(dir: &Path, year: &str, month: &str, dir_name: &str) -> Option
         dc_device_id: dc.device_id,
         dc_dive_id: dc.dive_id,
         total_weight_kg: overview.total_weight_kg,
+        media_count: count_media(dir),
         samples: dc.samples,
         events: dc.events,
     })
@@ -275,6 +286,7 @@ mod tests {
         assert_eq!(d.cylinders[0].description, "D12 232 bar");
         assert_eq!(d.divemode.as_deref(), Some("OC"));
         assert!((d.total_weight_kg.unwrap() - 2.0).abs() < 1e-6);
+        assert_eq!(d.media_count, 2, "fixture Pictures dir has 2 files");
     }
 
     #[test]
@@ -353,6 +365,30 @@ mod tests {
         std::fs::write(tmp.join("Dive-1"), "").unwrap();
         let result = parse_dive_dir(&tmp, "2024", "03", "15-Fri-12=28=43");
         assert!(result.is_some(), "Dive-1 must be selected, ignoring bare Dive-");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn media_count_zero_when_no_pictures_dir() {
+        let tmp = std::env::temp_dir().join("ssrf_test_media_no_pictures");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("Dive-1"), "").unwrap();
+        let dive = parse_dive_dir(&tmp, "2024", "03", "15-Fri-12=28=43").unwrap();
+        assert_eq!(dive.media_count, 0);
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn media_count_matches_files_in_pictures_dir() {
+        let tmp = std::env::temp_dir().join("ssrf_test_media_with_pictures");
+        let pics = tmp.join("Pictures");
+        std::fs::create_dir_all(&pics).unwrap();
+        std::fs::write(tmp.join("Dive-1"), "").unwrap();
+        std::fs::write(pics.join("+00=00=05"), "filename \"a.jpg\"\n").unwrap();
+        std::fs::write(pics.join("+00=01=30"), "filename \"b.jpg\"\n").unwrap();
+        std::fs::write(pics.join("+00=02=00"), "filename \"c.jpg\"\n").unwrap();
+        let dive = parse_dive_dir(&tmp, "2024", "03", "15-Fri-12=28=43").unwrap();
+        assert_eq!(dive.media_count, 3);
         std::fs::remove_dir_all(&tmp).ok();
     }
 

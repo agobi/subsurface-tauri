@@ -24,6 +24,7 @@ export const sampleLogbook: Logbook = {
       maxDepthM: 34.7,
       buddy: 'Barnabás Králik',
       cylinders: [],
+      mediaCount: 0,
       samples: [
         { timeSec: 0, depthM: 0 },
         { timeSec: 300, depthM: 20.0 },
@@ -43,6 +44,7 @@ export const sampleLogbook: Logbook = {
       maxDepthM: 18.2,
       buddy: 'Test Buddy',
       cylinders: [],
+      mediaCount: 0,
       samples: [],
       events: [],
     },

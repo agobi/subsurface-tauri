@@ -52,6 +52,7 @@ export interface DiveSummary {
   decoModel?: string;
   divemode?: string;
   totalWeightKg?: number;
+  mediaCount: number;
 }
 
 export interface Dive extends DiveSummary {

@@ -7,11 +7,11 @@ const noSites: Site[] = [];
 const sites: Site[] = [{ id: "abc", name: "Test Spring", country: "Hungary" }];
 
 function makeDive(overrides: Partial<Dive> = {}): Dive {
-  return { number: 1, dateTime: "2024-03-15T12:28:43", durationSec: 3310, tags: [], cylinders: [], samples: [], events: [], ...overrides };
+  return { number: 1, dateTime: "2024-03-15T12:28:43", durationSec: 3310, tags: [], cylinders: [], mediaCount: 0, samples: [], events: [], ...overrides };
 }
 
 describe("DEFAULT_COL_ORDER", () => {
-  it("contains 17 entries", () => expect(DEFAULT_COL_ORDER.length).toBe(17));
+  it("contains 18 entries", () => expect(DEFAULT_COL_ORDER.length).toBe(18));
   it("starts with nr and date", () => {
     expect(DEFAULT_COL_ORDER[0]).toBe("nr");
     expect(DEFAULT_COL_ORDER[1]).toBe("date");
@@ -24,7 +24,7 @@ describe("DEFAULT_COL_ORDER", () => {
 });
 
 describe("ALL_COLS", () => {
-  it("contains 17 entries", () => expect(ALL_COLS.length).toBe(17));
+  it("contains 18 entries", () => expect(ALL_COLS.length).toBe(18));
   it("defaultVisible cols appear before non-defaultVisible cols in DEFAULT_COL_ORDER", () => {
     const orders = DEFAULT_COL_ORDER.map(id => ALL_COLS.find(c => c.id === id)!.defaultVisible);
     const firstHidden = orders.indexOf(false);
@@ -91,6 +91,12 @@ describe("render", () => {
   it("weight renders toFixed(2)", () => {
     expect(col("weight").render(makeDive({ totalWeightKg: 3.5 }), { sites: noSites })).toBe("3.50");
   });
+  it("media renders count as string", () => {
+    expect(col("media").render(makeDive({ mediaCount: 3 }), { sites: noSites })).toBe("3");
+  });
+  it("media renders em-dash when zero", () => {
+    expect(col("media").render(makeDive({ mediaCount: 0 }), { sites: noSites })).toBe("—");
+  });
 });
 
 describe("gas mix (cylinder column)", () => {
@@ -143,6 +149,9 @@ describe("compare", () => {
   });
   it("depth: ascending by maxDepthM", () => {
     expect(col("depth").compare(makeDive({ maxDepthM: 10 }), makeDive({ maxDepthM: 30 }), ctx)).toBeLessThan(0);
+  });
+  it("media: ascending by mediaCount", () => {
+    expect(col("media").compare(makeDive({ mediaCount: 1 }), makeDive({ mediaCount: 5 }), ctx)).toBeLessThan(0);
   });
   it("date: lexicographic dateTime", () => {
     expect(col("date").compare(makeDive({ dateTime: "2024-01-01T00:00:00" }), makeDive({ dateTime: "2024-06-01T00:00:00" }), ctx)).toBeLessThan(0);

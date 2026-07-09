@@ -95,6 +95,7 @@ pub struct Dive {
     pub dc_dive_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_weight_kg: Option<f64>,
+    pub media_count: i32,
     pub samples: Vec<Sample>,
     pub events: Vec<DiveEvent>,
 }
@@ -168,6 +169,7 @@ pub struct DiveSummary {
     pub divemode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_weight_kg: Option<f64>,
+    pub media_count: i32,
 }
 
 impl From<&Dive> for DiveSummary {
@@ -191,6 +193,7 @@ impl From<&Dive> for DiveSummary {
             deco_model: d.deco_model.clone(),
             divemode: d.divemode.clone(),
             total_weight_kg: d.total_weight_kg,
+            media_count: d.media_count,
         }
     }
 }
@@ -320,6 +323,7 @@ mod tests {
             dc_device_id: None,
             dc_dive_id: None,
             total_weight_kg: Some(8.0),
+            media_count: 0,
             samples: vec![Sample { time_sec: 0, depth_m: 0.0, temp_c: None, ndl_sec: None, tts_sec: None, cns: None, pressure_bar: None }],
             events: vec![],
         }

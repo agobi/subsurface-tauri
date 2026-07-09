@@ -5,7 +5,7 @@ import DiveProfile from "$lib/components/DiveProfile.svelte";
 import type { Dive } from "$lib/types.ts";
 
 const dive: Dive = {
-  number: 1, dateTime: "2024-03-15T12:28:43", durationSec: 3300, tags: [], cylinders: [],
+  number: 1, dateTime: "2024-03-15T12:28:43", durationSec: 3300, tags: [], cylinders: [], mediaCount: 0,
   maxDepthM: 34.7, samples: [
     { timeSec: 0, depthM: 0 }, { timeSec: 60, depthM: 9 }, { timeSec: 210, depthM: 30.4 },
     { timeSec: 480, depthM: 30 },
@@ -15,7 +15,7 @@ const dive: Dive = {
 };
 
 const diveNoSamples: Dive = {
-  number: 2, dateTime: "2024-03-16T10:00:00", durationSec: 1800, tags: [], cylinders: [],
+  number: 2, dateTime: "2024-03-16T10:00:00", durationSec: 1800, tags: [], cylinders: [], mediaCount: 0,
   maxDepthM: 18, samples: [], events: [],
 };
 
