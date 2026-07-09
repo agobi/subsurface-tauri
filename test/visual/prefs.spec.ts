@@ -15,4 +15,11 @@ for (const theme of ['light', 'dark'] as const) {
     await page.getByRole('button', { name: 'Logging' }).click();
     await expect(page).toHaveScreenshot(`prefs-logging-${theme}.png`);
   });
+
+  test(`recents tab — ${theme}`, async ({ page, platform }) => {
+    test.skip(platform === 'android', 'sidebar hidden on narrow viewports');
+    await setupPage(page, { theme, path: '/prefs.html', platform });
+    await page.getByRole('button', { name: 'Recents' }).click();
+    await expect(page).toHaveScreenshot(`prefs-recents-${theme}.png`);
+  });
 }

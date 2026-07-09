@@ -221,7 +221,7 @@ pub struct Logbook {
 
 /// A logbook entry in the recents list. Path variants use index-based menu IDs
 /// so paths never appear in menu item identifiers.
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "kind")]
 pub enum RecentEntry {
     Local { path: String },

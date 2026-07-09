@@ -4,6 +4,7 @@
   import type { Theme } from "$lib/stores/app.svelte.ts";
   import { app } from "$lib/stores/app.svelte.ts";
   import type { RecentEntry } from "$lib/types.ts";
+  import { fmtRecentLabel } from "$lib/format.ts";
   import { saveAndEmitAppearance, loadLoggingPrefs, applyLogLevel, type LogLevel } from "$lib/prefs.ts";
   import AppearanceSection from "./prefs/AppearanceSection.svelte";
   import LoggingSection from "./prefs/LoggingSection.svelte";
@@ -23,14 +24,6 @@
   async function handleLogLevelChange(level: LogLevel) {
     currentLogLevel = level;
     await applyLogLevel(level);
-  }
-
-  function recentLabel(entry: RecentEntry): string {
-    if (entry.kind === "Local") {
-      return entry.path.split(/[\\/]/).pop() || entry.path;
-    }
-    const host = entry.url.replace(/^https?:\/\//, "");
-    return `${entry.email}@${host}`;
   }
 
   async function handleThemeChange(theme: Theme) {
@@ -74,15 +67,27 @@
     </div>
 
     <section class="recents-section">
-      <h3 class="section-label">Recent Logbooks</h3>
+      <div class="recents-header">
+        <h3 class="section-label">Recent Logbooks</h3>
+        {#if app.recents.length > 0}
+          <button class="clear-btn" onclick={() => app.clearRecents()}>Clear All</button>
+        {/if}
+      </div>
       {#if app.recents.length === 0}
         <p class="recents-empty">No recent logbooks</p>
       {:else}
         <ul class="recents-list">
-          {#each app.recents as entry}
-            <li>
+          {#each app.recents as entry, i}
+            <li class="recent-row">
               <button class="recent-item" onclick={() => handleRecentTap(entry)}>
-                {recentLabel(entry)}
+                {fmtRecentLabel(entry)}
+              </button>
+              <button
+                class="remove-btn"
+                aria-label={`Remove ${fmtRecentLabel(entry)}`}
+                onclick={() => app.removeRecent(i)}
+              >
+                ×
               </button>
             </li>
           {/each}
@@ -146,13 +151,30 @@
     margin-top: var(--space-6, 24px);
   }
 
+  .recents-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 var(--space-2) 0;
+  }
+
   .section-label {
     font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--txt-2);
-    margin: 0 0 var(--space-2) 0;
+    margin: 0;
+  }
+
+  .clear-btn {
+    background: none;
+    border: none;
+    font: inherit;
+    font-size: 0.8125rem;
+    color: var(--accent, var(--txt));
+    cursor: pointer;
+    padding: var(--space-1) 0;
   }
 
   .recents-empty {
@@ -170,9 +192,16 @@
     gap: 2px;
   }
 
+  .recent-row {
+    display: flex;
+    align-items: stretch;
+    gap: var(--space-1);
+  }
+
   .recent-item {
     display: block;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     text-align: left;
     background: var(--panel);
     border: 1px solid var(--hair);
@@ -189,6 +218,21 @@
   }
 
   .recent-item:active {
+    background: var(--panel-2);
+  }
+
+  .remove-btn {
+    flex: 0 0 44px;
+    background: var(--panel);
+    border: 1px solid var(--hair);
+    border-radius: var(--r-control, 6px);
+    color: var(--txt-2);
+    font-size: 1.125rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .remove-btn:active {
     background: var(--panel-2);
   }
 </style>

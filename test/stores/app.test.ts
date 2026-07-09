@@ -294,6 +294,33 @@ describe("cloud logbook", () => {
   });
 });
 
+describe("recents management", () => {
+  beforeEach(() => app.reset());
+
+  it("loadRecents() invokes get_recents and sets app.recents", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(localRecents);
+    await app.loadRecents();
+    expect(invoke).toHaveBeenCalledWith("get_recents");
+    expect(app.recents).toEqual(localRecents);
+  });
+
+  it("clearRecents() invokes clear_recents and empties app.recents", async () => {
+    app.recents = localRecents;
+    vi.mocked(invoke).mockResolvedValueOnce([]);
+    await app.clearRecents();
+    expect(invoke).toHaveBeenCalledWith("clear_recents");
+    expect(app.recents).toEqual([]);
+  });
+
+  it("removeRecent(index) invokes remove_recent with the index and updates app.recents", async () => {
+    app.recents = [...localRecents, ...cloudRecents];
+    vi.mocked(invoke).mockResolvedValueOnce(cloudRecents);
+    await app.removeRecent(0);
+    expect(invoke).toHaveBeenCalledWith("remove_recent", { index: 0 });
+    expect(app.recents).toEqual(cloudRecents);
+  });
+});
+
 describe("parseWarnings", () => {
   beforeEach(() => app.reset());
 

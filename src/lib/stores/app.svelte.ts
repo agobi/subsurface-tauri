@@ -142,6 +142,18 @@ class AppStore {
     }
   }
 
+  async loadRecents(): Promise<void> {
+    this.recents = await invoke<RecentEntry[]>("get_recents");
+  }
+
+  async clearRecents(): Promise<void> {
+    this.recents = await invoke<RecentEntry[]>("clear_recents");
+  }
+
+  async removeRecent(index: number): Promise<void> {
+    this.recents = await invoke<RecentEntry[]>("remove_recent", { index });
+  }
+
   togglePanel(key: PanelKey) {
     const next = { ...this.visiblePanels, [key]: !this.visiblePanels[key] };
     if (!Object.values(next).some(Boolean)) return;

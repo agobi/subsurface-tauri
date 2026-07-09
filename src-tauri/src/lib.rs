@@ -32,15 +32,10 @@ fn path_basename(path: &std::path::Path) -> String {
         .to_owned()
 }
 
-pub(crate) fn update_recents(
-    store: &tauri_plugin_store::Store<impl tauri::Runtime>,
-    entry: RecentEntry,
-) -> Result<Vec<RecentEntry>, String> {
-    let mut recents: Vec<RecentEntry> = store
-        .get("recents")
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
+// Keeps the recents list from growing unbounded across a long-lived install.
+const MAX_RECENTS: usize = 20;
 
+fn dedupe_and_cap_recents(mut recents: Vec<RecentEntry>, entry: RecentEntry) -> Vec<RecentEntry> {
     recents.retain(|e| match (e, &entry) {
         (RecentEntry::Local { path: p1 }, RecentEntry::Local { path: p2 }) => p1 != p2,
         (
@@ -50,6 +45,19 @@ pub(crate) fn update_recents(
         _ => true,
     });
     recents.insert(0, entry);
+    recents.truncate(MAX_RECENTS);
+    recents
+}
+
+pub(crate) fn update_recents(
+    store: &tauri_plugin_store::Store<impl tauri::Runtime>,
+    entry: RecentEntry,
+) -> Result<Vec<RecentEntry>, String> {
+    let recents: Vec<RecentEntry> = store
+        .get("recents")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    let recents = dedupe_and_cap_recents(recents, entry);
 
     store.set("recents", serde_json::to_value(&recents).map_err(|e| e.to_string())?);
     store.save().map_err(|e| e.to_string())?;
@@ -239,6 +247,40 @@ async fn get_recents(app: tauri::AppHandle) -> Result<Vec<RecentEntry>, String> 
         .unwrap_or_default())
 }
 
+#[tauri::command]
+async fn clear_recents(app: tauri::AppHandle) -> Result<Vec<RecentEntry>, String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let recents: Vec<RecentEntry> = Vec::new();
+    store.set("recents", serde_json::to_value(&recents).map_err(|e| e.to_string())?);
+    store.save().map_err(|e| e.to_string())?;
+
+    #[cfg(desktop)]
+    menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
+
+    Ok(recents)
+}
+
+#[tauri::command]
+async fn remove_recent(app: tauri::AppHandle, index: usize) -> Result<Vec<RecentEntry>, String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let mut recents: Vec<RecentEntry> = store
+        .get("recents")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    if index >= recents.len() {
+        return Err(format!("recent index {index} out of range"));
+    }
+    recents.remove(index);
+
+    store.set("recents", serde_json::to_value(&recents).map_err(|e| e.to_string())?);
+    store.save().map_err(|e| e.to_string())?;
+
+    #[cfg(desktop)]
+    menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
+
+    Ok(recents)
+}
+
 fn default_log_level() -> log::LevelFilter {
     if cfg!(debug_assertions) { log::LevelFilter::Debug } else { log::LevelFilter::Info }
 }
@@ -304,6 +346,8 @@ pub fn run() {
             new_logbook,
             get_dive,
             get_recents,
+            clear_recents,
+            remove_recent,
             get_log_level,
             set_log_level,
             cloud::get_cloud_credentials,
@@ -338,5 +382,32 @@ mod tests {
             log::LevelFilter::Info
         };
         assert_eq!(default_log_level(), expected);
+    }
+
+    fn local(path: &str) -> RecentEntry {
+        RecentEntry::Local { path: path.to_string() }
+    }
+
+    #[test]
+    fn dedupe_and_cap_recents_inserts_newest_first() {
+        let recents = dedupe_and_cap_recents(vec![local("/a"), local("/b")], local("/c"));
+        assert_eq!(recents, vec![local("/c"), local("/a"), local("/b")]);
+    }
+
+    #[test]
+    fn dedupe_and_cap_recents_moves_existing_entry_to_front() {
+        let recents = dedupe_and_cap_recents(vec![local("/a"), local("/b")], local("/b"));
+        assert_eq!(recents, vec![local("/b"), local("/a")]);
+    }
+
+    #[test]
+    fn dedupe_and_cap_recents_truncates_to_max() {
+        let existing: Vec<RecentEntry> = (0..MAX_RECENTS)
+            .map(|i| local(&format!("/path-{i}")))
+            .collect();
+        let recents = dedupe_and_cap_recents(existing, local("/new"));
+        assert_eq!(recents.len(), MAX_RECENTS);
+        assert_eq!(recents[0], local("/new"));
+        assert!(!recents.contains(&local(&format!("/path-{}", MAX_RECENTS - 1))));
     }
 }
