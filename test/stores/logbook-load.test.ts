@@ -6,7 +6,7 @@ import type { OpenResult } from "$lib/types.ts";
 import sample from "$lib/fixtures/logbook.sample.json";
 
 function openResult(): OpenResult {
-  return { logbook: sample as any, displayName: "test", recents: [] };
+  return { logbook: sample as any, displayName: "test", recents: [], warnings: [] };
 }
 
 describe("logbook loading via IPC", () => {

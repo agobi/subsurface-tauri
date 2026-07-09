@@ -91,4 +91,5 @@ export interface OpenResult {
   logbook: Logbook;
   displayName: string;
   recents: RecentEntry[];
+  warnings: string[];
 }

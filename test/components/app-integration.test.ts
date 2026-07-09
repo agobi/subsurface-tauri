@@ -11,7 +11,7 @@ describe("QuadrantGrid wired to data", () => {
   beforeEach(async () => {
     app.reset();
     vi.mocked(invoke)
-      .mockResolvedValueOnce({ logbook: sample, displayName: "test", recents: [] } as unknown as OpenResult)
+      .mockResolvedValueOnce({ logbook: sample, displayName: "test", recents: [], warnings: [] } as unknown as OpenResult)
       .mockResolvedValueOnce((sample as any).dives[0]); // get_dive called by selectDive
     await app.startup();
   });

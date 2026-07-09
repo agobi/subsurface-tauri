@@ -65,7 +65,7 @@ describe("App — desktop cloud wiring", () => {
 
 describe("App — handleCloudSuccess", () => {
   function openResult(overrides: Partial<OpenResult> = {}): OpenResult {
-    return { logbook: sample as any, displayName: "test", recents: [], ...overrides };
+    return { logbook: sample as any, displayName: "test", recents: [], warnings: [], ...overrides };
   }
 
   beforeEach(() => {

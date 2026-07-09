@@ -6,7 +6,7 @@ import type { Dive, OpenResult } from "$lib/types.ts";
 import sample from "$lib/fixtures/logbook.sample.json";
 
 function openResult(overrides: Partial<OpenResult> = {}): OpenResult {
-  return { logbook: sample as any, displayName: "test", recents: [], ...overrides };
+  return { logbook: sample as any, displayName: "test", recents: [], warnings: [], ...overrides };
 }
 
 const cloudRecents = [{ kind: "Cloud" as const, email: "user@example.com", url: "https://ssrf-cloud-eu.subsurface-divelog.org" }];
