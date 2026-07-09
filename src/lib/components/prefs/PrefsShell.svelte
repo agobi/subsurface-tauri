@@ -5,6 +5,7 @@
   import PrefsSidebar from "./PrefsSidebar.svelte";
   import AppearanceSection from "./AppearanceSection.svelte";
   import LoggingSection from "./LoggingSection.svelte";
+  import RecentsSection from "./RecentsSection.svelte";
 
   let {
     currentTheme,
@@ -18,7 +19,7 @@
     onLogLevelChange: (l: LogLevel) => void;
   } = $props();
 
-  type SectionId = "appearance" | "logging";
+  type SectionId = "appearance" | "logging" | "recents";
   let activeSection = $state<SectionId>("appearance");
 </script>
 
@@ -31,6 +32,8 @@
       <AppearanceSection {currentTheme} {onThemeChange} />
     {:else if activeSection === "logging"}
       <LoggingSection currentLevel={currentLogLevel} onLevelChange={onLogLevelChange} />
+    {:else if activeSection === "recents"}
+      <RecentsSection />
     {/if}
   </div>
 </div>

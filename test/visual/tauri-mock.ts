@@ -13,6 +13,10 @@ function fixtureResult(): OpenResult {
   return { logbook: fixtureLogbook(), displayName: 'Test Logbook', recents: [], warnings: [] };
 }
 
+function fixtureRecents(): OpenResult['recents'] {
+  return (window as any).__playwright_fixtures__?.recents ?? [];
+}
+
 type DcFixtures = {
   vendors?: string[];
   models?: { product: string; transports: string[] }[];
@@ -52,6 +56,15 @@ export async function invoke<T>(cmd: string, args?: unknown): Promise<T> {
     }
     case 'list_known_devices':
       return [] as T;
+    case 'get_recents':
+      return fixtureRecents() as T;
+    case 'clear_recents':
+      return [] as T;
+    case 'remove_recent': {
+      const a = args as { index: number } | undefined;
+      const recents = fixtureRecents();
+      return recents.filter((_, i) => i !== a?.index) as T;
+    }
     case 'list_dc_vendors':
       return (fixtureDc().vendors ?? ['TestVendor']) as T;
     case 'list_dc_models':

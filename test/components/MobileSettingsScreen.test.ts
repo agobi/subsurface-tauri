@@ -48,4 +48,39 @@ describe("MobileSettingsScreen", () => {
     await fireEvent.change(screen.getByLabelText("Trace"));
     expect(invoke).toHaveBeenCalledWith("set_log_level", { level: "trace" });
   });
+
+  describe("recents management", () => {
+    beforeEach(() => {
+      app.recents = [
+        { kind: "Local", path: "/some/local/path" },
+        { kind: "Cloud", email: "user@example.com", url: "https://ssrf-cloud-eu.subsurface-divelog.org" },
+      ];
+    });
+
+    it("does not show Clear All when there are no recents", () => {
+      app.recents = [];
+      render(MobileSettingsScreen, { props: { onBack: vi.fn() } });
+      expect(screen.queryByText("Clear All")).not.toBeInTheDocument();
+    });
+
+    it("shows a remove button per recent entry", () => {
+      render(MobileSettingsScreen, { props: { onBack: vi.fn() } });
+      expect(screen.getByLabelText("Remove path")).toBeInTheDocument();
+      expect(screen.getByLabelText(/Remove user@example.com/)).toBeInTheDocument();
+    });
+
+    it("invokes remove_recent with the entry's index when its remove button is clicked", async () => {
+      render(MobileSettingsScreen, { props: { onBack: vi.fn() } });
+      vi.mocked(invoke).mockResolvedValueOnce([app.recents[1]]);
+      await fireEvent.click(screen.getByLabelText("Remove path"));
+      expect(invoke).toHaveBeenCalledWith("remove_recent", { index: 0 });
+    });
+
+    it("invokes clear_recents when Clear All is clicked", async () => {
+      render(MobileSettingsScreen, { props: { onBack: vi.fn() } });
+      vi.mocked(invoke).mockResolvedValueOnce([]);
+      await fireEvent.click(screen.getByText("Clear All"));
+      expect(invoke).toHaveBeenCalledWith("clear_recents");
+    });
+  });
 });
