@@ -144,12 +144,13 @@ async fn startup_logbook(
         .await
         .map_err(|e| e.to_string())??;
 
+    let warnings = parsed.warnings.clone();
     let logbook = install_logbook(&app, &logbook_state, root, parsed)?;
 
     #[cfg(desktop)]
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
 
-    Ok(OpenResult { logbook, display_name, recents })
+    Ok(OpenResult { logbook, display_name, recents, warnings })
 }
 
 #[tauri::command]
@@ -167,6 +168,7 @@ async fn open_logbook(
         .await
         .map_err(|e| e.to_string())??;
 
+    let warnings = parsed.warnings.clone();
     let logbook = install_logbook(&app, &logbook_state, path.clone(), parsed)?;
 
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
@@ -178,7 +180,7 @@ async fn open_logbook(
     #[cfg(desktop)]
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
 
-    Ok(OpenResult { logbook, display_name, recents })
+    Ok(OpenResult { logbook, display_name, recents, warnings })
 }
 
 #[tauri::command]
@@ -199,6 +201,7 @@ async fn new_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
+    let warnings = parsed.warnings.clone();
     let logbook = install_logbook(&app, &logbook_state, path.clone(), parsed)?;
 
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
@@ -210,7 +213,7 @@ async fn new_logbook(
     #[cfg(desktop)]
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
 
-    Ok(OpenResult { logbook, display_name, recents })
+    Ok(OpenResult { logbook, display_name, recents, warnings })
 }
 
 #[tauri::command]

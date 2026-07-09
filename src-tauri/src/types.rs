@@ -236,6 +236,7 @@ pub struct OpenResult {
     pub logbook: Logbook,
     pub display_name: String,
     pub recents: Vec<RecentEntry>,
+    pub warnings: Vec<String>,
 }
 
 #[cfg(test)]
