@@ -64,7 +64,7 @@ describe("app store", () => {
 });
 
 function makeDive(overrides: Partial<Dive> = {}): Dive {
-  return { number: 1, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], samples: [], events: [], ...overrides };
+  return { number: 1, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], mediaCount: 0, samples: [], events: [], ...overrides };
 }
 
 describe("diveListPrefs", () => {

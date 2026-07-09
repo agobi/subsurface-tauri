@@ -8,7 +8,7 @@ const dive: Dive = {
   number: 269, dateTime: "2024-03-15T12:28:43", durationSec: 3310, tags: ["cave"], rating: 4,
   diveGuide: "Attila Gobi", maxDepthM: 34.7, meanDepthM: 14.8, waterTempC: 19, decoModel: "GF 55/85",
   cylinders: [{ description: "D12 232 bar", volumeL: 24, workPressureBar: 232, o2Percent: 32 }],
-  notes: "Great cave dive", samples: [], events: [],
+  notes: "Great cave dive", mediaCount: 0, samples: [], events: [],
 };
 
 describe("InfoPanel", () => {

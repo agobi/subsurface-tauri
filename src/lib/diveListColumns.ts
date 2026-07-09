@@ -6,7 +6,7 @@ export type ColId =
   | "nr" | "date" | "rating" | "depth" | "duration"
   | "buddy" | "guide" | "country" | "location"
   | "temp" | "suit" | "cylinder" | "sac" | "tags"
-  | "notes" | "divemode" | "weight";
+  | "notes" | "divemode" | "weight" | "media";
 
 export interface RenderCtx {
   sites: Site[];
@@ -26,7 +26,7 @@ export const DEFAULT_COL_ORDER: ColId[] = [
   "nr", "date", "rating", "depth", "duration",
   "buddy", "guide", "country", "location",
   "temp", "suit", "cylinder", "sac", "tags",
-  "notes", "divemode", "weight",
+  "notes", "divemode", "weight", "media",
 ];
 
 function gasMix(c?: Cylinder): string {
@@ -142,5 +142,10 @@ export const ALL_COLS: ColDef[] = [
     id: "weight", label: "Weight", width: "56px", defaultVisible: false,
     render: (d) => d.totalWeightKg != null ? d.totalWeightKg.toFixed(2) : "—",
     compare: (a, b) => (a.totalWeightKg ?? 0) - (b.totalWeightKg ?? 0),
+  },
+  {
+    id: "media", label: "Media", width: "56px", defaultVisible: false,
+    render: (d) => d.mediaCount > 0 ? String(d.mediaCount) : "—",
+    compare: (a, b) => a.mediaCount - b.mediaCount,
   },
 ];

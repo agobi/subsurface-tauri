@@ -8,7 +8,7 @@ import { ALL_COLS } from "$lib/diveListColumns.ts";
 describe("ColumnPicker", () => {
   beforeEach(() => app.reset());
 
-  it("renders all 17 columns in colOrder sequence", () => {
+  it("renders all columns in colOrder sequence", () => {
     render(ColumnPicker, { props: { open: true } });
     const rows = document.querySelectorAll("[data-testid^='col-row-']");
     expect(rows.length).toBe(ALL_COLS.length);
