@@ -25,6 +25,7 @@ class AppStore {
   get isCloudLogbook(): boolean { return this.recents[0]?.kind === "Cloud"; }
   displayName = $state("");
   recents = $state<RecentEntry[]>([]);
+  parseWarnings = $state<string[]>([]);
   showCloudDialog = $state<{ email: string; message?: string; onSuccess?: () => void } | false>(false);
   showDcDialog = $state(false);
   diveListPrefs = $state<DiveListPrefs>({
@@ -81,6 +82,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     this.diveListPrefs = await loadDiveListPrefs();
     await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
@@ -90,6 +92,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
@@ -98,6 +101,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
@@ -106,6 +110,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
@@ -114,6 +119,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
@@ -123,6 +129,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     const stillExists = result.logbook.dives.some((d) => d.number === currentId);
     await this.selectDive(stillExists ? currentId : (result.logbook.dives[0]?.number ?? null));
   }
@@ -196,6 +203,7 @@ class AppStore {
     this.platform = "desktop";
     this.displayName = "";
     this.recents = [];
+    this.parseWarnings = [];
     this.showCloudDialog = false;
     this.showDcDialog = false;
     this.diveListPrefs = {
