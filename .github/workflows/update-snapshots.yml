@@ -60,6 +60,11 @@ jobs:
           [ -n "$GREP" ]    && ARGS="$ARGS --grep=$GREP"
           npx playwright test $ARGS
 
+      - name: DEBUG list snapshot dir
+        run: |
+          ls -la test/__snapshots__/main-app.spec.ts-snapshots/ || true
+          git status --porcelain
+
       - name: Commit updated snapshots
         run: |
           git config user.name "github-actions[bot]"
