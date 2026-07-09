@@ -442,7 +442,7 @@
 <style>
   .dialog-backdrop {
     position: fixed; inset: 0; background: rgb(0 0 0 / 50%);
-    display: flex; align-items: center; justify-content: center; z-index: 100;
+    display: flex; align-items: center; justify-content: center; z-index: 1001;
   }
   .dialog {
     background: var(--panel); color: var(--txt);
