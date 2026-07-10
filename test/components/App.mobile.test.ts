@@ -17,17 +17,20 @@ describe("App — mobile branch", () => {
     });
   });
 
-  it("renders MobileLayout tab bar when platform is android", async () => {
+  it("renders MobileLayout's two-row shell when platform is android", async () => {
     render(App);
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /dives/i })).toBeInTheDocument();
+      expect(screen.getByTestId("mobile-panel-dives")).toBeInTheDocument();
     });
+    expect(screen.getByTestId("mobile-panel-info")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-panel-profile")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-panel-map")).toBeInTheDocument();
   });
 
   it("does not render desktop Toolbar when platform is android", async () => {
     render(App);
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /dives/i })).toBeInTheDocument();
+      expect(screen.getByTestId("mobile-panel-dives")).toBeInTheDocument();
     });
     expect(screen.queryByRole("button", { name: /add dive/i })).not.toBeInTheDocument();
   });
