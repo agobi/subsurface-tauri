@@ -1,4 +1,5 @@
 <!-- AI-generated (Claude) -->
+<!-- src/lib/components/MobileLayout.svelte -->
 <script lang="ts">
   import { app } from "$lib/stores/app.svelte.ts";
   import { open as openDialog, message as showMessage } from "@tauri-apps/plugin-dialog";
@@ -7,12 +8,24 @@
   import InfoPanel from "$lib/components/InfoPanel.svelte";
   import MapPanel from "$lib/components/MapPanel.svelte";
   import MobileSettingsScreen from "$lib/components/MobileSettingsScreen.svelte";
+  import { computeActiveIndex } from "$lib/swipePanel.ts";
 
-  type Tab = "dives" | "profile" | "info" | "map";
+  type PanelKey = "info" | "profile" | "map";
   type Screen = "main" | "settings";
 
-  let activeTab = $state<Tab>("dives");
+  const panels: { key: PanelKey; label: string }[] = [
+    { key: "info", label: "Info" },
+    { key: "profile", label: "Profile" },
+    { key: "map", label: "Map" },
+  ];
+
   let screen = $state<Screen>("main");
+  let activePanelIndex = $state(1); // Profile: most useful panel right after picking a dive
+  let swipeEl: HTMLDivElement;
+  let scrollRafId = 0;
+
+  let selected = $derived(app.selectedDive);
+  let selectedSite = $derived(app.logbook.sites.find((s) => s.id === selected?.siteId));
 
   async function handleOpenLogbook() {
     const dir = await openDialog({ directory: true });
@@ -25,72 +38,74 @@
     }
   }
 
-  let selected = $derived(app.selectedDive);
-  let selectedSite = $derived(app.logbook.sites.find((s) => s.id === selected?.siteId));
+  function handleSwipeScroll() {
+    if (scrollRafId) return;
+    scrollRafId = requestAnimationFrame(() => {
+      scrollRafId = 0;
+      activePanelIndex = computeActiveIndex(swipeEl.scrollLeft, swipeEl.clientWidth, panels.length);
+    });
+  }
 
-  const tabs: { key: Tab; label: string; icon: string }[] = [
-    { key: "dives",   label: "Dives",   icon: "≡" },
-    { key: "profile", label: "Profile", icon: "∿" },
-    { key: "info",    label: "Info",    icon: "ℹ" },
-    { key: "map",     label: "Map",     icon: "⊕" },
-  ];
+  function jumpToPanel(index: number) {
+    activePanelIndex = index;
+    swipeEl.scrollTo({ left: index * swipeEl.clientWidth, behavior: "smooth" });
+  }
 </script>
 
 {#if screen === "settings"}
   <MobileSettingsScreen onBack={() => (screen = "main")} />
 {:else}
   <div class="mobile-layout">
-    <div class="mobile-content">
-      {#if activeTab === "dives"}
-        <div class="dives-header">
-          <span class="dives-title">Dives</span>
-          <div class="header-actions">
-            <button class="header-btn" aria-label="Open logbook" onclick={handleOpenLogbook} title="Open logbook">⊞</button>
-            <button class="header-btn" aria-label="Cloud logbook" onclick={() => (app.showCloudDialog = { email: "" })} title="Cloud logbook">☁</button>
-            <button class="header-btn" aria-label="Download from dive computer" onclick={() => (app.showDcDialog = true)} title="Download from dive computer">⇩</button>
-            <button class="gear-btn" aria-label="Settings" onclick={() => (screen = "settings")}>⚙</button>
-          </div>
-        </div>
-        <div class="mobile-panel" data-testid="mobile-panel-dives">
-          {#if app.sortedDives.length === 0}
-            <div class="empty-state" data-testid="mobile-empty-state">
-              <p class="empty-msg">No dives yet.</p>
-              <button class="empty-btn" onclick={handleOpenLogbook}>Open Logbook…</button>
-              <button class="empty-btn" onclick={() => (app.showCloudDialog = { email: "" })}>Connect to Cloud…</button>
-            </div>
-          {:else}
-            <DiveList dives={app.sortedDives} trips={app.logbook.trips} sites={app.logbook.sites} />
-          {/if}
-        </div>
-      {:else if activeTab === "profile"}
-        <div class="mobile-panel" data-testid="mobile-panel-profile">
-          <DiveProfile dive={selected} loading={app.selectedDiveLoading} />
-        </div>
-      {:else if activeTab === "info"}
-        <div class="mobile-panel" data-testid="mobile-panel-info">
-          {#if selected}<InfoPanel dive={selected} />{/if}
-        </div>
-      {:else if activeTab === "map"}
-        <div class="mobile-panel" data-testid="mobile-panel-map">
-          <MapPanel siteName={selectedSite?.name} gps={selectedSite?.gps} />
-        </div>
-      {/if}
+    <div class="mobile-header">
+      <span class="dives-title">Dives</span>
+      <div class="header-actions">
+        <button class="header-btn" aria-label="Open logbook" onclick={handleOpenLogbook} title="Open logbook">⊞</button>
+        <button class="header-btn" aria-label="Cloud logbook" onclick={() => (app.showCloudDialog = { email: "" })} title="Cloud logbook">☁</button>
+        <button class="header-btn" aria-label="Download from dive computer" onclick={() => (app.showDcDialog = true)} title="Download from dive computer">⇩</button>
+        <button class="gear-btn" aria-label="Settings" onclick={() => (screen = "settings")}>⚙</button>
+      </div>
     </div>
 
-    <div class="tab-bar" role="tablist">
-      {#each tabs as t}
-        <button
-          class="tab-btn"
-          class:active={activeTab === t.key}
-          role="tab"
-          aria-selected={activeTab === t.key}
-          aria-label={t.label}
-          onclick={() => (activeTab = t.key)}
+    <div class="mobile-body">
+      <div class="top-row" style="flex: 0 0 45%">
+        <div
+          class="swipe-container"
+          bind:this={swipeEl}
+          onscroll={handleSwipeScroll}
+          data-testid="mobile-swipe"
+          data-active-panel={panels[activePanelIndex].key}
         >
-          <span class="tab-icon">{t.icon}</span>
-          <span class="tab-label">{t.label}</span>
-        </button>
-      {/each}
+          <div class="swipe-panel" data-testid="mobile-panel-info">{#if selected}<InfoPanel dive={selected} />{/if}</div>
+          <div class="swipe-panel" data-testid="mobile-panel-profile"><DiveProfile dive={selected} loading={app.selectedDiveLoading} /></div>
+          <div class="swipe-panel" data-testid="mobile-panel-map"><MapPanel siteName={selectedSite?.name} gps={selectedSite?.gps} /></div>
+        </div>
+        <div class="dots-row">
+          <div class="dots" role="group" aria-label="Panel selector">
+            {#each panels as p, i}
+              <button
+                class="dot"
+                class:active={i === activePanelIndex}
+                data-testid={`mobile-dot-${p.key}`}
+                aria-label={`Show ${p.label} panel`}
+                onclick={() => jumpToPanel(i)}
+              >{i === activePanelIndex ? "●" : "○"}</button>
+            {/each}
+          </div>
+          <span class="active-panel-label" data-testid="mobile-active-panel-label">{panels[activePanelIndex].label}</span>
+        </div>
+      </div>
+
+      <div class="bottom-row" data-testid="mobile-panel-dives">
+        {#if app.sortedDives.length === 0}
+          <div class="empty-state" data-testid="mobile-empty-state">
+            <p class="empty-msg">No dives yet.</p>
+            <button class="empty-btn" onclick={handleOpenLogbook}>Open Logbook…</button>
+            <button class="empty-btn" onclick={() => (app.showCloudDialog = { email: "" })}>Connect to Cloud…</button>
+          </div>
+        {:else}
+          <DiveList dives={app.sortedDives} trips={app.logbook.trips} sites={app.logbook.sites} />
+        {/if}
+      </div>
     </div>
   </div>
 {/if}
@@ -103,20 +118,12 @@
     overflow: hidden;
   }
 
-  .mobile-content {
-    flex: 1;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    padding-top: env(safe-area-inset-top);
-  }
-
-  .dives-header {
+  .mobile-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: var(--space-2) var(--space-4);
+    padding-top: calc(env(safe-area-inset-top) + var(--space-2));
     background: var(--panel);
     border-bottom: 1px solid var(--hair);
     flex: 0 0 auto;
@@ -140,6 +147,102 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .dives-title {
+    font-weight: 600;
+    font-size: 1rem;
+  }
+
+  .gear-btn {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: var(--txt-3);
+    cursor: pointer;
+    padding: 0;
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobile-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .top-row {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .swipe-container {
+    flex: 1;
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
+  }
+
+  .swipe-panel {
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+    overflow: auto;
+    min-width: 0;
+  }
+
+  .dots-row {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: 4px 0;
+    background: var(--panel);
+    border-bottom: 1px solid var(--hair);
+  }
+
+  .dots {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .dot {
+    background: none;
+    border: none;
+    font-size: 12px;
+    color: var(--txt-3);
+    cursor: pointer;
+    padding: 4px 6px;
+    min-height: 32px;
+    min-width: 32px;
+  }
+
+  .dot.active {
+    color: var(--blue);
+  }
+
+  .active-panel-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--txt-2);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .bottom-row {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .empty-state {
@@ -169,70 +272,5 @@
     cursor: pointer;
     min-height: 44px;
     min-width: 200px;
-  }
-
-  .dives-title {
-    font-weight: 600;
-    font-size: 1rem;
-  }
-
-  .gear-btn {
-    background: none;
-    border: none;
-    font-size: 1.2rem;
-    color: var(--txt-3);
-    cursor: pointer;
-    padding: 0;
-    min-height: 44px;
-    min-width: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .mobile-panel {
-    flex: 1;
-    overflow: auto;
-    height: 100%;
-  }
-
-  .tab-bar {
-    flex: 0 0 56px;
-    display: flex;
-    align-items: stretch;
-    background: var(--panel);
-    border-top: 1px solid var(--hair);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-
-  .tab-btn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    border: 0;
-    background: transparent;
-    color: var(--txt-3);
-    font: inherit;
-    cursor: pointer;
-    padding: 0;
-    min-height: 44px;
-  }
-
-  .tab-btn.active {
-    color: var(--blue);
-  }
-
-  .tab-icon {
-    font-size: 18px;
-    line-height: 1;
-  }
-
-  .tab-label {
-    font-size: 10px;
-    font-weight: 560;
-    letter-spacing: 0.03em;
   }
 </style>

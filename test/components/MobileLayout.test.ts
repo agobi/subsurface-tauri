@@ -1,54 +1,49 @@
 // AI-generated (Claude)
-import { describe, it, expect, beforeEach } from "vitest";
+// test/components/MobileLayout.test.ts
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
 import MobileLayout from "$lib/components/MobileLayout.svelte";
 import { app } from "$lib/stores/app.svelte.ts";
 
 describe("MobileLayout", () => {
-  beforeEach(() => app.reset());
-
-  it("renders all four tab buttons", () => {
-    render(MobileLayout);
-    expect(screen.getByRole("tab", { name: /dives/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /profile/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /info/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /map/i })).toBeInTheDocument();
+  beforeEach(() => {
+    app.reset();
+    Element.prototype.scrollTo = vi.fn();
   });
 
-  it("shows the dives panel by default", () => {
+  it("always renders the bottom dive-list row, with no tab bar", () => {
     render(MobileLayout);
     expect(screen.getByTestId("mobile-panel-dives")).toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   });
 
-  it("switches to profile panel when Profile tab is clicked", async () => {
+  it("shows the empty state in the bottom row when there are no dives", () => {
     render(MobileLayout);
-    await fireEvent.click(screen.getByRole("tab", { name: /profile/i }));
-    expect(screen.getByTestId("mobile-panel-profile")).toBeInTheDocument();
-    expect(screen.queryByTestId("mobile-panel-dives")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mobile-empty-state")).toBeInTheDocument();
   });
 
-  it("switches to info panel when Info tab is clicked", async () => {
+  it("renders three swipeable top panels: info, profile, map", () => {
     render(MobileLayout);
-    await fireEvent.click(screen.getByRole("tab", { name: /info/i }));
     expect(screen.getByTestId("mobile-panel-info")).toBeInTheDocument();
-  });
-
-  it("switches to map panel when Map tab is clicked", async () => {
-    render(MobileLayout);
-    await fireEvent.click(screen.getByRole("tab", { name: /map/i }));
+    expect(screen.getByTestId("mobile-panel-profile")).toBeInTheDocument();
     expect(screen.getByTestId("mobile-panel-map")).toBeInTheDocument();
   });
 
-  it("marks the active tab with aria-selected=true", async () => {
+  it("defaults to Profile as the active top panel", () => {
     render(MobileLayout);
-    const divesTab = screen.getByRole("tab", { name: /dives/i });
-    expect(divesTab).toHaveAttribute("aria-selected", "true");
-    await fireEvent.click(screen.getByRole("tab", { name: /profile/i }));
-    expect(divesTab).toHaveAttribute("aria-selected", "false");
-    expect(screen.getByRole("tab", { name: /profile/i })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("mobile-active-panel-label")).toHaveTextContent("Profile");
+    expect(screen.getByTestId("mobile-dot-profile")).toHaveClass("active");
   });
 
-  it("shows a gear button in the dives panel header", () => {
+  it("jumps to a panel when its dot is clicked", async () => {
+    render(MobileLayout);
+    await fireEvent.click(screen.getByTestId("mobile-dot-info"));
+    expect(screen.getByTestId("mobile-active-panel-label")).toHaveTextContent("Info");
+    expect(screen.getByTestId("mobile-dot-info")).toHaveClass("active");
+    expect(screen.getByTestId("mobile-dot-profile")).not.toHaveClass("active");
+  });
+
+  it("shows a settings gear button in the persistent header", () => {
     render(MobileLayout);
     expect(screen.getByRole("button", { name: /settings/i })).toBeInTheDocument();
   });
