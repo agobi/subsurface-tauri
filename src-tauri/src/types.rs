@@ -100,6 +100,71 @@ pub struct Dive {
     pub events: Vec<DiveEvent>,
 }
 
+/// Oxygen Toxicity Units, per Erik Baker's "Oxygen Toxicity Calculations" (3rd-order
+/// continuous approximation of eq. 2). Ported from `calculate_otu` in Qt Subsurface's
+/// `core/divelist.cpp`; only OC (no CCR/PSCR setpoint/sensor) is modeled since this app
+/// does not track those fields.
+fn compute_otu(samples: &[Sample], events: &[DiveEvent], cylinders: &[Cylinder]) -> Option<i32> {
+    if samples.len() < 2 {
+        return None;
+    }
+    let active_fo2 = |time_sec: i64| -> f64 {
+        let gas_switch = events
+            .iter()
+            .filter(|e| e.name == "gaschange" && e.time_sec <= time_sec)
+            .max_by_key(|e| e.time_sec);
+        let o2_percent = match gas_switch {
+            Some(e) if e.o2_percent.is_some() => e.o2_percent,
+            Some(e) => e
+                .cylinder
+                .and_then(|i| cylinders.get(i as usize))
+                .and_then(|c| c.o2_percent),
+            None => cylinders.first().and_then(|c| c.o2_percent),
+        };
+        o2_percent.unwrap_or(21.0) / 100.0
+    };
+    let bar = |depth_m: f64| depth_m / 10.0 + 1.0;
+
+    let mut otu = 0.0;
+    for pair in samples.windows(2) {
+        let (prev, cur) = (&pair[0], &pair[1]);
+        let mut t = (cur.time_sec - prev.time_sec) as f64;
+        let fo2 = active_fo2(prev.time_sec);
+        let mut po2i = (fo2 * bar(prev.depth_m) * 1000.0).round();
+        let mut po2f = (fo2 * bar(cur.depth_m) * 1000.0).round();
+        if po2i <= 500.0 && po2f <= 500.0 {
+            continue;
+        }
+        if po2i <= 500.0 {
+            t = t * (po2f - 500.0) / (po2f - po2i);
+            po2i = 501.0;
+        } else if po2f <= 500.0 {
+            t = t * (po2i - 500.0) / (po2i - po2f);
+            po2f = 501.0;
+        }
+        let pm = (po2f + po2i) / 1000.0 - 1.0;
+        otu += t / 60.0
+            * pm.powf(5.0 / 6.0)
+            * (1.0 - 5.0 * (po2f - po2i).powi(2) / 216_000_000.0 / (pm * pm));
+    }
+    Some(otu.round() as i32)
+}
+
+/// Literal `Math.max(...samples.map(s => s.cns ?? 0))` — the DC-reported per-sample CNS
+/// values as-is, not a from-scratch recomputation (see Qt's `calculate_cns_dive`, which
+/// also folds in surface-interval decay from prior dives and is out of scope here).
+fn compute_max_cns(samples: &[Sample]) -> Option<f64> {
+    if samples.is_empty() {
+        return None;
+    }
+    Some(
+        samples
+            .iter()
+            .map(|s| s.cns.unwrap_or(0.0))
+            .fold(0.0, f64::max),
+    )
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Trip {
@@ -170,6 +235,10 @@ pub struct DiveSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_weight_kg: Option<f64>,
     pub media_count: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub otu: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_cns: Option<f64>,
 }
 
 impl From<&Dive> for DiveSummary {
@@ -194,6 +263,8 @@ impl From<&Dive> for DiveSummary {
             divemode: d.divemode.clone(),
             total_weight_kg: d.total_weight_kg,
             media_count: d.media_count,
+            otu: compute_otu(&d.samples, &d.events, &d.cylinders),
+            max_cns: compute_max_cns(&d.samples),
         }
     }
 }
@@ -360,6 +431,87 @@ mod tests {
         assert_eq!(summary.max_depth_m, dive.max_depth_m);
         assert_eq!(summary.water_temp_c, dive.water_temp_c);
         assert_eq!(summary.total_weight_kg, dive.total_weight_kg);
+    }
+
+    fn sample_with_cns(time_sec: i64, depth_m: f64, cns: Option<f64>) -> Sample {
+        Sample { time_sec, depth_m, temp_c: None, ndl_sec: None, tts_sec: None, cns, pressure_bar: None }
+    }
+
+    #[test]
+    fn max_cns_is_max_of_sample_cns_values() {
+        let mut dive = make_dive(1);
+        dive.samples = vec![
+            sample_with_cns(0, 10.0, None),
+            sample_with_cns(60, 10.0, Some(5.0)),
+            sample_with_cns(120, 10.0, Some(20.0)),
+            sample_with_cns(180, 10.0, Some(12.0)),
+        ];
+        let summary = DiveSummary::from(&dive);
+        assert_eq!(summary.max_cns, Some(20.0));
+    }
+
+    #[test]
+    fn max_cns_is_zero_when_no_sample_reports_cns() {
+        let mut dive = make_dive(1);
+        dive.samples = vec![sample_with_cns(0, 10.0, None), sample_with_cns(60, 10.0, None)];
+        let summary = DiveSummary::from(&dive);
+        assert_eq!(summary.max_cns, Some(0.0));
+    }
+
+    #[test]
+    fn max_cns_is_none_when_dive_has_no_samples() {
+        let mut dive = make_dive(1);
+        dive.samples = vec![];
+        let summary = DiveSummary::from(&dive);
+        assert_eq!(summary.max_cns, None);
+    }
+
+    #[test]
+    fn otu_is_none_with_fewer_than_two_samples() {
+        let mut dive = make_dive(1);
+        dive.samples = vec![sample_with_cns(0, 10.0, None)];
+        let summary = DiveSummary::from(&dive);
+        assert_eq!(summary.otu, None);
+    }
+
+    #[test]
+    fn otu_is_zero_when_po2_never_exceeds_500_mbar() {
+        let mut dive = make_dive(1);
+        dive.cylinders = vec![];
+        dive.events = vec![];
+        dive.samples = vec![sample_with_cns(0, 0.0, None), sample_with_cns(60, 0.0, None)];
+        let summary = DiveSummary::from(&dive);
+        assert_eq!(summary.otu, Some(0));
+    }
+
+    #[test]
+    fn otu_uses_cylinder_o2_percent_for_constant_depth_segment() {
+        // fO2=1.0 at 6m (bar = 1.6) holds po2 at 1600 mbar for 60s.
+        // pm = 3200/1000 - 1 = 2.2; otu = (60/60) * 2.2^(5/6) ~= 1.929 -> rounds to 2.
+        let mut dive = make_dive(1);
+        dive.cylinders = vec![Cylinder { o2_percent: Some(100.0), ..Default::default() }];
+        dive.events = vec![];
+        dive.samples = vec![sample_with_cns(0, 6.0, None), sample_with_cns(60, 6.0, None)];
+        let summary = DiveSummary::from(&dive);
+        assert_eq!(summary.otu, Some(2));
+    }
+
+    #[test]
+    fn otu_uses_active_gas_switch_event_over_cylinder_default() {
+        let mut dive = make_dive(1);
+        dive.cylinders = vec![Cylinder { o2_percent: Some(21.0), ..Default::default() }];
+        dive.events = vec![DiveEvent {
+            time_sec: 0,
+            name: "gaschange".to_owned(),
+            event_type: None,
+            flags: None,
+            value: None,
+            cylinder: Some(0),
+            o2_percent: Some(100.0),
+        }];
+        dive.samples = vec![sample_with_cns(0, 6.0, None), sample_with_cns(60, 6.0, None)];
+        let summary = DiveSummary::from(&dive);
+        assert_eq!(summary.otu, Some(2));
     }
 
     #[test]

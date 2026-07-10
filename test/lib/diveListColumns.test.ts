@@ -11,7 +11,7 @@ function makeDive(overrides: Partial<Dive> = {}): Dive {
 }
 
 describe("DEFAULT_COL_ORDER", () => {
-  it("contains 18 entries", () => expect(DEFAULT_COL_ORDER.length).toBe(18));
+  it("contains 20 entries", () => expect(DEFAULT_COL_ORDER.length).toBe(20));
   it("starts with nr and date", () => {
     expect(DEFAULT_COL_ORDER[0]).toBe("nr");
     expect(DEFAULT_COL_ORDER[1]).toBe("date");
@@ -24,7 +24,7 @@ describe("DEFAULT_COL_ORDER", () => {
 });
 
 describe("ALL_COLS", () => {
-  it("contains 18 entries", () => expect(ALL_COLS.length).toBe(18));
+  it("contains 20 entries", () => expect(ALL_COLS.length).toBe(20));
   it("defaultVisible cols appear before non-defaultVisible cols in DEFAULT_COL_ORDER", () => {
     const orders = DEFAULT_COL_ORDER.map(id => ALL_COLS.find(c => c.id === id)!.defaultVisible);
     const firstHidden = orders.indexOf(false);
@@ -97,6 +97,18 @@ describe("render", () => {
   it("media renders em-dash when zero", () => {
     expect(col("media").render(makeDive({ mediaCount: 0 }), { sites: noSites })).toBe("—");
   });
+  it("otu renders integer value", () => {
+    expect(col("otu").render(makeDive({ otu: 42 }), { sites: noSites })).toBe("42");
+  });
+  it("otu renders em-dash when missing", () => {
+    expect(col("otu").render(makeDive(), { sites: noSites })).toBe("—");
+  });
+  it("maxcns renders rounded percent", () => {
+    expect(col("maxcns").render(makeDive({ maxCns: 19.6 }), { sites: noSites })).toBe("20%");
+  });
+  it("maxcns renders em-dash when missing", () => {
+    expect(col("maxcns").render(makeDive(), { sites: noSites })).toBe("—");
+  });
 });
 
 describe("gas mix (cylinder column)", () => {
@@ -155,5 +167,11 @@ describe("compare", () => {
   });
   it("date: lexicographic dateTime", () => {
     expect(col("date").compare(makeDive({ dateTime: "2024-01-01T00:00:00" }), makeDive({ dateTime: "2024-06-01T00:00:00" }), ctx)).toBeLessThan(0);
+  });
+  it("otu: ascending by otu", () => {
+    expect(col("otu").compare(makeDive({ otu: 10 }), makeDive({ otu: 30 }), ctx)).toBeLessThan(0);
+  });
+  it("maxcns: ascending by maxCns", () => {
+    expect(col("maxcns").compare(makeDive({ maxCns: 10 }), makeDive({ maxCns: 30 }), ctx)).toBeLessThan(0);
   });
 });
