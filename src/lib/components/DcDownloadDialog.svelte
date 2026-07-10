@@ -4,6 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { app } from "$lib/stores/app.svelte.ts";
+  import { fmtDepth } from "$lib/units.ts";
   import { loadDcConnections, saveDcConnection, type DcConnections, type Transport } from "$lib/dcConnections.ts";
 
   let { open, onClose }: { open: boolean; onClose: () => void } = $props();
@@ -414,7 +415,7 @@
             <div class="dive-item" role="listitem">
               <input type="checkbox" bind:checked={selectedDives[i]} aria-label={`Include dive on ${dive.date}`} />
               <span class="dive-date">{dive.date.replace("T", " ")}</span>
-              <span class="dive-depth">{dive.maxDepthM.toFixed(1)} m</span>
+              <span class="dive-depth">{fmtDepth(dive.maxDepthM, app.displayUnits)}</span>
               <span class="dive-dur">{fmtDuration(dive.durationSec)}</span>
             </div>
           {/each}

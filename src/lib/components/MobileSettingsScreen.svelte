@@ -1,7 +1,7 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Theme } from "$lib/stores/app.svelte.ts";
+  import type { Theme, UnitsPref } from "$lib/stores/app.svelte.ts";
   import { app } from "$lib/stores/app.svelte.ts";
   import type { RecentEntry } from "$lib/types.ts";
   import { fmtRecentLabel } from "$lib/format.ts";
@@ -28,7 +28,12 @@
 
   async function handleThemeChange(theme: Theme) {
     app.setTheme(theme);
-    await saveAndEmitAppearance({ theme });
+    await saveAndEmitAppearance({ theme, units: app.unitsPref });
+  }
+
+  async function handleUnitsChange(units: UnitsPref) {
+    app.setUnitsPref(units);
+    await saveAndEmitAppearance({ theme: app.theme, units });
   }
 
   async function handleRecentTap(entry: RecentEntry) {
@@ -60,7 +65,12 @@
     <span class="settings-title">Settings</span>
   </header>
   <div class="settings-body">
-    <AppearanceSection currentTheme={app.theme} onThemeChange={handleThemeChange} />
+    <AppearanceSection
+      currentTheme={app.theme}
+      onThemeChange={handleThemeChange}
+      currentUnits={app.unitsPref}
+      onUnitsChange={handleUnitsChange}
+    />
 
     <div class="logging-section-wrap">
       <LoggingSection currentLevel={currentLogLevel} onLevelChange={handleLogLevelChange} />

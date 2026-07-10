@@ -1,13 +1,32 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
   import type { Dive } from "$lib/types.ts";
+  import { fmtCylinderSize, fmtPressure } from "$lib/units.ts";
+  import { app } from "$lib/stores/app.svelte.ts";
   let { dive }: { dive: Dive } = $props();
+  let units = $derived(app.displayUnits);
+  let volumeUnit = $derived(units === "IMPERIAL" ? "cuft" : "L");
+  let pressureUnit = $derived(units === "IMPERIAL" ? "psi" : "bar");
 </script>
 <table class="eq">
-  <thead><tr><th>Type</th><th>Size</th><th>Work</th><th>Start</th><th>End</th><th>O2%</th></tr></thead>
+  <thead><tr>
+    <th>Type</th>
+    <th>Size ({volumeUnit})</th>
+    <th>Work ({pressureUnit})</th>
+    <th>Start ({pressureUnit})</th>
+    <th>End ({pressureUnit})</th>
+    <th>O2%</th>
+  </tr></thead>
   <tbody>
     {#each dive.cylinders as c}
-      <tr><td>{c.description}</td><td class="tnum">{c.volumeL ?? "-"} L</td><td class="tnum">{c.workPressureBar ?? "-"}</td><td class="tnum">{c.startBar ?? "-"}</td><td class="tnum">{c.endBar ?? "-"}</td><td class="tnum">{c.o2Percent ?? "-"}</td></tr>
+      <tr>
+        <td>{c.description}</td>
+        <td class="tnum">{c.volumeL != null ? fmtCylinderSize(c.volumeL, c.workPressureBar, units, { suffix: false }) : "-"}</td>
+        <td class="tnum">{c.workPressureBar != null ? fmtPressure(c.workPressureBar, units, { suffix: false }) : "-"}</td>
+        <td class="tnum">{c.startBar != null ? fmtPressure(c.startBar, units, { suffix: false }) : "-"}</td>
+        <td class="tnum">{c.endBar != null ? fmtPressure(c.endBar, units, { suffix: false }) : "-"}</td>
+        <td class="tnum">{c.o2Percent ?? "-"}</td>
+      </tr>
     {/each}
   </tbody>
 </table>

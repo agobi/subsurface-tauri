@@ -2,17 +2,24 @@
 import { load } from "@tauri-apps/plugin-store";
 import { emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import type { Theme } from "$lib/stores/app.svelte.ts";
+import type { Theme, UnitsPref } from "$lib/stores/app.svelte.ts";
+import type { Units } from "$lib/types.ts";
 import type { ColId } from "$lib/diveListColumns.ts";
 import { DEFAULT_COL_ORDER, ALL_COLS } from "$lib/diveListColumns.ts";
 
 export interface AppearancePrefs {
   theme: Theme;
+  units: UnitsPref;
 }
 
 export function resolveTheme(theme: Theme): "dark" | "light" {
   if (theme !== "auto") return theme;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+export function resolveUnits(pref: UnitsPref, logbookUnits: Units): Units {
+  if (pref === "auto") return logbookUnits;
+  return pref;
 }
 
 export function applyTheme(theme: Theme): void {
@@ -21,8 +28,8 @@ export function applyTheme(theme: Theme): void {
 
 export async function loadAppearancePrefs(): Promise<AppearancePrefs> {
   const store = await load("settings.json");
-  const saved = await store.get<AppearancePrefs>("appearance");
-  return saved ?? { theme: "auto" };
+  const saved = await store.get<Partial<AppearancePrefs>>("appearance");
+  return { theme: "auto", units: "auto", ...saved };
 }
 
 export async function saveAndEmitAppearance(prefs: AppearancePrefs): Promise<void> {

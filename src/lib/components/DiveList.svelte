@@ -16,7 +16,7 @@
   let prefs = $derived(app.diveListPrefs);
   let visibleCols = $derived(app.visibleCols);
   let gridCols = $derived(visibleCols.map(c => c.width).join(" ") + " 28px");
-  let ctx: RenderCtx = $derived({ sites });
+  let ctx: RenderCtx = $derived({ sites, units: app.displayUnits });
   let pickerOpen = $state(false);
 
   let filtered = $derived(

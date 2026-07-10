@@ -1,13 +1,14 @@
 // AI-generated (Claude)
 import { invoke } from "@tauri-apps/api/core";
-import type { Logbook, Dive, DiveSummary, OpenResult, RecentEntry } from "$lib/types.ts";
+import type { Logbook, Dive, DiveSummary, OpenResult, RecentEntry, Units } from "$lib/types.ts";
 import type { DiveListPrefs } from "$lib/prefs.ts";
-import { DEFAULT_DIVE_LIST_PREFS, loadDiveListPrefs, saveDiveListPrefs } from "$lib/prefs.ts";
+import { DEFAULT_DIVE_LIST_PREFS, loadDiveListPrefs, saveDiveListPrefs, resolveUnits } from "$lib/prefs.ts";
 import type { ColId, ColDef, RenderCtx } from "$lib/diveListColumns.ts";
 import { ALL_COLS } from "$lib/diveListColumns.ts";
 
 export type PanelKey = "info" | "profile" | "list" | "map";
 export type Theme = "dark" | "light" | "auto";
+export type UnitsPref = "auto" | "METRIC" | "IMPERIAL";
 export type VisiblePanels = Record<PanelKey, boolean>;
 export type Platform = "desktop" | "mobile";
 
@@ -21,8 +22,10 @@ class AppStore {
   selectedDiveLoading = $state(false);
   visiblePanels = $state<VisiblePanels>({ ...ALL_VISIBLE });
   theme = $state<Theme>("auto");
+  unitsPref = $state<UnitsPref>("auto");
   platform = $state<Platform>("desktop");
   get isCloudLogbook(): boolean { return this.recents[0]?.kind === "Cloud"; }
+  get displayUnits(): Units { return resolveUnits(this.unitsPref, this.logbook.units); }
   displayName = $state("");
   recents = $state<RecentEntry[]>([]);
   parseWarnings = $state<string[]>([]);
@@ -53,7 +56,7 @@ class AppStore {
     }
     const col = ALL_COLS.find(c => c.id === sortKey);
     if (!col) return this.logbook.dives;
-    const ctx: RenderCtx = { sites: this.logbook.sites };
+    const ctx: RenderCtx = { sites: this.logbook.sites, units: this.displayUnits };
     return [...this.logbook.dives].sort((a, b) => {
       const ae = col.render(a, ctx) === "—";
       const be = col.render(b, ctx) === "—";
@@ -162,6 +165,8 @@ class AppStore {
 
   setTheme(t: Theme) { this.theme = t; }
 
+  setUnitsPref(u: UnitsPref) { this.unitsPref = u; }
+
   setPlatform(p: Platform) { this.platform = p; }
 
   async setSortCol(id: ColId) {
@@ -212,6 +217,7 @@ class AppStore {
     this.selectedDiveLoading = false;
     this.visiblePanels = { ...ALL_VISIBLE };
     this.theme = "auto";
+    this.unitsPref = "auto";
     this.platform = "desktop";
     this.displayName = "";
     this.recents = [];

@@ -1,7 +1,8 @@
 // AI-generated (Claude)
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 import DiveProfile from "$lib/components/DiveProfile.svelte";
+import { app } from "$lib/stores/app.svelte.ts";
 import type { Dive } from "$lib/types.ts";
 
 const dive: Dive = {
@@ -20,6 +21,8 @@ const diveNoSamples: Dive = {
 };
 
 describe("DiveProfile", () => {
+  beforeEach(() => app.reset());
+
   it("renders without crash when samples is empty", () => {
     const { container } = render(DiveProfile, { props: { dive: diveNoSamples } });
     expect(container.querySelector("svg")).toBeInTheDocument();
@@ -44,5 +47,27 @@ describe("DiveProfile", () => {
     expect(dashed).toBeInTheDocument();
     // The cue is both color (rate-fast red) and non-color (dashed) together.
     expect(dashed?.getAttribute("stroke")).toContain("rate-fast");
+  });
+
+  it("renders metric depth-axis gridline labels every 6m by default", () => {
+    const { container } = render(DiveProfile, { props: { dive } });
+    const labels = Array.from(container.querySelectorAll("text")).map(t => t.textContent);
+    expect(labels).toContain("0m");
+    expect(labels).toContain("6m");
+    expect(labels).not.toContain("10ft");
+  });
+});
+
+describe("DiveProfile — imperial units", () => {
+  beforeEach(() => app.reset());
+  afterEach(() => app.reset());
+
+  it("renders depth-axis gridline labels every 10ft instead of 6m", () => {
+    app.setUnitsPref("IMPERIAL");
+    const { container } = render(DiveProfile, { props: { dive } });
+    const labels = Array.from(container.querySelectorAll("text")).map(t => t.textContent);
+    expect(labels).toContain("0ft");
+    expect(labels).toContain("10ft");
+    expect(labels).not.toContain("6m");
   });
 });

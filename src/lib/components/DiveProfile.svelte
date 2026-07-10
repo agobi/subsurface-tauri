@@ -1,14 +1,18 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
   import type { Dive, Sample } from "$lib/types.ts";
-  import { timeToX, depthToY, depthAxisMax, ascentRateClass } from "$lib/profile/profile-scale.ts";
+  import { timeToX, depthToY, depthAxisMax, depthGridLines, ascentRateClass } from "$lib/profile/profile-scale.ts";
   import { fmtMinSec } from "$lib/format.ts";
+  import { fmtDepth } from "$lib/units.ts";
+  import { app } from "$lib/stores/app.svelte.ts";
 
   let { dive, loading = false }: { dive: Dive | null; loading?: boolean } = $props();
 
   const VB = { w: 1000, h: 380 };
   const M = { l: 44, r: 18, t: 24, b: 34 };
   const plot = { x0: M.l, x1: VB.w - M.r, y0: M.t, y1: VB.h - M.b };
+
+  let units = $derived(app.displayUnits);
 
   let series = $state({ depth: true, temp: true, tank: true, ceiling: true, po2: false, mod: false, hr: false });
 
@@ -58,7 +62,6 @@
     { key: "mod", label: "MOD", implemented: false },
     { key: "hr", label: "Heart rate", implemented: false },
   ];
-  function gridLines(max: number) { const out: number[] = []; for (let m = 0; m <= max; m += 5) out.push(m); return out; }
 </script>
 
 {#if loading}
@@ -85,9 +88,9 @@
       </linearGradient>
     </defs>
 
-    {#each gridLines(axisMax) as m}
-      <line x1={plot.x0} y1={depthToY(m, axisMax, plot)} x2={plot.x1} y2={depthToY(m, axisMax, plot)} stroke="var(--grid)" stroke-width="1" />
-      <text x={plot.x0 - 8} y={depthToY(m, axisMax, plot) + 3} text-anchor="end" fill="var(--txt-3)" font-size="10" font-family="var(--font-mono)">{m}m</text>
+    {#each depthGridLines(axisMax, units) as tick}
+      <line x1={plot.x0} y1={depthToY(tick.m, axisMax, plot)} x2={plot.x1} y2={depthToY(tick.m, axisMax, plot)} stroke="var(--grid)" stroke-width="1" />
+      <text x={plot.x0 - 8} y={depthToY(tick.m, axisMax, plot) + 3} text-anchor="end" fill="var(--txt-3)" font-size="10" font-family="var(--font-mono)">{tick.label}{units === "IMPERIAL" ? "ft" : "m"}</text>
     {/each}
 
     {#if series.depth}
@@ -114,7 +117,7 @@
       <g transform={`translate(${Math.min(cursor.x + 8, plot.x1 - 150)}, ${plot.y0 + 8})`}>
         <rect width="150" height="64" rx="6" fill="rgba(0,0,0,.75)" />
         <text x="8" y="18" fill="#fff" font-size="11" font-family="var(--font-mono)">@ {fmtMinSec(cursor.sample.timeSec)}</text>
-        <text x="8" y="34" fill="#fff" font-size="11" font-family="var(--font-mono)">D {cursor.sample.depthM.toFixed(1)} m</text>
+        <text x="8" y="34" fill="#fff" font-size="11" font-family="var(--font-mono)">D {fmtDepth(cursor.sample.depthM, units)}</text>
         <text x="8" y="50" fill="#fff" font-size="11" font-family="var(--font-mono)">{cursor.sample.ndlSec != null ? `NDL ${fmtMinSec(cursor.sample.ndlSec)}` : ""}</text>
       </g>
     {/if}
