@@ -8,7 +8,7 @@
   import InfoPanel from "$lib/components/InfoPanel.svelte";
   import MapPanel from "$lib/components/MapPanel.svelte";
   import MobileSettingsScreen from "$lib/components/MobileSettingsScreen.svelte";
-  import { computeActiveIndex } from "$lib/swipePanel.ts";
+  import { computeSnapTarget } from "$lib/swipePanel.ts";
   import { onDestroy, onMount } from "svelte";
 
   type PanelKey = "info" | "profile" | "map";
@@ -20,10 +20,19 @@
     { key: "map", label: "Map" },
   ];
 
+  // A swipe must cross 45% of the panel width before it counts as a page change;
+  // short of that it snaps back. Keeps light/vertical touches from flipping panels.
+  const SNAP_THRESHOLD = 0.45;
+  const SETTLE_DELAY_MS = 100;
+  const PROGRAMMATIC_SCROLL_MS = 350;
+
   let screen = $state<Screen>("main");
   let activePanelIndex = $state(1); // Profile: most useful panel right after picking a dive
   let swipeEl: HTMLDivElement;
-  let scrollRafId = 0;
+  let settleTimerId = 0;
+  let programmaticResetTimerId = 0;
+  let gestureStartIndex = 0; // reassigned to activePanelIndex at the start of each scroll gesture
+  let programmaticScroll = false;
   let wrapEl: HTMLElement;
   let topFrac = $state(0.45);
   let dragCleanup: (() => void) | null = null;
@@ -52,7 +61,11 @@
     swipeEl.scrollLeft = swipeEl.clientWidth * activePanelIndex;
   });
 
-  onDestroy(() => dragCleanup?.());
+  onDestroy(() => {
+    dragCleanup?.();
+    clearTimeout(settleTimerId);
+    clearTimeout(programmaticResetTimerId);
+  });
 
   let selected = $derived(app.selectedDive);
   let selectedSite = $derived(app.logbook.sites.find((s) => s.id === selected?.siteId));
@@ -69,16 +82,30 @@
   }
 
   function handleSwipeScroll() {
-    if (scrollRafId) return;
-    scrollRafId = requestAnimationFrame(() => {
-      scrollRafId = 0;
-      activePanelIndex = computeActiveIndex(swipeEl.scrollLeft, swipeEl.clientWidth, panels.length);
-    });
+    if (programmaticScroll) return;
+    if (!settleTimerId) gestureStartIndex = activePanelIndex;
+    clearTimeout(settleTimerId);
+    settleTimerId = window.setTimeout(() => {
+      settleTimerId = 0;
+      const target = computeSnapTarget(swipeEl.scrollLeft, gestureStartIndex, swipeEl.clientWidth, panels.length, SNAP_THRESHOLD);
+      snapToPanel(target);
+    }, SETTLE_DELAY_MS);
+  }
+
+  function snapToPanel(index: number) {
+    activePanelIndex = index;
+    programmaticScroll = true;
+    swipeEl.scrollTo({ left: index * swipeEl.clientWidth, behavior: "smooth" });
+    clearTimeout(programmaticResetTimerId);
+    programmaticResetTimerId = window.setTimeout(() => {
+      programmaticScroll = false;
+    }, PROGRAMMATIC_SCROLL_MS);
   }
 
   function jumpToPanel(index: number) {
-    activePanelIndex = index;
-    swipeEl.scrollTo({ left: index * swipeEl.clientWidth, behavior: "smooth" });
+    clearTimeout(settleTimerId);
+    settleTimerId = 0;
+    snapToPanel(index);
   }
 </script>
 
@@ -228,14 +255,12 @@
     display: flex;
     overflow-x: auto;
     overflow-y: hidden;
-    scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch;
     min-height: 0;
   }
 
   .swipe-panel {
     flex: 0 0 100%;
-    scroll-snap-align: start;
     overflow: auto;
     min-width: 0;
   }
