@@ -6,7 +6,8 @@ export type ColId =
   | "nr" | "date" | "rating" | "depth" | "duration"
   | "buddy" | "guide" | "country" | "location"
   | "temp" | "suit" | "cylinder" | "sac" | "tags"
-  | "notes" | "divemode" | "weight" | "media";
+  | "notes" | "divemode" | "weight" | "media"
+  | "otu" | "maxcns";
 
 export interface RenderCtx {
   sites: Site[];
@@ -27,6 +28,7 @@ export const DEFAULT_COL_ORDER: ColId[] = [
   "buddy", "guide", "country", "location",
   "temp", "suit", "cylinder", "sac", "tags",
   "notes", "divemode", "weight", "media",
+  "otu", "maxcns",
 ];
 
 function gasMix(c?: Cylinder): string {
@@ -147,5 +149,15 @@ export const ALL_COLS: ColDef[] = [
     id: "media", label: "Media", width: "56px", defaultVisible: false,
     render: (d) => d.mediaCount > 0 ? String(d.mediaCount) : "—",
     compare: (a, b) => a.mediaCount - b.mediaCount,
+  },
+  {
+    id: "otu", label: "OTU", width: "56px", defaultVisible: false,
+    render: (d) => d.otu != null ? String(d.otu) : "—",
+    compare: (a, b) => (a.otu ?? 0) - (b.otu ?? 0),
+  },
+  {
+    id: "maxcns", label: "Max CNS", width: "72px", defaultVisible: false,
+    render: (d) => d.maxCns != null ? `${Math.round(d.maxCns)}%` : "—",
+    compare: (a, b) => (a.maxCns ?? 0) - (b.maxCns ?? 0),
   },
 ];

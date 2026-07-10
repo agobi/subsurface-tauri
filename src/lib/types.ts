@@ -53,6 +53,8 @@ export interface DiveSummary {
   divemode?: string;
   totalWeightKg?: number;
   mediaCount: number;
+  otu?: number;
+  maxCns?: number;
 }
 
 export interface Dive extends DiveSummary {
