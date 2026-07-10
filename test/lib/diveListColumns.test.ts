@@ -192,9 +192,9 @@ describe("compare", () => {
     expect(col("date").compare(makeDive({ dateTime: "2024-01-01T00:00:00" }), makeDive({ dateTime: "2024-06-01T00:00:00" }), metricCtx)).toBeLessThan(0);
   });
   it("otu: ascending by otu", () => {
-    expect(col("otu").compare(makeDive({ otu: 10 }), makeDive({ otu: 30 }), ctx)).toBeLessThan(0);
+    expect(col("otu").compare(makeDive({ otu: 10 }), makeDive({ otu: 30 }), metricCtx)).toBeLessThan(0);
   });
   it("maxcns: ascending by maxCns", () => {
-    expect(col("maxcns").compare(makeDive({ maxCns: 10 }), makeDive({ maxCns: 30 }), ctx)).toBeLessThan(0);
+    expect(col("maxcns").compare(makeDive({ maxCns: 10 }), makeDive({ maxCns: 30 }), metricCtx)).toBeLessThan(0);
   });
 });
