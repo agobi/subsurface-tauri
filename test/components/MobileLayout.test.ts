@@ -4,6 +4,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
 import MobileLayout from "$lib/components/MobileLayout.svelte";
 import { app } from "$lib/stores/app.svelte.ts";
+import { invoke } from "@tauri-apps/api/core";
+import type { Dive, DiveSummary, Logbook, OpenResult } from "$lib/types.ts";
 
 describe("MobileLayout", () => {
   beforeEach(() => {
@@ -77,5 +79,41 @@ describe("MobileLayout", () => {
 
     const topRow = container.querySelector(".top-row") as HTMLElement;
     expect(topRow.style.flex).toBe("0 0 80%");
+  });
+});
+
+describe("MobileLayout wired to data", () => {
+  function makeDiveSummary(number: number, dateTime: string): DiveSummary {
+    return { number, dateTime, durationSec: 1800, tags: [], cylinders: [], mediaCount: 0 };
+  }
+  function makeDive(number: number, dateTime: string): Dive {
+    return { ...makeDiveSummary(number, dateTime), samples: [], events: [] };
+  }
+
+  const logbook: Logbook = {
+    dives: [makeDiveSummary(1, "2024-01-01T08:00:00"), makeDiveSummary(2, "2024-02-02T09:00:00")],
+    trips: [],
+    sites: [],
+    units: "METRIC",
+  };
+
+  beforeEach(async () => {
+    app.reset();
+    Element.prototype.scrollTo = vi.fn();
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({ logbook, displayName: "test", recents: [], warnings: [] } as unknown as OpenResult)
+      .mockResolvedValueOnce(makeDive(1, "2024-01-01T08:00:00"));
+    await app.startup();
+  });
+
+  it("updates the (always-mounted) info panel when a different dive is tapped in the list", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(makeDive(2, "2024-02-02T09:00:00"));
+    render(MobileLayout);
+    expect(await screen.findByText("2024-01-01 08:00:00")).toBeInTheDocument();
+
+    const rows = screen.getAllByTestId("dive-row");
+    await fireEvent.click(rows[1]); // sorted by number asc by default: rows[1] is dive 2
+
+    expect(await screen.findByText("2024-02-02 09:00:00")).toBeInTheDocument();
   });
 });
