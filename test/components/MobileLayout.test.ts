@@ -61,4 +61,21 @@ describe("MobileLayout", () => {
     expect(screen.queryByTestId("mobile-settings-screen")).not.toBeInTheDocument();
     expect(screen.getByTestId("mobile-panel-dives")).toBeInTheDocument();
   });
+
+  it("exposes a splitter that resizes the top row, clamped to [0.2, 0.8]", async () => {
+    const { container } = render(MobileLayout);
+    const splitter = screen.getByTestId("mobile-splitter");
+    expect(splitter).toHaveAttribute("role", "separator");
+
+    // jsdom's getBoundingClientRect() returns an all-zero rect, so any positive
+    // clientY drives the computed fraction to +Infinity, which clamps to the max (0.8).
+    // This mirrors the existing loose-assertion pattern in QuadrantGrid.test.ts, which
+    // works around the same jsdom limitation.
+    await fireEvent.pointerDown(splitter, { pointerId: 1, clientY: 100 });
+    await fireEvent.pointerMove(splitter, { pointerId: 1, clientY: 900 });
+    await fireEvent.pointerUp(splitter, { pointerId: 1, clientY: 900 });
+
+    const topRow = container.querySelector(".top-row") as HTMLElement;
+    expect(topRow.style.flex).toBe("0 0 80%");
+  });
 });

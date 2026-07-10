@@ -9,6 +9,7 @@
   import MapPanel from "$lib/components/MapPanel.svelte";
   import MobileSettingsScreen from "$lib/components/MobileSettingsScreen.svelte";
   import { computeActiveIndex } from "$lib/swipePanel.ts";
+  import { onDestroy } from "svelte";
 
   type PanelKey = "info" | "profile" | "map";
   type Screen = "main" | "settings";
@@ -23,6 +24,31 @@
   let activePanelIndex = $state(1); // Profile: most useful panel right after picking a dive
   let swipeEl: HTMLDivElement;
   let scrollRafId = 0;
+  let wrapEl: HTMLElement;
+  let topFrac = $state(0.45);
+  let dragCleanup: (() => void) | null = null;
+
+  function startRowDrag(e: PointerEvent) {
+    e.preventDefault();
+    dragCleanup?.();
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture?.(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const rect = wrapEl.getBoundingClientRect();
+      topFrac = Math.min(0.8, Math.max(0.2, (ev.clientY - rect.top) / rect.height));
+    };
+    const up = (ev: PointerEvent) => {
+      target.releasePointerCapture?.(ev.pointerId);
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      dragCleanup = null;
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    dragCleanup = up;
+  }
+
+  onDestroy(() => dragCleanup?.());
 
   let selected = $derived(app.selectedDive);
   let selectedSite = $derived(app.logbook.sites.find((s) => s.id === selected?.siteId));
@@ -66,8 +92,8 @@
       </div>
     </div>
 
-    <div class="mobile-body">
-      <div class="top-row" style="flex: 0 0 45%">
+    <div class="mobile-body" bind:this={wrapEl}>
+      <div class="top-row" style="flex: 0 0 {topFrac * 100}%">
         <div
           class="swipe-container"
           bind:this={swipeEl}
@@ -94,6 +120,17 @@
           <span class="active-panel-label" data-testid="mobile-active-panel-label">{panels[activePanelIndex].label}</span>
         </div>
       </div>
+
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex --><!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        class="splitter-h"
+        data-testid="mobile-splitter"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize panels"
+        tabindex="0"
+        onpointerdown={startRowDrag}
+      ></div>
 
       <div class="bottom-row" data-testid="mobile-panel-dives">
         {#if app.sortedDives.length === 0}
@@ -272,5 +309,24 @@
     cursor: pointer;
     min-height: 44px;
     min-width: 200px;
+  }
+
+  .splitter-h {
+    flex: 0 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: row-resize;
+    touch-action: none;
+    background: var(--panel);
+    border-bottom: 1px solid var(--hair);
+  }
+
+  .splitter-h::after {
+    content: "";
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--hair-strong, rgba(128, 128, 128, 0.4));
   }
 </style>
