@@ -1,6 +1,7 @@
 // AI-generated (Claude)
-import type { DiveSummary, Site, Cylinder } from "$lib/types.ts";
+import type { DiveSummary, Site, Cylinder, Units } from "$lib/types.ts";
 import { fmtMinSec } from "$lib/format.ts";
+import { fmtDepth, fmtTemp, fmtWeight } from "$lib/units.ts";
 
 export type ColId =
   | "nr" | "date" | "rating" | "depth" | "duration"
@@ -11,6 +12,7 @@ export type ColId =
 
 export interface RenderCtx {
   sites: Site[];
+  units: Units;
 }
 
 export interface ColDef {
@@ -74,7 +76,7 @@ export const ALL_COLS: ColDef[] = [
   },
   {
     id: "depth", label: "Depth", width: "56px", defaultVisible: true,
-    render: (d) => d.maxDepthM != null ? d.maxDepthM.toFixed(1) : "—",
+    render: (d, ctx) => d.maxDepthM != null ? fmtDepth(d.maxDepthM, ctx.units, { suffix: false }) : "—",
     compare: (a, b) => (a.maxDepthM ?? 0) - (b.maxDepthM ?? 0),
   },
   {
@@ -104,7 +106,7 @@ export const ALL_COLS: ColDef[] = [
   },
   {
     id: "temp", label: "Temp.", width: "56px", defaultVisible: false,
-    render: (d) => d.waterTempC != null ? d.waterTempC.toFixed(1) : "—",
+    render: (d, ctx) => d.waterTempC != null ? fmtTemp(d.waterTempC, ctx.units, { suffix: false }) : "—",
     compare: (a, b) => (a.waterTempC ?? 0) - (b.waterTempC ?? 0),
   },
   {
@@ -142,7 +144,7 @@ export const ALL_COLS: ColDef[] = [
   },
   {
     id: "weight", label: "Weight", width: "56px", defaultVisible: false,
-    render: (d) => d.totalWeightKg != null ? d.totalWeightKg.toFixed(2) : "—",
+    render: (d, ctx) => d.totalWeightKg != null ? fmtWeight(d.totalWeightKg, ctx.units, { suffix: false }) : "—",
     compare: (a, b) => (a.totalWeightKg ?? 0) - (b.totalWeightKg ?? 0),
   },
   {
