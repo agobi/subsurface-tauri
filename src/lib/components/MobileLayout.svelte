@@ -9,7 +9,7 @@
   import MapPanel from "$lib/components/MapPanel.svelte";
   import MobileSettingsScreen from "$lib/components/MobileSettingsScreen.svelte";
   import { computeActiveIndex } from "$lib/swipePanel.ts";
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
 
   type PanelKey = "info" | "profile" | "map";
   type Screen = "main" | "settings";
@@ -37,8 +37,8 @@
       const rect = wrapEl.getBoundingClientRect();
       topFrac = Math.min(0.8, Math.max(0.2, (ev.clientY - rect.top) / rect.height));
     };
-    const up = (ev: PointerEvent) => {
-      target.releasePointerCapture?.(ev.pointerId);
+    const up = (ev?: PointerEvent) => {
+      target.releasePointerCapture?.(ev?.pointerId ?? e.pointerId);
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       dragCleanup = null;
@@ -47,6 +47,10 @@
     target.addEventListener("pointerup", up);
     dragCleanup = up;
   }
+
+  onMount(() => {
+    swipeEl.scrollLeft = swipeEl.clientWidth * activePanelIndex;
+  });
 
   onDestroy(() => dragCleanup?.());
 

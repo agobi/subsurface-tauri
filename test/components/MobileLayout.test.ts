@@ -80,6 +80,61 @@ describe("MobileLayout", () => {
     const topRow = container.querySelector(".top-row") as HTMLElement;
     expect(topRow.style.flex).toBe("0 0 80%");
   });
+
+  // jsdom does not propagate exceptions thrown inside event listeners back through
+  // dispatchEvent synchronously — it reports them via a `window` "error" event instead.
+  // So these regression tests listen for that event rather than wrapping fireEvent in
+  // try/catch (which would report as "not thrown" even against buggy code).
+  //
+  // jsdom also has no `releasePointerCapture` on Element, so the crash site
+  // (`target.releasePointerCapture?.(ev.pointerId)`) short-circuits via optional
+  // chaining and never evaluates `ev.pointerId` unless the method actually exists.
+  // Stubbing it makes the argument evaluation (and the bug) observable.
+  function captureWindowErrors() {
+    const errors: unknown[] = [];
+    const handler = (e: ErrorEvent) => errors.push(e.error ?? e.message);
+    window.addEventListener("error", handler);
+    return { errors, stop: () => window.removeEventListener("error", handler) };
+  }
+
+  it("does not crash when a second pointerdown interrupts an in-progress drag", async () => {
+    Element.prototype.releasePointerCapture = vi.fn();
+    render(MobileLayout);
+    const splitter = screen.getByTestId("mobile-splitter");
+    const { errors, stop } = captureWindowErrors();
+
+    await fireEvent.pointerDown(splitter, { pointerId: 1, clientY: 100 });
+    // A stray second pointerdown (e.g. multi-touch) mid-drag calls the previous
+    // drag's cleanup with no event — this used to throw trying to read ev.pointerId.
+    await fireEvent.pointerDown(splitter, { pointerId: 2, clientY: 150 });
+
+    stop();
+    expect(errors).toEqual([]);
+  });
+
+  it("does not crash when the component unmounts mid-drag", async () => {
+    Element.prototype.releasePointerCapture = vi.fn();
+    const { unmount } = render(MobileLayout);
+    const splitter = screen.getByTestId("mobile-splitter");
+    const { errors, stop } = captureWindowErrors();
+    // Svelte's effect-teardown error handling surfaces a synchronous throw inside
+    // onDestroy as a Node-level unhandled promise rejection rather than a synchronous
+    // throw here or a browser `window` "unhandledrejection" event (jsdom doesn't wire
+    // that up), so listen on `process` instead.
+    const rejections: unknown[] = [];
+    const rejectionHandler = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", rejectionHandler);
+
+    await fireEvent.pointerDown(splitter, { pointerId: 1, clientY: 100 });
+    unmount();
+    // Node only flags a promise as an unhandled rejection after the current macrotask
+    // (not just microtasks) completes, so wait a real tick before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    stop();
+    process.off("unhandledRejection", rejectionHandler);
+    expect([...errors, ...rejections]).toEqual([]);
+  });
 });
 
 describe("MobileLayout wired to data", () => {
