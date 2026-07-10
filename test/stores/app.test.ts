@@ -357,3 +357,34 @@ describe("parseWarnings", () => {
     expect(app.parseWarnings).toEqual([]);
   });
 });
+
+describe("units preference", () => {
+  beforeEach(() => app.reset());
+
+  it("starts with unitsPref 'auto' and displayUnits METRIC by default", () => {
+    expect(app.unitsPref).toBe("auto");
+    expect(app.displayUnits).toBe("METRIC");
+  });
+
+  it("displayUnits follows logbook.units when unitsPref is auto", () => {
+    app.logbook = { dives: [], trips: [], sites: [], units: "IMPERIAL" };
+    expect(app.displayUnits).toBe("IMPERIAL");
+  });
+
+  it("setUnitsPref('METRIC') overrides an IMPERIAL logbook", () => {
+    app.logbook = { dives: [], trips: [], sites: [], units: "IMPERIAL" };
+    app.setUnitsPref("METRIC");
+    expect(app.displayUnits).toBe("METRIC");
+  });
+
+  it("setUnitsPref('IMPERIAL') overrides a METRIC logbook", () => {
+    app.setUnitsPref("IMPERIAL");
+    expect(app.displayUnits).toBe("IMPERIAL");
+  });
+
+  it("reset() restores unitsPref to 'auto'", () => {
+    app.setUnitsPref("IMPERIAL");
+    app.reset();
+    expect(app.unitsPref).toBe("auto");
+  });
+});

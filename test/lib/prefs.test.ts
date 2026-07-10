@@ -12,6 +12,7 @@ import {
   saveDiveListPrefs,
   loadLoggingPrefs,
   applyLogLevel,
+  resolveUnits,
   DEFAULT_DIVE_LIST_PREFS,
   type DiveListPrefs,
 } from "$lib/prefs.ts";
@@ -51,12 +52,24 @@ describe("applyTheme", () => {
   });
 });
 
+describe("resolveUnits", () => {
+  it("returns logbook units when pref is 'auto'", () => {
+    expect(resolveUnits("auto", "IMPERIAL")).toBe("IMPERIAL");
+    expect(resolveUnits("auto", "METRIC")).toBe("METRIC");
+  });
+
+  it("returns the explicit pref, overriding logbook units", () => {
+    expect(resolveUnits("METRIC", "IMPERIAL")).toBe("METRIC");
+    expect(resolveUnits("IMPERIAL", "METRIC")).toBe("IMPERIAL");
+  });
+});
+
 describe("loadAppearancePrefs", () => {
   afterEach(() => {
     vi.resetAllMocks();
   });
 
-  it("returns default auto theme when settings.json has no appearance key", async () => {
+  it("returns default auto theme and auto units when settings.json has no appearance key", async () => {
     const mockGet = vi.fn().mockResolvedValue(null);
     vi.mocked(store.load).mockResolvedValueOnce({
       get: mockGet,
@@ -64,10 +77,10 @@ describe("loadAppearancePrefs", () => {
       save: vi.fn(),
     } as any);
     const prefs = await loadAppearancePrefs();
-    expect(prefs).toEqual({ theme: "auto" });
+    expect(prefs).toEqual({ theme: "auto", units: "auto" });
   });
 
-  it("returns saved theme when present", async () => {
+  it("returns saved theme when present, defaulting units to auto (back-compat)", async () => {
     const mockGet = vi.fn().mockResolvedValue({ theme: "light" });
     vi.mocked(store.load).mockResolvedValueOnce({
       get: mockGet,
@@ -75,7 +88,18 @@ describe("loadAppearancePrefs", () => {
       save: vi.fn(),
     } as any);
     const prefs = await loadAppearancePrefs();
-    expect(prefs).toEqual({ theme: "light" });
+    expect(prefs).toEqual({ theme: "light", units: "auto" });
+  });
+
+  it("returns saved theme and units when both present", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ theme: "dark", units: "IMPERIAL" });
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: mockGet,
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    const prefs = await loadAppearancePrefs();
+    expect(prefs).toEqual({ theme: "dark", units: "IMPERIAL" });
   });
 });
 
@@ -93,11 +117,11 @@ describe("saveAndEmitAppearance", () => {
       save: mockSave,
     } as any);
 
-    await saveAndEmitAppearance({ theme: "auto" });
+    await saveAndEmitAppearance({ theme: "auto", units: "auto" });
 
-    expect(mockSet).toHaveBeenCalledWith("appearance", { theme: "auto" });
+    expect(mockSet).toHaveBeenCalledWith("appearance", { theme: "auto", units: "auto" });
     expect(mockSave).toHaveBeenCalled();
-    expect(vi.mocked(event.emit)).toHaveBeenCalledWith("prefs:appearance-changed", { theme: "auto" });
+    expect(vi.mocked(event.emit)).toHaveBeenCalledWith("prefs:appearance-changed", { theme: "auto", units: "auto" });
   });
 });
 
