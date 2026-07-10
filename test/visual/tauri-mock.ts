@@ -117,7 +117,10 @@ export async function platform(): Promise<string> {
 // @tauri-apps/plugin-store
 export async function load(_path: string) {
   return {
-    get: async (_key: string) => null,
+    get: async (key: string) => {
+      if (key === 'appearance') return (window as any).__playwright_fixtures__?.appearance ?? null;
+      return null;
+    },
     set: async (_key: string, _value: unknown): Promise<void> => {},
     save: async (): Promise<void> => {},
   };

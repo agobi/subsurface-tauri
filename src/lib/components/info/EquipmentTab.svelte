@@ -1,7 +1,7 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
   import type { Dive } from "$lib/types.ts";
-  import { fmtVolume, fmtPressure } from "$lib/units.ts";
+  import { fmtCylinderSize, fmtPressure } from "$lib/units.ts";
   import { app } from "$lib/stores/app.svelte.ts";
   let { dive }: { dive: Dive } = $props();
   let units = $derived(app.displayUnits);
@@ -21,7 +21,7 @@
     {#each dive.cylinders as c}
       <tr>
         <td>{c.description}</td>
-        <td class="tnum">{c.volumeL != null ? fmtVolume(c.volumeL, units, { suffix: false }) : "-"}</td>
+        <td class="tnum">{c.volumeL != null ? fmtCylinderSize(c.volumeL, c.workPressureBar, units, { suffix: false }) : "-"}</td>
         <td class="tnum">{c.workPressureBar != null ? fmtPressure(c.workPressureBar, units, { suffix: false }) : "-"}</td>
         <td class="tnum">{c.startBar != null ? fmtPressure(c.startBar, units, { suffix: false }) : "-"}</td>
         <td class="tnum">{c.endBar != null ? fmtPressure(c.endBar, units, { suffix: false }) : "-"}</td>

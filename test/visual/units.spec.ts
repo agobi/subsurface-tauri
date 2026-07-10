@@ -26,22 +26,13 @@ for (const units of ['METRIC', 'IMPERIAL'] as const) {
 
   test(`dive list depth column — ${suffix}`, async ({ page, platform }) => {
     test.skip(platform === 'android', 'desktop-only per scoped coverage');
-    await setupPage(page, { logbook: sampleLogbookWithUnits, theme: 'dark', platform });
-    await page.evaluate(async (u) => {
-      const { app } = await import('/src/lib/stores/app.svelte.ts');
-      app.setUnitsPref(u);
-    }, units);
-    await page.waitForTimeout(100);
+    await setupPage(page, { logbook: sampleLogbookWithUnits, theme: 'dark', platform, units });
     await expect(page.locator('[data-testid="quad-list"]')).toHaveScreenshot(`dive-list-${suffix}-dark.png`);
   });
 
   test(`information tab depth/temp — ${suffix}`, async ({ page, platform }) => {
     test.skip(platform === 'android', 'desktop-only per scoped coverage');
-    await setupPage(page, { logbook: sampleLogbookWithUnits, theme: 'dark', platform });
-    await page.evaluate(async (u) => {
-      const { app } = await import('/src/lib/stores/app.svelte.ts');
-      app.setUnitsPref(u);
-    }, units);
+    await setupPage(page, { logbook: sampleLogbookWithUnits, theme: 'dark', platform, units });
     await page.getByRole('tab', { name: 'Information' }).click();
     await page.waitForTimeout(100);
     await expect(page.locator('[data-testid="quad-info"]')).toHaveScreenshot(`info-tab-${suffix}-dark.png`);
@@ -49,11 +40,7 @@ for (const units of ['METRIC', 'IMPERIAL'] as const) {
 
   test(`equipment tab headers/values — ${suffix}`, async ({ page, platform }) => {
     test.skip(platform === 'android', 'desktop-only per scoped coverage');
-    await setupPage(page, { logbook: sampleLogbookWithUnits, theme: 'dark', platform });
-    await page.evaluate(async (u) => {
-      const { app } = await import('/src/lib/stores/app.svelte.ts');
-      app.setUnitsPref(u);
-    }, units);
+    await setupPage(page, { logbook: sampleLogbookWithUnits, theme: 'dark', platform, units });
     await page.getByRole('tab', { name: 'Equipment' }).click();
     await page.waitForTimeout(100);
     await expect(page.locator('[data-testid="quad-info"]')).toHaveScreenshot(`equipment-tab-${suffix}-dark.png`);

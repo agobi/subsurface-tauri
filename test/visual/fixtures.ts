@@ -58,11 +58,21 @@ export const sampleLogbook: Logbook = {
 
 export async function setupPage(
   page: Page,
-  opts: { logbook?: Logbook | null; theme: 'light' | 'dark'; path?: string; platform?: string },
+  opts: {
+    logbook?: Logbook | null;
+    theme: 'light' | 'dark';
+    path?: string;
+    platform?: string;
+    units?: 'auto' | 'METRIC' | 'IMPERIAL';
+  },
 ): Promise<void> {
-  await page.addInitScript(([lb, plat]) => {
-    (window as any).__playwright_fixtures__ = { logbook: lb, platform: plat };
-  }, [opts.logbook ?? null, opts.platform ?? 'macos'] as [Logbook | null, string]);
+  await page.addInitScript(([lb, plat, units]) => {
+    (window as any).__playwright_fixtures__ = {
+      logbook: lb,
+      platform: plat,
+      appearance: units ? { theme: 'auto', units } : undefined,
+    };
+  }, [opts.logbook ?? null, opts.platform ?? 'macos', opts.units] as [Logbook | null, string, string | undefined]);
   await page.emulateMedia({ colorScheme: opts.theme });
   await page.goto(opts.path ?? '/');
   await page.waitForLoadState('networkidle');

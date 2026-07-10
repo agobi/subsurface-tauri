@@ -46,7 +46,10 @@ describe("InfoPanel", () => {
     await fireEvent.click(screen.getByRole("tab", { name: /equipment/i }));
     expect(screen.getByText("Size (cuft)")).toBeInTheDocument();
     expect(screen.getByText("Work (psi)")).toBeInTheDocument();
-    expect(screen.getByText("0.85")).toBeInTheDocument();
+    // Cylinder cuft is physical-volume x working-pressure-in-atm (Qt's
+    // get_cylinder_string convention), not a plain L->cuft conversion:
+    // (24 / 28.3168466) * (232 / 1.01325) ~= 194.
+    expect(screen.getByText("194")).toBeInTheDocument();
     expect(screen.getByText("3365")).toBeInTheDocument();
   });
 });
