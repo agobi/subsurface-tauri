@@ -1,6 +1,7 @@
 // AI-generated (Claude)
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
+import { within } from "@testing-library/dom";
 import { invoke } from "@tauri-apps/api/core";
 import MobileSettingsScreen from "$lib/components/MobileSettingsScreen.svelte";
 import { app } from "$lib/stores/app.svelte.ts";
@@ -18,9 +19,10 @@ describe("MobileSettingsScreen", () => {
 
   it("renders appearance section with theme radios", () => {
     render(MobileSettingsScreen, { props: { onBack: vi.fn() } });
-    expect(screen.getByLabelText("Light")).toBeInTheDocument();
-    expect(screen.getByLabelText("Dark")).toBeInTheDocument();
-    expect(screen.getByLabelText("Auto")).toBeInTheDocument();
+    const group = screen.getByRole("radiogroup", { name: "Color Theme" });
+    expect(within(group).getByLabelText("Light")).toBeInTheDocument();
+    expect(within(group).getByLabelText("Dark")).toBeInTheDocument();
+    expect(within(group).getByLabelText("Auto")).toBeInTheDocument();
   });
 
   it("calls onBack when back button is clicked", async () => {
@@ -34,6 +36,14 @@ describe("MobileSettingsScreen", () => {
     render(MobileSettingsScreen, { props: { onBack: vi.fn() } });
     await fireEvent.change(screen.getByLabelText("Light"));
     expect(app.theme).toBe("light");
+  });
+
+  it("renders units radio group and updates app.unitsPref when changed", async () => {
+    render(MobileSettingsScreen, { props: { onBack: vi.fn() } });
+    expect(screen.getByLabelText("Metric")).toBeInTheDocument();
+    expect(screen.getByLabelText("Imperial")).toBeInTheDocument();
+    await fireEvent.change(screen.getByLabelText("Imperial"));
+    expect(app.unitsPref).toBe("IMPERIAL");
   });
 
   it("renders logging section with level radios reflecting the backend's current level", async () => {

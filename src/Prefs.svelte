@@ -1,7 +1,7 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import type { Theme } from "$lib/stores/app.svelte.ts";
+  import type { Theme, UnitsPref } from "$lib/stores/app.svelte.ts";
   import {
     loadAppearancePrefs,
     applyTheme,
@@ -13,6 +13,7 @@
   import PrefsShell from "$lib/components/prefs/PrefsShell.svelte";
 
   let currentTheme = $state<Theme>("dark");
+  let currentUnits = $state<UnitsPref>("auto");
   let currentLogLevel = $state<LogLevel>("info");
   let cleanupMatchMedia: (() => void) | undefined;
 
@@ -20,6 +21,7 @@
     try {
       const prefs = await loadAppearancePrefs();
       currentTheme = prefs.theme;
+      currentUnits = prefs.units;
       applyTheme(prefs.theme);
     } catch (e) {
       console.error("Failed to load appearance prefs:", e);
@@ -43,7 +45,12 @@
   async function handleThemeChange(theme: Theme) {
     currentTheme = theme;
     applyTheme(theme);
-    await saveAndEmitAppearance({ theme });
+    await saveAndEmitAppearance({ theme, units: currentUnits });
+  }
+
+  async function handleUnitsChange(units: UnitsPref) {
+    currentUnits = units;
+    await saveAndEmitAppearance({ theme: currentTheme, units });
   }
 
   async function handleLogLevelChange(level: LogLevel) {
@@ -55,6 +62,8 @@
 <PrefsShell
   {currentTheme}
   onThemeChange={handleThemeChange}
+  {currentUnits}
+  onUnitsChange={handleUnitsChange}
   {currentLogLevel}
   onLogLevelChange={handleLogLevelChange}
 />

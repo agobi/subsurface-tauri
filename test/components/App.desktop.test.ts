@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { message } from "@tauri-apps/plugin-dialog";
+import * as store from "@tauri-apps/plugin-store";
 import App from "../../src/App.svelte";
 import { app } from "$lib/stores/app.svelte.ts";
 import sample from "$lib/fixtures/logbook.sample.json";
@@ -198,5 +199,40 @@ describe("App — parse warnings dialog", () => {
     render(App);
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument());
     expect(vi.mocked(message)).not.toHaveBeenCalled();
+  });
+});
+
+describe("App — units preference wiring", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    app.reset();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+  });
+
+  it("loads the saved units preference on startup", async () => {
+    vi.mocked(store.load).mockResolvedValue({
+      get: vi.fn().mockResolvedValue({ theme: "auto", units: "IMPERIAL" }),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    render(App);
+    await waitFor(() => expect(app.unitsPref).toBe("IMPERIAL"));
+  });
+
+  it("updates app.unitsPref when prefs:appearance-changed is received", async () => {
+    render(App);
+    await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument());
+
+    const listenCalls = vi.mocked(listen).mock.calls;
+    const call = listenCalls.find((c) => c[0] === "prefs:appearance-changed");
+    expect(call).toBeDefined();
+    const callback = call![1] as (e: { payload: unknown }) => void;
+    callback({ payload: { theme: "dark", units: "IMPERIAL" } });
+
+    expect(app.unitsPref).toBe("IMPERIAL");
   });
 });
