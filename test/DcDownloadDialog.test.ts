@@ -29,6 +29,8 @@ describe("DcDownloadDialog", () => {
     });
   });
 
+  afterEach(() => app.reset());
+
   it("goes straight to Add Device when there are no known devices", async () => {
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
     expect(await screen.findByText("Add Device")).toBeTruthy();
@@ -282,6 +284,25 @@ describe("DcDownloadDialog", () => {
       },
     });
     expect(await screen.findByText("Review Downloaded Dives")).toBeTruthy();
+  });
+
+  it("shows converted depth in the review list when units is IMPERIAL", async () => {
+    app.setUnitsPref("IMPERIAL");
+    let completeCb: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-complete") completeCb = cb as typeof completeCb;
+      return () => {};
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await vi.waitFor(() => expect(completeCb).toBeDefined());
+    completeCb!({
+      payload: {
+        dives: [{ date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 }],
+        skipped: 0,
+        cancelled: false,
+      },
+    });
+    expect(await screen.findByText("41 ft")).toBeTruthy();
   });
 
   it("renders the review summary with no stray whitespace before the period", async () => {

@@ -1,7 +1,8 @@
 // AI-generated (Claude)
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
 import InfoPanel from "$lib/components/InfoPanel.svelte";
+import { app } from "$lib/stores/app.svelte.ts";
 import type { Dive } from "$lib/types.ts";
 
 const dive: Dive = {
@@ -12,6 +13,8 @@ const dive: Dive = {
 };
 
 describe("InfoPanel", () => {
+  beforeEach(() => app.reset());
+
   it("defaults to the Notes tab and shows notes", () => {
     render(InfoPanel, { props: { dive } });
     expect(screen.getByText("Great cave dive")).toBeInTheDocument();
@@ -27,5 +30,23 @@ describe("InfoPanel", () => {
     render(InfoPanel, { props: { dive } });
     await fireEvent.click(screen.getByRole("tab", { name: /information/i }));
     expect(screen.getByText(/34.7/)).toBeInTheDocument();
+  });
+
+  it("shows converted depth/temp in Information tab when units is IMPERIAL", async () => {
+    app.setUnitsPref("IMPERIAL");
+    render(InfoPanel, { props: { dive } });
+    await fireEvent.click(screen.getByRole("tab", { name: /information/i }));
+    expect(screen.getByText(/114 ft/)).toBeInTheDocument();
+    expect(screen.getByText(/66 °F/)).toBeInTheDocument();
+  });
+
+  it("shows unit-aware headers and converted values in Equipment when units is IMPERIAL", async () => {
+    app.setUnitsPref("IMPERIAL");
+    render(InfoPanel, { props: { dive } });
+    await fireEvent.click(screen.getByRole("tab", { name: /equipment/i }));
+    expect(screen.getByText("Size (cuft)")).toBeInTheDocument();
+    expect(screen.getByText("Work (psi)")).toBeInTheDocument();
+    expect(screen.getByText("0.85")).toBeInTheDocument();
+    expect(screen.getByText("3365")).toBeInTheDocument();
   });
 });
