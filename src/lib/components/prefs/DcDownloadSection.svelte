@@ -11,7 +11,7 @@
 
   async function onGapChange(value: string) {
     const parsed = Number(value);
-    const mergeGapMinutes = Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_DC_DOWNLOAD_PREFS.mergeGapMinutes;
+    const mergeGapMinutes = Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : DEFAULT_DC_DOWNLOAD_PREFS.mergeGapMinutes;
     prefs = { ...prefs, mergeGapMinutes };
     await saveDcDownloadPrefs(prefs);
   }
