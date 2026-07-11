@@ -60,6 +60,8 @@ export interface DiveSummary {
 export interface Dive extends DiveSummary {
   samples: Sample[];
   events: DiveEvent[];
+  dcDeviceId?: string;
+  dcDiveId?: string;
 }
 
 export interface Trip {
