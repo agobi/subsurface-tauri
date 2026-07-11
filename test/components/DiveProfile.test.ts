@@ -20,6 +20,14 @@ const diveNoSamples: Dive = {
   maxDepthM: 18, samples: [], events: [],
 };
 
+const diveHighPressure: Dive = {
+  number: 3, dateTime: "2024-03-17T09:00:00", durationSec: 60, tags: [], cylinders: [], mediaCount: 0,
+  maxDepthM: 10, samples: [
+    { timeSec: 0, depthM: 10, pressureBar: 300 },
+    { timeSec: 60, depthM: 0, pressureBar: 280 },
+  ], events: [],
+};
+
 describe("DiveProfile", () => {
   beforeEach(() => app.reset());
 
@@ -47,6 +55,16 @@ describe("DiveProfile", () => {
     expect(dashed).toBeInTheDocument();
     // The cue is both color (rate-fast red) and non-color (dashed) together.
     expect(dashed?.getAttribute("stroke")).toContain("rate-fast");
+  });
+
+  it("does not flat-line the tank-pressure trace above the old 250 bar cap", () => {
+    const { container } = render(DiveProfile, { props: { dive: diveHighPressure } });
+    const tankLine = container.querySelector("polyline[stroke='var(--amber)']");
+    expect(tankLine).toBeInTheDocument();
+    const points = tankLine!.getAttribute("points")!.trim().split(" ").map((p) => p.split(",").map(Number));
+    // 300 bar and 280 bar would both clip to the same y (top) under the old fixed
+    // /250 normalization; with dynamic rescaling they must land at different heights.
+    expect(points[0][1]).not.toBeCloseTo(points[1][1]);
   });
 
   it("renders metric depth-axis gridline labels every 6m by default", () => {
