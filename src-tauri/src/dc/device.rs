@@ -3,7 +3,7 @@
 //!
 //! `run_download` opens the device, registers event/cancel/dive callbacks,
 //! and calls `dc_device_foreach`, buffering each new dive in memory (see
-//! [`DownloadResult::new_dives`]). Nothing is written to disk here — writing
+//! [`DownloadResult::groups`]). Nothing is written to disk here — writing
 //! happens later, only once the user confirms via
 //! `crate::dc::commands::commit_dc_download`.
 use std::collections::HashSet;
@@ -19,11 +19,16 @@ use crate::dc::fingerprint::{lookup_fp, known_dive_ids};
 use crate::dc::parser::parse_dive;
 use crate::dc::transport::{open_iostream, TransportArg};
 use crate::dc::writer::ParsedDive;
+use crate::dc::merge::{group_overlapping_dives, DiveGroup};
 
 /// Result returned by [`run_download`].
 pub struct DownloadResult {
-    /// New dives buffered in memory — not yet written to disk.
-    pub new_dives: Vec<ParsedDive>,
+    /// New dives buffered in memory, grouped by time-adjacency and depth
+    /// continuity — not yet written to disk, and not yet folded: each
+    /// group's raw segments are preserved so the review step can offer
+    /// either the folded [`DiveGroup::merged`] view or the individual
+    /// segments. See [`crate::dc::merge::group_overlapping_dives`].
+    pub groups: Vec<DiveGroup>,
     pub skipped: u32,
     /// The serial number and raw fingerprint bytes of the newest dive seen, if any.
     /// Stored in pending state and written to disk only when the user confirms via `commit_dc_download`.
@@ -260,6 +265,7 @@ pub fn run_download<R: tauri::Runtime>(
     vendor: String,
     model: String,
     transport_arg: TransportArg,
+    merge_gap_minutes: u32,
     cancel: Arc<AtomicBool>,
 ) -> Result<DownloadResult, String> {
     let descriptor = find_descriptor(&vendor, &model)
@@ -381,9 +387,20 @@ pub fn run_download<R: tauri::Runtime>(
             _ => None,
         };
 
-        log::info!("DC: complete new={} skipped={} cancelled={}", download_ctx.new_dives.len(), download_ctx.skipped, cancelled);
+        // Group overlapping/adjacent short segments (e.g. CCR pre-dive loop
+        // checks) with their neighboring real dive before returning — see
+        // merge.rs. Raw segments are preserved in each group for the review
+        // step's "unmerge" action, not discarded.
+        let fetched = download_ctx.new_dives.len();
+        let gap_seconds = merge_gap_minutes as i64 * 60;
+        let groups = group_overlapping_dives(download_ctx.new_dives, gap_seconds);
+        if groups.len() < fetched {
+            log::info!("DC: grouped {} segment(s) with a neighboring dive", fetched - groups.len());
+        }
+
+        log::info!("DC: complete new={} skipped={} cancelled={}", groups.len(), download_ctx.skipped, cancelled);
         Ok(DownloadResult {
-            new_dives: download_ctx.new_dives,
+            groups,
             skipped: download_ctx.skipped,
             newest_fp,
             dc_model: download_ctx.dc_model,
