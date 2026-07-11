@@ -6,6 +6,7 @@
   import AppearanceSection from "./AppearanceSection.svelte";
   import LoggingSection from "./LoggingSection.svelte";
   import RecentsSection from "./RecentsSection.svelte";
+  import DcDownloadSection from "./DcDownloadSection.svelte";
 
   let {
     currentTheme,
@@ -23,7 +24,7 @@
     onLogLevelChange: (l: LogLevel) => void;
   } = $props();
 
-  type SectionId = "appearance" | "logging" | "recents";
+  type SectionId = "appearance" | "logging" | "recents" | "dcDownload";
   let activeSection = $state<SectionId>("appearance");
 </script>
 
@@ -38,6 +39,8 @@
       <LoggingSection currentLevel={currentLogLevel} onLevelChange={onLogLevelChange} />
     {:else if activeSection === "recents"}
       <RecentsSection />
+    {:else if activeSection === "dcDownload"}
+      <DcDownloadSection />
     {/if}
   </div>
 </div>
