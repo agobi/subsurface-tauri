@@ -17,7 +17,6 @@ import {
   resolveUnits,
   DEFAULT_DIVE_LIST_PREFS,
   DEFAULT_DC_DOWNLOAD_PREFS,
-  resolveUnits,
   type DiveListPrefs,
 } from "$lib/prefs.ts";
 import { ALL_COLS } from "$lib/diveListColumns.ts";
