@@ -96,6 +96,10 @@ pub struct Dive {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_weight_kg: Option<f64>,
     pub media_count: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub otu: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_cns: Option<f64>,
     pub samples: Vec<Sample>,
     pub events: Vec<DiveEvent>,
 }
@@ -104,7 +108,7 @@ pub struct Dive {
 /// continuous approximation of eq. 2). Ported from `calculate_otu` in Qt Subsurface's
 /// `core/divelist.cpp`; only OC (no CCR/PSCR setpoint/sensor) is modeled since this app
 /// does not track those fields.
-fn compute_otu(samples: &[Sample], events: &[DiveEvent], cylinders: &[Cylinder]) -> Option<i32> {
+pub(crate) fn compute_otu(samples: &[Sample], events: &[DiveEvent], cylinders: &[Cylinder]) -> Option<i32> {
     if samples.len() < 2 {
         return None;
     }
@@ -153,7 +157,7 @@ fn compute_otu(samples: &[Sample], events: &[DiveEvent], cylinders: &[Cylinder])
 /// Literal `Math.max(...samples.map(s => s.cns ?? 0))` — the DC-reported per-sample CNS
 /// values as-is, not a from-scratch recomputation (see Qt's `calculate_cns_dive`, which
 /// also folds in surface-interval decay from prior dives and is out of scope here).
-fn compute_max_cns(samples: &[Sample]) -> Option<f64> {
+pub(crate) fn compute_max_cns(samples: &[Sample]) -> Option<f64> {
     if samples.is_empty() {
         return None;
     }
@@ -397,6 +401,8 @@ mod tests {
             dc_dive_id: None,
             total_weight_kg: Some(8.0),
             media_count: 0,
+            otu: None,
+            max_cns: None,
             samples: vec![Sample { time_sec: 0, depth_m: 0.0, temp_c: None, ndl_sec: None, tts_sec: None, cns: None, pressure_bar: None }],
             events: vec![],
         }
