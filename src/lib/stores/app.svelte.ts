@@ -49,7 +49,7 @@ class AppStore {
       .filter((c): c is ColDef => c != null);
   }
 
-  get sortedDives(): DiveSummary[] {
+  #sortedDives = $derived.by((): DiveSummary[] => {
     const { sortKey, sortDir } = this.diveListPrefs;
     if (sortKey === "nr") {
       return [...this.logbook.dives].sort((a, b) => sortDir === "asc" ? a.number - b.number : b.number - a.number);
@@ -57,16 +57,18 @@ class AppStore {
     const col = ALL_COLS.find(c => c.id === sortKey);
     if (!col) return this.logbook.dives;
     const ctx: RenderCtx = { sites: this.logbook.sites, units: this.displayUnits };
-    return [...this.logbook.dives].sort((a, b) => {
-      const ae = col.render(a, ctx) === "—";
-      const be = col.render(b, ctx) === "—";
-      if (ae && be) return 0;
-      if (ae) return 1;
-      if (be) return -1;
-      const cmp = col.compare(a, b, ctx);
+    const entries = this.logbook.dives.map(d => ({ dive: d, isEmpty: col.render(d, ctx) === "—" }));
+    entries.sort((a, b) => {
+      if (a.isEmpty && b.isEmpty) return 0;
+      if (a.isEmpty) return 1;
+      if (b.isEmpty) return -1;
+      const cmp = col.compare(a.dive, b.dive, ctx);
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }
+    return entries.map(e => e.dive);
+  });
+
+  get sortedDives(): DiveSummary[] { return this.#sortedDives; }
 
   async selectDive(number: number | null): Promise<void> {
     this.selectedDiveId = number;
