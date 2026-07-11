@@ -130,6 +130,9 @@ fn parse_dive_dir(dir: &Path, year: &str, month: &str, dir_name: &str, warnings:
         parse_divecomputer("")
     };
 
+    let otu = crate::types::compute_otu(&dc.samples, &dc.events, &overview.cylinders);
+    let max_cns = crate::types::compute_max_cns(&dc.samples);
+
     Some(Dive {
         number,
         date_time: format!("{year_out}-{month_out}-{dd}T{hh}:{mm}:{ss}"),
@@ -152,6 +155,8 @@ fn parse_dive_dir(dir: &Path, year: &str, month: &str, dir_name: &str, warnings:
         dc_dive_id: dc.dive_id,
         total_weight_kg: overview.total_weight_kg,
         media_count: count_media(dir),
+        otu,
+        max_cns,
         samples: dc.samples,
         events: dc.events,
     })
@@ -303,6 +308,20 @@ mod tests {
         assert_eq!(d.divemode.as_deref(), Some("OC"));
         assert!((d.total_weight_kg.unwrap() - 2.0).abs() < 1e-6);
         assert_eq!(d.media_count, 2, "fixture Pictures dir has 2 files");
+    }
+
+    #[test]
+    fn full_dive_otu_and_max_cns_match_its_own_summary() {
+        // get_dive returns the full Dive as-is; its otu/maxCns must agree with what
+        // the dive-list summary shows for the same dive, or the info panel would
+        // silently show nothing while the list shows a real value.
+        let lb = parse_logbook(&fixture()).unwrap();
+        let d = &lb.dives[0];
+        let summary = crate::types::DiveSummary::from(d);
+        assert!(d.otu.is_some(), "fixture dive has enough samples/events to compute an otu");
+        assert!(d.max_cns.is_some(), "fixture dive has a cns sample to compute a maxCns");
+        assert_eq!(d.otu, summary.otu);
+        assert_eq!(d.max_cns, summary.max_cns);
     }
 
     #[test]

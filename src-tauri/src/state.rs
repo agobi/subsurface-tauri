@@ -80,6 +80,8 @@ mod tests {
                 dc_dive_id: None,
                 total_weight_kg: None,
                 media_count: 0,
+                otu: None,
+                max_cns: None,
                 samples: vec![
                     Sample { time_sec: 0, depth_m: 0.0, temp_c: None, ndl_sec: None, tts_sec: None, cns: None, pressure_bar: None },
                     Sample { time_sec: 60, depth_m: 10.0, temp_c: None, ndl_sec: None, tts_sec: None, cns: None, pressure_bar: None },
