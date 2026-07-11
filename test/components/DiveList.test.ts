@@ -46,6 +46,24 @@ describe("DiveList", () => {
     expect(screen.getByText("Fenyes Forras")).toBeInTheDocument(); // ungrouped dive still shown
   });
 
+  it("shows '(no dives parsed)' only for a trip with zero parsed dives, not a search-filtered one", () => {
+    const tTrips: Trip[] = [
+      { label: "Empty trip", diveNumbers: [] },
+      { label: "March 2024", diveNumbers: [269] },
+    ];
+    render(DiveList, { props: { dives, trips: tTrips, sites, query: "" } });
+    expect(screen.getByText(/Empty trip/)).toBeInTheDocument();
+    expect(screen.getByText("(no dives parsed)")).toBeInTheDocument();
+    expect(screen.getByText(/March 2024/)).toBeInTheDocument();
+  });
+
+  it("hides a trip entirely (no misleading '(no dives parsed)') when the search query filters out all its dives", () => {
+    render(DiveList, { props: { dives, trips, sites, query: "reef" } });
+    // "March 2024" only contains dive 269 (tags: ["cave"]), which doesn't match "reef".
+    expect(screen.queryByText("March 2024")).not.toBeInTheDocument();
+    expect(screen.queryByText("(no dives parsed)")).not.toBeInTheDocument();
+  });
+
   it("trip count uses singular 'dive' for 1, plural 'dives' for many", () => {
     const tDives = [
       { number: 1, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], mediaCount: 0, samples: [], events: [] },

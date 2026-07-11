@@ -74,9 +74,16 @@ class AppStore {
     if (number === null) return;
     this.selectedDiveLoading = true;
     try {
-      this.selectedDive = await invoke<Dive>("get_dive", { number });
+      const dive = await invoke<Dive>("get_dive", { number });
+      // A newer selectDive() call may have landed while this one was in
+      // flight — a slower response for a stale selection must not clobber it.
+      if (this.selectedDiveId === number) {
+        this.selectedDive = dive;
+      }
     } finally {
-      this.selectedDiveLoading = false;
+      if (this.selectedDiveId === number) {
+        this.selectedDiveLoading = false;
+      }
     }
   }
 
@@ -201,7 +208,11 @@ class AppStore {
     if (fromIdx === -1 || toIdx === -1) return;
     const next = [...colOrder];
     next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, fromId);
+    // Removing fromIdx shifts every index after it left by one, so re-target
+    // toIdx to where the target column now sits — otherwise the dragged
+    // column lands on opposite sides of the target depending on drag direction.
+    const insertIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
+    next.splice(insertIdx, 0, fromId);
     this.diveListPrefs = { ...this.diveListPrefs, colOrder: next };
     try {
       await saveDiveListPrefs(this.diveListPrefs);
