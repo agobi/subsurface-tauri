@@ -148,7 +148,13 @@ fn parse_settings_text(text: &str) -> Settings {
             "autogroup" => s.autogroup = true,
             "units" => {
                 let first = rest.split_whitespace().next().unwrap_or("METRIC");
-                s.units = first.to_string();
+                s.units = match first {
+                    "METRIC" | "IMPERIAL" => first.to_string(),
+                    other => {
+                        log::warn!("unrecognized units value {other:?}, defaulting to METRIC");
+                        "METRIC".to_string()
+                    }
+                };
             }
             "prefs" => {
                 s.prefs = rest.split_whitespace().map(|t| t.to_string()).collect();
@@ -282,6 +288,12 @@ mod tests {
     #[test]
     fn defaults_to_metric_when_absent() {
         let s = parse_settings_text("version 3\n");
+        assert_eq!(s.units, "METRIC");
+    }
+
+    #[test]
+    fn falls_back_to_metric_on_unrecognized_units() {
+        let s = parse_settings_text("units BOGUS\n");
         assert_eq!(s.units, "METRIC");
     }
 
