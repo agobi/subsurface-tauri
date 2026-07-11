@@ -365,10 +365,14 @@ pub fn run_download<R: tauri::Runtime>(
         let cancelled = download_ctx.cancel.load(Ordering::Relaxed);
 
         // If foreach failed (connection lost, timeout, etc.) and user didn't cancel,
-        // report the error rather than silently returning partial results.
+        // report the error — unless dives were already buffered, in which case
+        // discarding them would lose real progress for no reason; fall through
+        // and return them for review, same as a cancel that already fetched dives.
         if foreach_rc != crate::dc::ffi::dc_status_t_DC_STATUS_SUCCESS && !cancelled {
             log::error!("DC: foreach error status={}", foreach_rc);
-            return Err(format!("device download interrupted: status {foreach_rc}"));
+            if download_ctx.new_dives.is_empty() {
+                return Err(format!("device download interrupted: status {foreach_rc}"));
+            }
         }
 
         // Capture newest fingerprint for the caller to persist at commit time (not here).

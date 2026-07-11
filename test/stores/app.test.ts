@@ -43,6 +43,33 @@ describe("app store", () => {
     expect(app.theme).toBe("auto");
   });
 
+  describe("selectDive", () => {
+    it("ignores a stale get_dive response that resolves after a newer selection", async () => {
+      let resolveFirst!: (d: Dive) => void;
+      let resolveSecond!: (d: Dive) => void;
+      const first = new Promise<Dive>((res) => { resolveFirst = res; });
+      const second = new Promise<Dive>((res) => { resolveSecond = res; });
+
+      vi.mocked(invoke).mockImplementation((cmd: string, args?: any) => {
+        if (cmd === "get_dive" && args?.number === 1) return first as any;
+        if (cmd === "get_dive" && args?.number === 2) return second as any;
+        return Promise.resolve(undefined) as any;
+      });
+
+      const p1 = app.selectDive(1);
+      const p2 = app.selectDive(2);
+
+      // The slower-clicked dive (1) resolves AFTER the newer selection (2).
+      resolveSecond({ number: 2 } as Dive);
+      await p2;
+      resolveFirst({ number: 1 } as Dive);
+      await p1;
+
+      expect(app.selectedDiveId).toBe(2);
+      expect(app.selectedDive?.number).toBe(2);
+    });
+  });
+
   describe("platform", () => {
     it("defaults to desktop", () => {
       expect(app.platform).toBe("desktop");
@@ -127,6 +154,18 @@ describe("diveListPrefs", () => {
     };
     app.reorderColumn("depth", "nr");
     expect(app.diveListPrefs.colOrder).toEqual(["depth", "nr", "date", "duration", "buddy"]);
+  });
+
+  it("reorderColumn dropping forward lands the column immediately before the target, same as dropping backward", () => {
+    // Same target relationship as the backward-drag case above (depth ends up
+    // immediately before nr) but dragging the other direction — must produce
+    // the same "insert immediately before target" placement, not the opposite side.
+    app.diveListPrefs = {
+      ...app.diveListPrefs,
+      colOrder: ["nr", "date", "depth", "duration", "buddy"],
+    };
+    app.reorderColumn("nr", "duration");
+    expect(app.diveListPrefs.colOrder).toEqual(["date", "depth", "nr", "duration", "buddy"]);
   });
 
   it("reorderColumn with same id is a no-op", () => {

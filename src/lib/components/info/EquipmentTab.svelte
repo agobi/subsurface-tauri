@@ -21,7 +21,7 @@
     {#each dive.cylinders as c}
       <tr>
         <td>{c.description}</td>
-        <td class="tnum">{c.volumeL != null ? fmtCylinderSize(c.volumeL, c.workPressureBar, units, { suffix: false }) : "-"}</td>
+        <td class="tnum">{c.volumeL != null ? fmtCylinderSize(c.volumeL, c.workPressureBar, units, { suffix: units === "IMPERIAL" && c.workPressureBar == null }) : "-"}</td>
         <td class="tnum">{c.workPressureBar != null ? fmtPressure(c.workPressureBar, units, { suffix: false }) : "-"}</td>
         <td class="tnum">{c.startBar != null ? fmtPressure(c.startBar, units, { suffix: false }) : "-"}</td>
         <td class="tnum">{c.endBar != null ? fmtPressure(c.endBar, units, { suffix: false }) : "-"}</td>

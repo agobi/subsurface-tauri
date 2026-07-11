@@ -52,4 +52,18 @@ describe("InfoPanel", () => {
     expect(screen.getByText("194")).toBeInTheDocument();
     expect(screen.getByText("3365")).toBeInTheDocument();
   });
+
+  it("labels a cylinder's Size cell with 'L' when workPressureBar is unknown, instead of showing a bare litre number under the 'cuft' header", async () => {
+    const diveNoWorkPressure: Dive = {
+      ...dive,
+      cylinders: [{ description: "Unknown tank", volumeL: 11.1, o2Percent: 21 }],
+    };
+    app.setUnitsPref("IMPERIAL");
+    render(InfoPanel, { props: { dive: diveNoWorkPressure } });
+    await fireEvent.click(screen.getByRole("tab", { name: /equipment/i }));
+    expect(screen.getByText("Size (cuft)")).toBeInTheDocument();
+    // Falls back to litres (no work pressure to compute a cuft rating from)
+    // but must say so explicitly, since the column header says "cuft".
+    expect(screen.getByText("11.1 L")).toBeInTheDocument();
+  });
 });
