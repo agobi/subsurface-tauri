@@ -91,3 +91,21 @@ export async function loadLoggingPrefs(): Promise<LogLevel> {
 export async function applyLogLevel(level: LogLevel): Promise<void> {
   await invoke("set_log_level", { level });
 }
+
+export interface DcDownloadPrefs {
+  mergeGapMinutes: number;
+}
+
+export const DEFAULT_DC_DOWNLOAD_PREFS: DcDownloadPrefs = { mergeGapMinutes: 15 };
+
+export async function loadDcDownloadPrefs(): Promise<DcDownloadPrefs> {
+  const store = await load("settings.json");
+  const saved = await store.get<DcDownloadPrefs>("dcDownload");
+  return saved ?? { ...DEFAULT_DC_DOWNLOAD_PREFS };
+}
+
+export async function saveDcDownloadPrefs(prefs: DcDownloadPrefs): Promise<void> {
+  const store = await load("settings.json");
+  await store.set("dcDownload", prefs);
+  await store.save();
+}
