@@ -1,6 +1,6 @@
 // AI-generated (Claude)
 import { describe, it, expect } from "vitest";
-import { timeToX, depthToY, depthAxisMax, depthGridLines, ascentRateClass } from "$lib/profile/profile-scale.ts";
+import { timeToX, depthToY, depthAxisMax, depthGridLines, ascentRateClass, tankPressureAxisMax, tempAxisMax } from "$lib/profile/profile-scale.ts";
 
 const plot = { x0: 44, x1: 982, y0: 24, y1: 346 };
 
@@ -30,6 +30,16 @@ describe("profile-scale", () => {
     // Two samples at t=0 is common at dive start; must not produce an inflated rate.
     expect(ascentRateClass({ timeSec: 0, depthM: 0 }, { timeSec: 0, depthM: 1 })).toBe("normal");
     expect(ascentRateClass({ timeSec: 10, depthM: 5 }, { timeSec: 10, depthM: 4 })).toBe("normal");
+  });
+
+  it("tankPressureAxisMax rescales past the 250 bar floor for HP/steel cylinders", () => {
+    expect(tankPressureAxisMax(300)).toBe(350);
+    expect(tankPressureAxisMax(180)).toBe(250); // stays at the floor for ordinary AL80-range dives
+  });
+
+  it("tempAxisMax rescales past the 40°C floor for unusually warm water", () => {
+    expect(tempAxisMax(45)).toBe(50);
+    expect(tempAxisMax(28)).toBe(40); // stays at the floor for ordinary dives
   });
 });
 

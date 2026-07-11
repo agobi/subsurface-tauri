@@ -22,6 +22,20 @@ export function depthAxisMax(maxDepthM: number): number {
   return Math.ceil((maxDepthM + 4) / 6) * 6;
 }
 
+// Rescales to the dive's actual max tank pressure (e.g. 300+ bar for steel/HP
+// cylinders) instead of clipping at a fixed cap; 250 bar remains the floor so
+// ordinary AL80-range dives keep their existing chart proportions.
+export function tankPressureAxisMax(maxPressureBar: number): number {
+  return Math.max(250, Math.ceil((maxPressureBar + 20) / 50) * 50);
+}
+
+// Rescales to the dive's actual max water temp instead of clipping at a fixed
+// cap; 40°C remains the floor so ordinary temperate/tropical dives keep their
+// existing chart proportions.
+export function tempAxisMax(maxTempC: number): number {
+  return Math.max(40, Math.ceil((maxTempC + 2) / 5) * 5);
+}
+
 const FT_PER_M = 3.28084;
 
 // Tick positions for the depth axis, always computed in metres (matching the

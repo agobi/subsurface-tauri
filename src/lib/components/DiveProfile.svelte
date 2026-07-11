@@ -1,7 +1,7 @@
 <!-- AI-generated (Claude) -->
 <script lang="ts">
   import type { Dive, Sample } from "$lib/types.ts";
-  import { timeToX, depthToY, depthAxisMax, depthGridLines, ascentRateClass } from "$lib/profile/profile-scale.ts";
+  import { timeToX, depthToY, depthAxisMax, depthGridLines, ascentRateClass, tankPressureAxisMax, tempAxisMax } from "$lib/profile/profile-scale.ts";
   import { fmtMinSec } from "$lib/format.ts";
   import { fmtDepth } from "$lib/units.ts";
   import { app } from "$lib/stores/app.svelte.ts";
@@ -23,6 +23,17 @@
     let max = 0;
     for (const s of samples) if (s.depthM > max) max = s.depthM;
     return depthAxisMax(max);
+  });
+
+  let tankAxisMax = $derived.by(() => {
+    let max = 0;
+    for (const s of samples) if (s.pressureBar != null && s.pressureBar > max) max = s.pressureBar;
+    return tankPressureAxisMax(max);
+  });
+  let tempAxisMaxC = $derived.by(() => {
+    let max = 0;
+    for (const s of samples) if (s.tempC != null && s.tempC > max) max = s.tempC;
+    return tempAxisMax(max);
   });
 
   let depthSegments = $derived(
@@ -104,12 +115,12 @@
 
     {#if series.temp}
       <polyline fill="none" stroke="var(--teal)" stroke-width="1.5"
-        points={samples.filter((s) => s.tempC != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - Math.max(0, Math.min(1, (s.tempC ?? 0) / 40)) * (plot.y1 - plot.y0)}`).join(" ")} />
+        points={samples.filter((s) => s.tempC != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - Math.max(0, Math.min(1, (s.tempC ?? 0) / tempAxisMaxC)) * (plot.y1 - plot.y0)}`).join(" ")} />
     {/if}
 
     {#if series.tank}
       <polyline fill="none" stroke="var(--amber)" stroke-width="1.5"
-        points={samples.filter((s) => s.pressureBar != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - Math.max(0, Math.min(1, (s.pressureBar ?? 0) / 250)) * (plot.y1 - plot.y0)}`).join(" ")} />
+        points={samples.filter((s) => s.pressureBar != null).map((s) => `${timeToX(s.timeSec, maxTime, plot)},${plot.y1 - Math.max(0, Math.min(1, (s.pressureBar ?? 0) / tankAxisMax)) * (plot.y1 - plot.y0)}`).join(" ")} />
     {/if}
 
     {#if cursor}
