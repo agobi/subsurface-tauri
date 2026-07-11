@@ -114,8 +114,8 @@ fn merge_pair(prev: &ParsedDive, dive: &ParsedDive) -> ParsedDive {
     let secondary_offset = secondary_start - prev_start;
 
     let mut samples = Vec::with_capacity(primary.samples.len() + secondary.samples.len());
-    samples.extend(primary.samples.iter().cloned().map(|s| Sample { time_sec: s.time_sec + primary_offset, ..s }));
-    samples.extend(secondary.samples.iter().cloned().map(|s| Sample { time_sec: s.time_sec + secondary_offset, ..s }));
+    samples.extend(primary.samples.iter().map(|s| Sample { time_sec: s.time_sec + primary_offset, ..s.clone() }));
+    samples.extend(secondary.samples.iter().map(|s| Sample { time_sec: s.time_sec + secondary_offset, ..s.clone() }));
     samples.sort_by_key(|s| s.time_sec);
 
     let mut events = Vec::with_capacity(primary.events.len() + secondary.events.len());

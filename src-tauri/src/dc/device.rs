@@ -258,6 +258,7 @@ unsafe extern "C" fn dive_cb<R: tauri::Runtime>(
 ///
 /// This function blocks the calling thread; call it via
 /// `tauri::async_runtime::spawn_blocking`.
+#[allow(clippy::too_many_arguments)]
 pub fn run_download<R: tauri::Runtime>(
     app: AppHandle<R>,
     settings: crate::ssrf_git::settings::Settings,

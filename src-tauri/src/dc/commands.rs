@@ -350,6 +350,7 @@ fn should_discard_without_saving(result: &crate::dc::device::DownloadResult) -> 
 ///
 /// The frontend may call [`cancel_dc_download`] at any time to abort.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn start_dc_download(
     app: tauri::AppHandle,
     vendor: String,
