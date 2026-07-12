@@ -7,4 +7,5 @@ pub mod transport;
 pub mod writer;
 pub mod fingerprint;
 pub mod parser;
+pub mod merge;
 pub mod device;

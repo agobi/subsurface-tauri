@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::types::{DiveEvent, Sample};
 use crate::ssrf_git::settings::sha1_u32;
 
+#[derive(Clone)]
 pub struct ParsedDive {
     pub year: i32,
     pub month: u32,
@@ -22,6 +23,7 @@ pub struct ParsedDive {
     pub dive_id: Vec<u8>,
 }
 
+#[derive(Clone)]
 pub struct ParsedCylinder {
     pub description: Option<String>,
     pub o2_percent: Option<f64>,

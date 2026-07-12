@@ -1,5 +1,5 @@
 // AI-generated (Claude)
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use super::descriptor::{models_for_vendor, vendors};
 
 #[derive(Serialize)]
@@ -264,7 +264,7 @@ pub async fn scan_ble_devices(
 
 /// Dives buffered in memory after a completed download, waiting for user confirmation.
 pub struct PendingDownload {
-    pub dives: Vec<crate::dc::writer::ParsedDive>,
+    pub groups: Vec<crate::dc::merge::DiveGroup>,
     pub newest_fp: Option<(u32, Vec<u8>)>,
     pub dc_model: String,
     pub logbook_root: std::path::PathBuf,
@@ -285,7 +285,7 @@ fn build_pending_download(
 ) -> PendingDownload {
     PendingDownload {
         dc_model: result.dc_model,
-        dives: result.new_dives,
+        groups: result.groups,
         newest_fp: result.newest_fp,
         logbook_root,
     }
@@ -302,12 +302,29 @@ pub struct DiveSummarySer {
     pub max_depth_m: f64,
 }
 
+fn summarize(d: &crate::dc::writer::ParsedDive) -> DiveSummarySer {
+    DiveSummarySer {
+        date: format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}", d.year, d.month, d.day, d.hour, d.minute, d.second),
+        duration_sec: d.duration_sec,
+        max_depth_m: d.max_depth_m,
+    }
+}
+
+/// One reviewable row: the folded `merged` view (always present, even for a
+/// single-segment group) plus the raw `segments` it can be split back into.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiveGroupSer {
+    pub merged: DiveSummarySer,
+    pub segments: Vec<DiveSummarySer>,
+}
+
 /// Payload carried by both the `dc-complete` event and the `start_dc_download` return value.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadCompleteSer {
-    /// New dives ready for review. Empty when cancelled or nothing new.
-    pub dives: Vec<DiveSummarySer>,
+    /// Groups ready for review. Empty when cancelled or nothing new.
+    pub groups: Vec<DiveGroupSer>,
     pub skipped: u32,
     pub cancelled: bool,
 }
@@ -317,7 +334,7 @@ pub struct DownloadCompleteSer {
 /// some dives, or a normal completion with zero *new* dives (still needs its
 /// fingerprint cutoff committed), must both flow through to buffering.
 fn should_discard_without_saving(result: &crate::dc::device::DownloadResult) -> bool {
-    result.cancelled && result.new_dives.is_empty()
+    result.cancelled && result.groups.is_empty()
 }
 
 /// Start a dive-computer download.
@@ -333,11 +350,13 @@ fn should_discard_without_saving(result: &crate::dc::device::DownloadResult) -> 
 ///
 /// The frontend may call [`cancel_dc_download`] at any time to abort.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn start_dc_download(
     app: tauri::AppHandle,
     vendor: String,
     model: String,
     transport: crate::dc::transport::TransportArg,
+    merge_gap_minutes: u32,
     cancel: tauri::State<'_, std::sync::Arc<std::sync::atomic::AtomicBool>>,
     logbook_state: tauri::State<'_, std::sync::Mutex<Option<crate::state::LogbookState>>>,
     pending: tauri::State<'_, PendingDownloadState>,
@@ -372,6 +391,7 @@ pub async fn start_dc_download(
             vendor_clone,
             model_clone,
             transport,
+            merge_gap_minutes,
             cancel_clone,
         )
     })
@@ -385,42 +405,63 @@ pub async fn start_dc_download(
     let payload = if should_discard_without_saving(&result) {
         // Nothing was fetched before the cancel took effect — nothing to save.
         *pending.lock().map_err(|e| e.to_string())? = None;
-        DownloadCompleteSer { dives: vec![], skipped: result.skipped, cancelled: true }
+        DownloadCompleteSer { groups: vec![], skipped: result.skipped, cancelled: true }
     } else {
         // Either a normal completion, or a cancel that still fetched some
         // dives — buffer whatever arrived so the user can review/save it
         // instead of losing already-fetched progress.
         let skipped = result.skipped;
         let cancelled = result.cancelled;
-        let summaries: Vec<DiveSummarySer> = result.new_dives.iter().map(|d| DiveSummarySer {
-            date: format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
-                d.year, d.month, d.day, d.hour, d.minute, d.second),
-            duration_sec: d.duration_sec,
-            max_depth_m: d.max_depth_m,
+        let groups: Vec<DiveGroupSer> = result.groups.iter().map(|g| DiveGroupSer {
+            merged: summarize(&g.merged()),
+            segments: g.segments.iter().map(summarize).collect(),
         }).collect();
 
         *pending.lock().map_err(|e| e.to_string())? = Some(build_pending_download(result, root));
 
-        DownloadCompleteSer { dives: summaries, skipped, cancelled }
+        DownloadCompleteSer { groups, skipped, cancelled }
     };
 
     app.emit("dc-complete", &payload).ok();
     Ok(payload)
 }
 
-/// Keeps only the dives at the given indices, in the order the frontend showed
-/// them in the review step. Indices outside the range are ignored.
-///
+/// One group's contribution to the final saved batch: either save its
+/// folded `merged` dive, or save exactly the listed raw `segments`
+/// individually (after the user "unmerged" it in the review step). Groups
+/// with no entry in the selection list are skipped entirely — the same
+/// sparse-inclusion convention the review step already used for individual
+/// dives.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupSelection {
+    pub group: usize,
+    pub merged: bool,
+    pub segments: Vec<usize>,
+}
+
 /// The fingerprint cutoff (`newest_fp`) always advances to the device's true
 /// newest dive in `commit_dc_download` regardless of selection, so deselected
 /// dives won't reappear on the next download even though they're skipped here.
-fn select_dives(dives: Vec<crate::dc::writer::ParsedDive>, selected: &[usize]) -> Vec<crate::dc::writer::ParsedDive> {
-    let selected: std::collections::HashSet<usize> = selected.iter().copied().collect();
-    dives.into_iter()
-        .enumerate()
-        .filter(|(i, _)| selected.contains(i))
-        .map(|(_, d)| d)
-        .collect()
+fn resolve_selected_dives(
+    groups: Vec<crate::dc::merge::DiveGroup>,
+    selections: &[GroupSelection],
+) -> Vec<crate::dc::writer::ParsedDive> {
+    let by_group: std::collections::HashMap<usize, &GroupSelection> =
+        selections.iter().map(|s| (s.group, s)).collect();
+    groups.into_iter().enumerate().flat_map(|(i, group)| {
+        match by_group.get(&i) {
+            None => Vec::new(),
+            Some(sel) if sel.merged => vec![group.merged()],
+            Some(sel) => {
+                let want: std::collections::HashSet<usize> = sel.segments.iter().copied().collect();
+                group.segments.into_iter().enumerate()
+                    .filter(|(si, _)| want.contains(si))
+                    .map(|(_, seg)| seg)
+                    .collect()
+            }
+        }
+    }).collect()
 }
 
 /// Writes each dive, continuing past individual failures so one bad dive
@@ -442,23 +483,24 @@ fn write_all_dives(root: &std::path::Path, dives: Vec<crate::dc::writer::ParsedD
 /// Write buffered dives to disk, save fingerprint, and update in-memory logbook state.
 ///
 /// Called by the frontend after the user confirms the review step.
-/// `selected_indices` are positions into the dive list as shown in the review
-/// step (matching `DownloadCompleteSer::dives` order); only those dives are
-/// written. A dive that fails to write does not abort the rest of the batch
-/// (see `write_all_dives`) or block the fingerprint update, since the
-/// buffered dives are already removed from `PendingDownloadState` and
-/// cannot be retried. Returns the count of dives actually written so the
-/// frontend can call `startup_logbook` and show the result.
+/// `selections` describe, per group shown in the review step (matching
+/// `DownloadCompleteSer::groups` order), whether to save the folded dive or
+/// specific raw segments; groups with no entry are skipped. A dive that
+/// fails to write does not abort the rest of the batch (see
+/// `write_all_dives`) or block the fingerprint update, since the buffered
+/// dives are already removed from `PendingDownloadState` and cannot be
+/// retried. Returns the count of dives actually written so the frontend can
+/// call `startup_logbook` and show the result.
 #[tauri::command]
 pub async fn commit_dc_download(
-    selected_indices: Vec<usize>,
+    selections: Vec<GroupSelection>,
     pending: tauri::State<'_, PendingDownloadState>,
     logbook_state: tauri::State<'_, std::sync::Mutex<Option<crate::state::LogbookState>>>,
 ) -> Result<u32, String> {
     let pd = pending.lock().map_err(|e| e.to_string())?.take()
         .ok_or_else(|| "no pending download to commit".to_string())?;
 
-    let dives = select_dives(pd.dives, &selected_indices);
+    let dives = resolve_selected_dives(pd.groups, &selections);
     let root = pd.logbook_root;
     let dc_model = pd.dc_model;
     let newest_fp = pd.newest_fp;
@@ -534,6 +576,7 @@ pub fn open_app_settings(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::dc::merge::DiveGroup;
     use crate::dc::writer::{ParsedCylinder, ParsedDive};
     use crate::types::Sample;
 
@@ -555,7 +598,7 @@ mod tests {
         // key, so the next download re-scanned past it and re-delivered dives
         // that were already saved.
         let result = crate::dc::device::DownloadResult {
-            new_dives: vec![],
+            groups: vec![],
             skipped: 0,
             newest_fp: Some((20819261, vec![0x6a, 0x2e, 0x80, 0x20])),
             dc_model: "Shearwater Perdix AI".to_string(),
@@ -582,26 +625,59 @@ mod tests {
         }
     }
 
+    fn one_segment_group(dive: ParsedDive) -> DiveGroup {
+        DiveGroup { segments: vec![dive] }
+    }
+
     #[test]
-    fn select_dives_keeps_only_the_given_indices_in_order() {
-        let dives = vec![make_dive(100), make_dive(200), make_dive(300)];
-        let kept = super::select_dives(dives, &[0, 2]);
+    fn resolve_selected_dives_keeps_merged_dive_for_selected_groups() {
+        let groups = vec![
+            one_segment_group(make_dive(100)),
+            one_segment_group(make_dive(200)),
+            one_segment_group(make_dive(300)),
+        ];
+        let selections = vec![
+            super::GroupSelection { group: 0, merged: true, segments: vec![] },
+            super::GroupSelection { group: 2, merged: true, segments: vec![] },
+        ];
+        let kept = super::resolve_selected_dives(groups, &selections);
         let kept_durations: Vec<u32> = kept.iter().map(|d| d.duration_sec).collect();
         assert_eq!(kept_durations, vec![100, 300]);
     }
 
     #[test]
-    fn select_dives_with_no_indices_returns_empty() {
-        let dives = vec![make_dive(100), make_dive(200)];
-        let kept = super::select_dives(dives, &[]);
+    fn resolve_selected_dives_with_no_selections_returns_empty() {
+        let groups = vec![one_segment_group(make_dive(100)), one_segment_group(make_dive(200))];
+        let kept = super::resolve_selected_dives(groups, &[]);
         assert!(kept.is_empty());
     }
 
     #[test]
-    fn select_dives_ignores_out_of_range_indices() {
-        let dives = vec![make_dive(100)];
-        let kept = super::select_dives(dives, &[0, 5]);
+    fn resolve_selected_dives_ignores_out_of_range_group_index() {
+        let groups = vec![one_segment_group(make_dive(100))];
+        let selections = vec![
+            super::GroupSelection { group: 0, merged: true, segments: vec![] },
+            super::GroupSelection { group: 5, merged: true, segments: vec![] },
+        ];
+        let kept = super::resolve_selected_dives(groups, &selections);
         assert_eq!(kept.len(), 1);
+    }
+
+    #[test]
+    fn resolve_selected_dives_saves_only_the_chosen_segments_when_unmerged() {
+        let group = DiveGroup { segments: vec![make_dive(100), make_dive(200), make_dive(300)] };
+        let selections = vec![super::GroupSelection { group: 0, merged: false, segments: vec![0, 2] }];
+        let kept = super::resolve_selected_dives(vec![group], &selections);
+        let kept_durations: Vec<u32> = kept.iter().map(|d| d.duration_sec).collect();
+        assert_eq!(kept_durations, vec![100, 300]);
+    }
+
+    #[test]
+    fn resolve_selected_dives_saves_the_folded_dive_when_merged_is_true() {
+        let group = DiveGroup { segments: vec![make_dive(100), make_dive(200)] };
+        let selections = vec![super::GroupSelection { group: 0, merged: true, segments: vec![] }];
+        let kept = super::resolve_selected_dives(vec![group], &selections);
+        assert_eq!(kept.len(), 1, "a merged selection saves one folded dive, not the raw segments");
     }
 
     fn make_dive_on_day(day: u32) -> ParsedDive {
@@ -610,9 +686,9 @@ mod tests {
         d
     }
 
-    fn make_result(new_dives: Vec<ParsedDive>, cancelled: bool) -> crate::dc::device::DownloadResult {
+    fn make_result(groups: Vec<DiveGroup>, cancelled: bool) -> crate::dc::device::DownloadResult {
         crate::dc::device::DownloadResult {
-            new_dives,
+            groups,
             skipped: 0,
             newest_fp: None,
             dc_model: "Shearwater Perdix AI".to_string(),
@@ -628,7 +704,7 @@ mod tests {
 
     #[test]
     fn cancelling_after_fetching_dives_still_preserves_them() {
-        let result = make_result(vec![make_dive(100)], true);
+        let result = make_result(vec![one_segment_group(make_dive(100))], true);
         assert!(!super::should_discard_without_saving(&result),
             "a cancel that already fetched dives must not discard them");
     }

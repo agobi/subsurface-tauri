@@ -12,8 +12,11 @@ import {
   saveDiveListPrefs,
   loadLoggingPrefs,
   applyLogLevel,
+  loadDcDownloadPrefs,
+  saveDcDownloadPrefs,
   resolveUnits,
   DEFAULT_DIVE_LIST_PREFS,
+  DEFAULT_DC_DOWNLOAD_PREFS,
   type DiveListPrefs,
 } from "$lib/prefs.ts";
 import { ALL_COLS } from "$lib/diveListColumns.ts";
@@ -212,5 +215,49 @@ describe("applyLogLevel", () => {
     vi.mocked(invoke).mockResolvedValueOnce(undefined);
     await applyLogLevel("trace");
     expect(invoke).toHaveBeenCalledWith("set_log_level", { level: "trace" });
+  });
+});
+
+describe("loadDcDownloadPrefs", () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it("returns the default 15-minute gap when settings.json has no dcDownload key", async () => {
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    const prefs = await loadDcDownloadPrefs();
+    expect(prefs).toEqual(DEFAULT_DC_DOWNLOAD_PREFS);
+    expect(prefs.mergeGapMinutes).toBe(15);
+  });
+
+  it("returns the saved gap when present", async () => {
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: vi.fn().mockResolvedValue({ mergeGapMinutes: 30 }),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    const prefs = await loadDcDownloadPrefs();
+    expect(prefs).toEqual({ mergeGapMinutes: 30 });
+  });
+});
+
+describe("saveDcDownloadPrefs", () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it("writes the dcDownload key and saves", async () => {
+    const mockSet = vi.fn();
+    const mockSave = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: vi.fn(),
+      set: mockSet,
+      save: mockSave,
+    } as any);
+
+    await saveDcDownloadPrefs({ mergeGapMinutes: 30 });
+
+    expect(mockSet).toHaveBeenCalledWith("dcDownload", { mergeGapMinutes: 30 });
+    expect(mockSave).toHaveBeenCalled();
   });
 });
