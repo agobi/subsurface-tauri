@@ -837,6 +837,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "decco"
+version = "0.1.0"
+dependencies = [
+ "bindgen",
+ "btleplug",
+ "chrono",
+ "cmake",
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "dc-ble",
+ "futures",
+ "git2",
+ "keyring",
+ "log",
+ "openssl-src",
+ "reqwest 0.12.28",
+ "security-framework 3.7.0",
+ "security-framework-sys",
+ "serde",
+ "serde_json",
+ "serialport",
+ "sha1",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tauri-plugin-os",
+ "tauri-plugin-store",
+ "tokio",
+]
+
+[[package]]
 name = "deranged"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2749,15 +2781,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "openssl-src"
-version = "400.0.0+4.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7731f89f200bc63febfcf1c0349e2a7ab6f3a36e13b238b0e5943989f93ef75c"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "openssl-sys"
 version = "0.9.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2765,7 +2788,7 @@ checksum = "b47e7e6bb2c38cd930d25a23b40fa52e068c10e85f3e03a7f5ba5aaca5713695"
 dependencies = [
  "cc",
  "libc",
- "openssl-src 300.6.1+3.6.3",
+ "openssl-src",
  "pkg-config",
  "vcpkg",
 ]
@@ -4044,38 +4067,6 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
-
-[[package]]
-name = "subsurface-prototype"
-version = "0.1.0"
-dependencies = [
- "bindgen",
- "btleplug",
- "chrono",
- "cmake",
- "core-foundation 0.10.1",
- "core-foundation-sys",
- "dc-ble",
- "futures",
- "git2",
- "keyring",
- "log",
- "openssl-src 400.0.0+4.0.1",
- "reqwest 0.12.28",
- "security-framework 3.7.0",
- "security-framework-sys",
- "serde",
- "serde_json",
- "serialport",
- "sha1",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tauri-plugin-os",
- "tauri-plugin-store",
- "tokio",
-]
 
 [[package]]
 name = "subtle"

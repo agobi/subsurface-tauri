@@ -1,4 +1,4 @@
-# Subsurface — Tauri Prototype
+# Decco
 
 A dive-log viewer for [Subsurface](https://subsurface-divelog.org)'s git-based logbook format, built with [Tauri 2](https://tauri.app) and [Svelte 5](https://svelte.dev).
 
@@ -10,11 +10,11 @@ Get the latest pre-release from the [Releases](../../releases) page:
 
 | Platform | File |
 |---|---|
-| macOS (Apple Silicon) | `subsurface-prototype_*_aarch64.dmg` |
-| Linux (Debian/Ubuntu) | `subsurface-prototype_*_amd64.deb` |
-| Linux (AppImage) | `subsurface-prototype_*_amd64.AppImage` |
-| Linux (RPM) | `subsurface-prototype_*_x86_64.rpm` |
-| Windows | `subsurface-prototype_*_x64-setup.exe` |
+| macOS (Apple Silicon) | `decco_*_aarch64.dmg` |
+| Linux (Debian/Ubuntu) | `decco_*_amd64.deb` |
+| Linux (AppImage) | `decco_*_amd64.AppImage` |
+| Linux (RPM) | `decco_*_x86_64.rpm` |
+| Windows | `decco_*_x64-setup.exe` |
 | Android (debug APK) | `app-universal-debug.apk` |
 
 ## What it does

@@ -21,7 +21,7 @@
   let unlisteners: (() => void)[] = [];
 
   async function setWindowTitle() {
-    await getCurrentWindow().setTitle(`${app.displayName} — Subsurface`);
+    await getCurrentWindow().setTitle(`${app.displayName} — Decco`);
   }
 
   async function handleOpen() {

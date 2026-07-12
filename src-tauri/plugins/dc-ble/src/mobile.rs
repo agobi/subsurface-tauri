@@ -13,7 +13,7 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     api: PluginApi<R, C>,
 ) -> crate::Result<DcBle<R>> {
     let handle =
-        api.register_android_plugin("org.subsurfacedivelog.prototype.dcble", "DcBlePlugin")?;
+        api.register_android_plugin("com.decco.app.dcble", "DcBlePlugin")?;
     Ok(DcBle(handle))
 }
 

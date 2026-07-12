@@ -1,4 +1,4 @@
-package org.subsurfacedivelog.prototype
+package com.decco.app
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge

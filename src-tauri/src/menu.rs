@@ -126,7 +126,7 @@ fn assemble_menu<R: Runtime>(
         )?;
         let app_menu = Submenu::with_items(
             app,
-            "Subsurface",
+            "Decco",
             true,
             &[
                 &PredefinedMenuItem::about(app, None, None)?,

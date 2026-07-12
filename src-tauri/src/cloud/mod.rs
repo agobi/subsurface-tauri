@@ -10,7 +10,7 @@ use crate::types::{OpenResult, ParsedLogbook, RecentEntry};
 pub(crate) const CLOUD_BASE: &str = "https://ssrf-cloud-eu.subsurface-divelog.org";
 
 // Default to the EU server, matching Qt's default (cloud_base_url in pref.cpp).
-const KEYRING_SERVICE: &str = "subsurface-tauri";
+const KEYRING_SERVICE: &str = "decco";
 
 // On macOS use the DataProtection keychain (bound to device login, no separate unlock
 // prompt). On other platforms fall back to the keyring crate.
