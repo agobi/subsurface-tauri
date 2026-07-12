@@ -136,8 +136,7 @@ pub fn write_dive(logbook_root: &Path, dive: ParsedDive) -> Result<(), String> {
         dive_content.push_str(&cyl_line);
         dive_content.push('\n');
     }
-    std::fs::write(dir.join(format!("Dive-{number:03}")), &dive_content)
-        .map_err(|e| e.to_string())?;
+    crate::ssrf_git::atomic_write(&dir.join(format!("Dive-{number:03}")), &dive_content)?;
 
     // ── Divecomputer ────────────────────────────────────────────────────────
     let mut dc_content = String::new();
@@ -158,8 +157,7 @@ pub fn write_dive(logbook_root: &Path, dive: ParsedDive) -> Result<(), String> {
         dc_content.push_str(&sample_line(s));
         dc_content.push('\n');
     }
-    std::fs::write(dir.join("Divecomputer"), &dc_content)
-        .map_err(|e| e.to_string())?;
+    crate::ssrf_git::atomic_write(&dir.join("Divecomputer"), &dc_content)?;
 
     Ok(())
 }
