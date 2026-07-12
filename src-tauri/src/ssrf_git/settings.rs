@@ -208,7 +208,7 @@ pub fn write_settings(root: &Path, settings: &Settings) -> Result<(), String> {
         out.push_str(line);
         out.push('\n');
     }
-    std::fs::write(root.join("00-Subsurface"), out).map_err(|e| e.to_string())
+    crate::ssrf_git::atomic_write(&root.join("00-Subsurface"), out)
 }
 
 #[cfg(test)]
