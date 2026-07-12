@@ -1,5 +1,5 @@
 // AI-generated (Claude)
-package org.subsurfacedivelog.prototype.dcble
+package com.decco.app.dcble
 
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor

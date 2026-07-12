@@ -1,7 +1,7 @@
 [package]
-name = "subsurface-prototype"
+name = "decco"
 version = "0.1.0"
-description = "Tauri prototype of the Subsurface dive-log application"
+description = "Decco — a Tauri dive-log viewer for Subsurface's git-based logbook format"
 authors = ["Attila Gobi <attila.gobi@gmail.com>"]
 license = "GPL-2.0"
 repository = "https://github.com/agobi/subsurface-tauri"

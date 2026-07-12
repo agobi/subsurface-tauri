@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "org.subsurfacedivelog.prototype.dcble"
+    namespace = "com.decco.app.dcble"
     compileSdk = 36
 
     defaultConfig {

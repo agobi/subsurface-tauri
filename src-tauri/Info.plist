@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Subsurface needs Bluetooth to download dives from your dive computer.</string>
+    <string>Decco needs Bluetooth to download dives from your dive computer.</string>
 </dict>
 </plist>

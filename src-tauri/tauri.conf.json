@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "subsurface-prototype",
+  "productName": "decco",
   "version": "0.1.0",
-  "identifier": "org.subsurfacedivelog.prototype",
+  "identifier": "com.decco.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -15,7 +15,7 @@
   "app": {
     "windows": [
       {
-        "title": "Subsurface (prototype)",
+        "title": "Decco (prototype)",
         "width": 800,
         "height": 600,
         "resizable": true,
