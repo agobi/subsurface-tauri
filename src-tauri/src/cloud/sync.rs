@@ -138,6 +138,26 @@ pub(super) fn rebase_onto_remote(repo: &Repository, branch: &str) -> Result<(), 
     result
 }
 
+/// Fast-forward pushes local `branch` to `remote_name`. Single credential attempt, matching
+/// `make_fetch_opts` — a rejected credential or a remote that moved again since our fetch
+/// (a push race) both surface as a plain error; the local commit is preserved for retry.
+pub(super) fn push_to_remote(
+    repo: &Repository,
+    remote_name: &str,
+    branch: &str,
+    email: &str,
+    password: &str,
+) -> Result<(), String> {
+    let mut remote = repo.find_remote(remote_name).map_err(|e| e.to_string())?;
+    let mut opts = git2::PushOptions::new();
+    opts.remote_callbacks(super::credential_callbacks(email, password));
+    let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
+    remote
+        .push(&[refspec.as_str()], Some(&mut opts))
+        .map_err(super::map_git_error)?;
+    Ok(())
+}
+
 /// Ensures `<cache_dir>/.git/info/exclude` filters junk files (`.DS_Store`, swap files, …)
 /// out of `git add -A`. Local to this clone only, never part of the tracked working tree —
 /// regenerated on every clone/fetch, so it needs no propagation.
@@ -221,6 +241,13 @@ mod tests {
         remote.fetch(&[] as &[&str], None, None).unwrap();
     }
 
+    fn remote_branch_oid(bare: &Repository) -> git2::Oid {
+        bare.find_reference(&format!("refs/heads/{BRANCH}"))
+            .unwrap()
+            .target()
+            .unwrap()
+    }
+
     fn fixture_dirs(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
         let base = std::env::temp_dir().join("cloud_sync_test").join(name);
         (base.join("bare"), base.join("work"))
@@ -300,7 +327,7 @@ mod tests {
         rebase_onto_remote(&repo, BRANCH).unwrap();
         assert_eq!(
             head_oid(&repo),
-            bare.find_reference(&format!("refs/heads/{BRANCH}")).unwrap().target().unwrap(),
+            remote_branch_oid(&bare),
             "fast-forwards to remote tip"
         );
     }
@@ -347,5 +374,57 @@ mod tests {
             "abort leaves no in-progress rebase state"
         );
         assert_eq!(head_oid(&repo), local_commit, "local commit is untouched");
+    }
+
+    #[test]
+    fn clean_sync_no_local_changes_remote_unchanged_is_noop() {
+        let (bare_dir, work_dir) = fixture_dirs("clean_sync");
+        let bare = init_bare(&bare_dir, "00-Subsurface", "version 3\n");
+        let repo = clone_work(&bare_dir, &work_dir);
+        let before = head_oid(&repo);
+
+        commit_local_changes(&repo).unwrap();
+        fetch(&repo);
+        rebase_onto_remote(&repo, BRANCH).unwrap();
+        push_to_remote(&repo, "origin", BRANCH, "", "").unwrap();
+
+        assert_eq!(head_oid(&repo), before);
+        assert_eq!(remote_branch_oid(&bare), before);
+    }
+
+    #[test]
+    fn local_changes_only_are_committed_and_pushed() {
+        let (bare_dir, work_dir) = fixture_dirs("local_only");
+        let bare = init_bare(&bare_dir, "00-Subsurface", "version 3\n");
+        let repo = clone_work(&bare_dir, &work_dir);
+        let before = head_oid(&repo);
+
+        std::fs::write(work_dir.join("new-file.txt"), "hello\n").unwrap();
+        commit_local_changes(&repo).unwrap();
+        let after_commit = head_oid(&repo);
+        assert_ne!(after_commit, before, "commit created for local change");
+
+        fetch(&repo);
+        rebase_onto_remote(&repo, BRANCH).unwrap();
+        push_to_remote(&repo, "origin", BRANCH, "", "").unwrap();
+
+        assert_eq!(remote_branch_oid(&bare), after_commit);
+    }
+
+    #[test]
+    fn diverged_no_conflict_rebases_and_pushes() {
+        let (bare_dir, work_dir) = fixture_dirs("diverged_push_ok");
+        let bare = init_bare(&bare_dir, "00-Subsurface", "version 3\n");
+        let repo = clone_work(&bare_dir, &work_dir);
+
+        advance_bare(&bare, "remote-file.txt", "from another device\n");
+        std::fs::write(work_dir.join("local-file.txt"), "from this device\n").unwrap();
+        commit_local_changes(&repo).unwrap();
+
+        fetch(&repo);
+        rebase_onto_remote(&repo, BRANCH).unwrap();
+        push_to_remote(&repo, "origin", BRANCH, "", "").unwrap();
+
+        assert_eq!(remote_branch_oid(&bare), head_oid(&repo));
     }
 }

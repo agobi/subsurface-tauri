@@ -364,16 +364,11 @@ fn clone_or_fetch(
             .fetch(&[] as &[&str], Some(&mut opts), None)
             .map_err(map_git_error)?;
         let refname = format!("refs/remotes/origin/{branch}");
-        let remote_ref = repo
-            .find_reference(&refname)
+        repo.find_reference(&refname)
             .map_err(|_| format!("Remote branch '{branch}' not found after fetch — is the account empty?"))?;
-        let resolved = remote_ref.resolve().map_err(|e| e.to_string())?;
-        let oid = resolved
-            .target()
-            .ok_or_else(|| "Unborn remote branch".to_string())?;
-        let obj = repo.find_object(oid, None).map_err(|e| e.to_string())?;
-        repo.reset(&obj, git2::ResetType::Hard, None)
-            .map_err(|e| e.to_string())?;
+        sync::commit_local_changes(&repo)?;
+        sync::rebase_onto_remote(&repo, branch)?;
+        sync::push_to_remote(&repo, "origin", branch, email, password)?;
     } else {
         let mut builder = git2::build::RepoBuilder::new();
         builder.fetch_options(make_fetch_opts(email, password));
