@@ -296,6 +296,19 @@ fn make_fetch_opts<'a>(email: &'a str, password: &'a str) -> git2::FetchOptions<
         }
         git2::Cred::userpass_plaintext(email, password)
     });
+    callbacks.certificate_check(|cert, host| {
+        // Mirrors Qt's certificate_check_cb (core/git-access.cpp): libgit2's own X.509 chain
+        // verification is unreliable across platforms — e.g. on Android, vendored OpenSSL's
+        // hash-dir CA lookup can't chase a freshly cross-signed root even though the served
+        // chain is genuinely valid (issue #67). Since we only ever fetch from our own
+        // hardcoded cloud host, accept unconditionally for that host and let libgit2's
+        // built-in result stand for anything else.
+        if host == cloud_host(CLOUD_BASE) && cert.as_x509().is_some() {
+            Ok(git2::CertificateCheckStatus::CertificateOk)
+        } else {
+            Ok(git2::CertificateCheckStatus::CertificatePassthrough)
+        }
+    });
     let mut opts = git2::FetchOptions::new();
     opts.remote_callbacks(callbacks);
     opts
