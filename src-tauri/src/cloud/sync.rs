@@ -79,6 +79,65 @@ pub(super) fn commit_local_changes(repo: &Repository) -> Result<(), String> {
     Ok(())
 }
 
+/// Drives a started rebase to completion. Callers must abort the rebase (via
+/// `rebase.abort()`) whenever this returns `Err` — see the caller-side comment in
+/// `rebase_onto_remote` for why that can't be done in here.
+fn run_rebase_ops(
+    repo: &Repository,
+    rebase: &mut git2::Rebase<'_>,
+    signature: &Signature<'_>,
+) -> Result<(), String> {
+    while let Some(op) = rebase.next() {
+        op.map_err(|e| e.to_string())?;
+        let has_conflicts = repo.index().map_err(|e| e.to_string())?.has_conflicts();
+        if has_conflicts {
+            return Err(
+                "Sync failed: local changes conflict with the cloud copy. Your changes are \
+                 saved locally — try Sync again after the conflict is resolved."
+                    .to_string(),
+            );
+        }
+        rebase.commit(None, signature, None).map_err(|e| e.to_string())?;
+    }
+    rebase.finish(Some(signature)).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Rebases local HEAD onto `refs/remotes/origin/<branch>`. No-op if already up to date.
+/// On any failure once the rebase has started — a real conflict, a checkout error, a failed
+/// commit, etc. — aborts the rebase (leaving the local commit from `commit_local_changes`
+/// untouched and `.git/rebase-merge` cleaned up) and returns a user-facing error.
+///
+/// All rebase-stepping logic lives in `run_rebase_ops` specifically so every one of its early
+/// returns funnels through this single `rebase.abort()` call. `Rebase`'s `Drop` impl only calls
+/// `git_rebase_free` (frees memory) — it does NOT call `git_rebase_abort` — so an error that
+/// skipped this would strand the clone mid-rebase on disk with no user-facing recovery path.
+pub(super) fn rebase_onto_remote(repo: &Repository, branch: &str) -> Result<(), String> {
+    let head_ref = repo.head().map_err(|e| e.to_string())?;
+    let head_ac = repo
+        .reference_to_annotated_commit(&head_ref)
+        .map_err(|e| e.to_string())?;
+    let upstream_ref = repo
+        .find_reference(&format!("refs/remotes/origin/{branch}"))
+        .map_err(|e| e.to_string())?;
+    let upstream_ac = repo
+        .reference_to_annotated_commit(&upstream_ref)
+        .map_err(|e| e.to_string())?;
+    // Resolved before the rebase is started so its (practically infallible) error path never
+    // needs to worry about aborting a rebase that doesn't exist yet.
+    let signature = sig()?;
+
+    let mut rebase = repo
+        .rebase(Some(&head_ac), Some(&upstream_ac), None, None)
+        .map_err(|e| e.to_string())?;
+
+    let result = run_rebase_ops(repo, &mut rebase, &signature);
+    if result.is_err() {
+        rebase.abort().ok();
+    }
+    result
+}
+
 /// Ensures `<cache_dir>/.git/info/exclude` filters junk files (`.DS_Store`, swap files, …)
 /// out of `git add -A`. Local to this clone only, never part of the tracked working tree —
 /// regenerated on every clone/fetch, so it needs no propagation.
@@ -128,6 +187,38 @@ mod tests {
         let mut builder = RepoBuilder::new();
         builder.branch(BRANCH);
         builder.clone(bare_dir.to_str().unwrap(), work_dir).unwrap()
+    }
+
+    /// Adds a commit directly to the bare repo's history (simulating another device's push),
+    /// bypassing the local working clone entirely.
+    fn advance_bare(bare: &Repository, file_name: &str, content: &str) {
+        let head_oid = bare
+            .find_reference(&format!("refs/heads/{BRANCH}"))
+            .unwrap()
+            .target()
+            .unwrap();
+        let parent = bare.find_commit(head_oid).unwrap();
+        let parent_tree = parent.tree().unwrap();
+        let blob_oid = bare.blob(content.as_bytes()).unwrap();
+        let mut tb = bare.treebuilder(Some(&parent_tree)).unwrap();
+        tb.insert(file_name, blob_oid, 0o100644).unwrap();
+        let tree_oid = tb.write().unwrap();
+        let tree = bare.find_tree(tree_oid).unwrap();
+        let signature = Signature::now("Remote", "remote@example.com").unwrap();
+        bare.commit(
+            Some(&format!("refs/heads/{BRANCH}")),
+            &signature,
+            &signature,
+            "remote advance",
+            &tree,
+            &[&parent],
+        )
+        .unwrap();
+    }
+
+    fn fetch(repo: &Repository) {
+        let mut remote = repo.find_remote("origin").unwrap();
+        remote.fetch(&[] as &[&str], None, None).unwrap();
     }
 
     fn fixture_dirs(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
@@ -194,5 +285,67 @@ mod tests {
             before,
             "no commit created when only ignored files are present"
         );
+    }
+
+    #[test]
+    fn remote_advanced_no_local_changes_fast_forwards() {
+        let (bare_dir, work_dir) = fixture_dirs("remote_advanced");
+        let bare = init_bare(&bare_dir, "00-Subsurface", "version 3\n");
+        let repo = clone_work(&bare_dir, &work_dir);
+
+        advance_bare(&bare, "other-file.txt", "from another device\n");
+
+        commit_local_changes(&repo).unwrap();
+        fetch(&repo);
+        rebase_onto_remote(&repo, BRANCH).unwrap();
+        assert_eq!(
+            head_oid(&repo),
+            bare.find_reference(&format!("refs/heads/{BRANCH}")).unwrap().target().unwrap(),
+            "fast-forwards to remote tip"
+        );
+    }
+
+    #[test]
+    fn diverged_no_conflict_rebases_cleanly() {
+        let (bare_dir, work_dir) = fixture_dirs("diverged_ok");
+        let bare = init_bare(&bare_dir, "00-Subsurface", "version 3\n");
+        let repo = clone_work(&bare_dir, &work_dir);
+
+        advance_bare(&bare, "remote-file.txt", "from another device\n");
+        std::fs::write(work_dir.join("local-file.txt"), "from this device\n").unwrap();
+        commit_local_changes(&repo).unwrap();
+
+        fetch(&repo);
+        rebase_onto_remote(&repo, BRANCH).unwrap();
+        assert_eq!(
+            repo.state(),
+            git2::RepositoryState::Clean,
+            "rebase leaves a clean repo state"
+        );
+        assert!(work_dir.join("remote-file.txt").exists());
+        assert!(work_dir.join("local-file.txt").exists());
+    }
+
+    #[test]
+    fn diverged_real_conflict_aborts_and_preserves_local_commit() {
+        let (bare_dir, work_dir) = fixture_dirs("diverged_conflict");
+        let bare = init_bare(&bare_dir, "00-Subsurface", "version 3\n");
+        let repo = clone_work(&bare_dir, &work_dir);
+
+        advance_bare(&bare, "00-Subsurface", "version 4\nremote change\n");
+        std::fs::write(work_dir.join("00-Subsurface"), "version 4\nlocal change\n").unwrap();
+        commit_local_changes(&repo).unwrap();
+        let local_commit = head_oid(&repo);
+
+        fetch(&repo);
+        let result = rebase_onto_remote(&repo, BRANCH);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("conflict with the cloud copy"));
+        assert_eq!(
+            repo.state(),
+            git2::RepositoryState::Clean,
+            "abort leaves no in-progress rebase state"
+        );
+        assert_eq!(head_oid(&repo), local_commit, "local commit is untouched");
     }
 }
