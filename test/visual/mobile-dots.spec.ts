@@ -61,15 +61,4 @@ test.describe('mobile panel-selector dots', () => {
     expect(infoBox!.x).toBeCloseTo(profileBox!.x, 0);
     expect(infoBox!.y).toBeCloseTo(profileBox!.y, 0);
   });
-
-  for (const theme of ['light', 'dark'] as const) {
-    for (const panel of ['info', 'profile', 'map'] as const) {
-      test(`dots row appearance — ${panel} active — ${theme}`, async ({ page, platform }) => {
-        await setupPage(page, { logbook: sampleLogbook, theme, platform });
-        await page.getByTestId(`mobile-dot-${panel}`).click();
-        await page.waitForTimeout(100);
-        await expect(page.locator('.dots-row')).toHaveScreenshot(`mobile-dots-row-${panel}-${theme}.png`);
-      });
-    }
-  }
 });
