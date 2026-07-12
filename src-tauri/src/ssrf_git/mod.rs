@@ -258,6 +258,18 @@ pub fn parse_logbook(root: &Path) -> Result<ParsedLogbook, String> {
     Ok(ParsedLogbook { dives, trips, sites, settings, warnings })
 }
 
+/// Writes `contents` to `path` without ever leaving a truncated/corrupt file on disk if the
+/// process is killed mid-write: writes to a sibling `<path>.tmp` first, then renames it into
+/// place. `rename` is atomic on the same filesystem, so a concurrent reader (including a later
+/// `git add -A` during sync) only ever sees the old complete file or the new complete file.
+pub fn atomic_write(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), String> {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp_path = std::path::PathBuf::from(tmp);
+    std::fs::write(&tmp_path, contents).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp_path, path).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,5 +625,23 @@ mod tests {
         assert!(!is_trip_dir("08-30-Thu-09=00=30"));
         assert!(!is_trip_dir("2024"));
         assert!(!is_trip_dir("03"));
+    }
+
+    #[test]
+    fn atomic_write_leaves_final_content_and_no_tmp_sibling() {
+        let tmp = std::env::temp_dir().join("ssrf_atomic_write_test");
+        std::fs::remove_dir_all(&tmp).ok();
+        std::fs::create_dir_all(&tmp).unwrap();
+        let target = tmp.join("00-Subsurface");
+
+        atomic_write(&target, "version 3\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "version 3\n");
+        assert!(!tmp.join("00-Subsurface.tmp").exists());
+
+        atomic_write(&target, "version 4\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "version 4\n");
+        assert!(!tmp.join("00-Subsurface.tmp").exists());
+
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }

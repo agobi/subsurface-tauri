@@ -1,4 +1,6 @@
 // AI-generated (Claude)
+mod sync;
+
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
 use std::sync::Mutex;
@@ -284,10 +286,11 @@ fn map_git_error(e: git2::Error) -> String {
     map_error_message(e.message())
 }
 
-fn make_fetch_opts<'a>(email: &'a str, password: &'a str) -> git2::FetchOptions<'a> {
+// Only provide credentials once — replaying the same credentials triggers libgit2's
+// "too many redirects or authentication replays" error (mirrors Qt's exceeded_auth_attempts).
+// Shared by fetch and push so both time out the same way on a rejected credential.
+pub(crate) fn credential_callbacks<'a>(email: &'a str, password: &'a str) -> git2::RemoteCallbacks<'a> {
     let mut callbacks = git2::RemoteCallbacks::new();
-    // Only provide credentials once — replaying the same credentials triggers libgit2's
-    // "too many redirects or authentication replays" error (mirrors Qt's exceeded_auth_attempts).
     let mut attempt = 0u32;
     callbacks.credentials(move |_, _, _| {
         attempt += 1;
@@ -296,6 +299,11 @@ fn make_fetch_opts<'a>(email: &'a str, password: &'a str) -> git2::FetchOptions<
         }
         git2::Cred::userpass_plaintext(email, password)
     });
+    callbacks
+}
+
+fn make_fetch_opts<'a>(email: &'a str, password: &'a str) -> git2::FetchOptions<'a> {
+    let mut callbacks = credential_callbacks(email, password);
     callbacks.certificate_check(|cert, host| {
         // Mirrors Qt's certificate_check_cb (core/git-access.cpp): libgit2's own X.509 chain
         // verification is unreliable across platforms — e.g. on Android, vendored OpenSSL's
@@ -346,6 +354,10 @@ fn clone_or_fetch(
 
     if cache_dir.is_dir() {
         let repo = git2::Repository::open(cache_dir).map_err(|e| e.to_string())?;
+        // Write the exclude file before touching local changes — a legacy cache cloned
+        // before this feature existed has no exclude file yet, and without this ordering
+        // its first sync could commit junk files (e.g. .DS_Store) before self-healing.
+        sync::ensure_git_exclude(cache_dir)?;
         // Always sync the remote URL — the cache may have been written by an older version
         // of this code that stored a different URL format (e.g. with [branch] brackets).
         repo.remote_set_url("origin", url).map_err(|e| e.to_string())?;
@@ -356,21 +368,17 @@ fn clone_or_fetch(
             .fetch(&[] as &[&str], Some(&mut opts), None)
             .map_err(map_git_error)?;
         let refname = format!("refs/remotes/origin/{branch}");
-        let remote_ref = repo
-            .find_reference(&refname)
+        repo.find_reference(&refname)
             .map_err(|_| format!("Remote branch '{branch}' not found after fetch — is the account empty?"))?;
-        let resolved = remote_ref.resolve().map_err(|e| e.to_string())?;
-        let oid = resolved
-            .target()
-            .ok_or_else(|| "Unborn remote branch".to_string())?;
-        let obj = repo.find_object(oid, None).map_err(|e| e.to_string())?;
-        repo.reset(&obj, git2::ResetType::Hard, None)
-            .map_err(|e| e.to_string())?;
+        sync::commit_local_changes(&repo)?;
+        sync::rebase_onto_remote(&repo, branch)?;
+        sync::push_to_remote(&repo, "origin", branch, email, password)?;
     } else {
         let mut builder = git2::build::RepoBuilder::new();
         builder.fetch_options(make_fetch_opts(email, password));
         builder.branch(branch);
         builder.clone(url, cache_dir).map_err(map_git_error)?;
+        sync::ensure_git_exclude(cache_dir)?;
     }
     Ok(())
 }
