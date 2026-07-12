@@ -354,6 +354,10 @@ fn clone_or_fetch(
 
     if cache_dir.is_dir() {
         let repo = git2::Repository::open(cache_dir).map_err(|e| e.to_string())?;
+        // Write the exclude file before touching local changes — a legacy cache cloned
+        // before this feature existed has no exclude file yet, and without this ordering
+        // its first sync could commit junk files (e.g. .DS_Store) before self-healing.
+        sync::ensure_git_exclude(cache_dir)?;
         // Always sync the remote URL — the cache may have been written by an older version
         // of this code that stored a different URL format (e.g. with [branch] brackets).
         repo.remote_set_url("origin", url).map_err(|e| e.to_string())?;
@@ -374,8 +378,8 @@ fn clone_or_fetch(
         builder.fetch_options(make_fetch_opts(email, password));
         builder.branch(branch);
         builder.clone(url, cache_dir).map_err(map_git_error)?;
+        sync::ensure_git_exclude(cache_dir)?;
     }
-    sync::ensure_git_exclude(cache_dir)?;
     Ok(())
 }
 

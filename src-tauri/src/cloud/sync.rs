@@ -166,7 +166,7 @@ pub(super) fn ensure_git_exclude(cache_dir: &Path) -> Result<(), String> {
     if let Some(parent) = exclude_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    std::fs::write(&exclude_path, ".DS_Store\nThumbs.db\n*.swp\n*~\n").map_err(|e| e.to_string())
+    std::fs::write(&exclude_path, ".DS_Store\nThumbs.db\n*.swp\n*~\n*.tmp\n").map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -265,7 +265,7 @@ mod tests {
 
         ensure_git_exclude(&work_dir).unwrap();
         let contents = std::fs::read_to_string(work_dir.join(".git/info/exclude")).unwrap();
-        assert_eq!(contents, ".DS_Store\nThumbs.db\n*.swp\n*~\n");
+        assert_eq!(contents, ".DS_Store\nThumbs.db\n*.swp\n*~\n*.tmp\n");
     }
 
     #[test]
