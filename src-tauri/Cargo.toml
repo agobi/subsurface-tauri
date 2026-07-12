@@ -28,7 +28,7 @@ tauri-plugin-log = "2"
 tauri-plugin-store = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-os = "2"
-git2 = { version = "0.20", default-features = false, features = ["https"] }
+git2 = { version = "0.21", default-features = false, features = ["https"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
@@ -50,7 +50,7 @@ core-foundation-sys = "0.8"
 openssl-src = ">=300.0.14, <400.1"
 
 [target.'cfg(target_os = "android")'.dependencies]
-git2 = { version = "0.20", default-features = false, features = ["vendored-openssl"] }
+git2 = { version = "0.21", default-features = false, features = ["vendored-openssl"] }
 dc-ble = { path = "plugins/dc-ble" }
 
 [dev-dependencies]
