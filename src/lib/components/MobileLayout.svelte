@@ -241,11 +241,11 @@
   }
 
   .dots-row {
+    position: relative;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--space-2);
     padding: 4px 0;
     background: var(--panel);
     border-bottom: 1px solid var(--hair);
@@ -272,6 +272,10 @@
   }
 
   .active-panel-label {
+    /* Positioned out of flow so its variable width (Info/Profile/Map) never
+       shifts the centered .dots block — see issue #87. */
+    position: absolute;
+    right: var(--space-4);
     font-size: 11px;
     font-weight: 600;
     color: var(--txt-2);
