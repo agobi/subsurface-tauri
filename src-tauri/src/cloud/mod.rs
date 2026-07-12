@@ -380,6 +380,7 @@ fn clone_or_fetch(
         builder.branch(branch);
         builder.clone(url, cache_dir).map_err(map_git_error)?;
     }
+    sync::ensure_git_exclude(cache_dir)?;
     Ok(())
 }
 
