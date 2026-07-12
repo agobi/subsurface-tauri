@@ -16,7 +16,7 @@
   let prefs = $derived(app.diveListPrefs);
   let visibleCols = $derived(app.visibleCols);
   let gridCols = $derived(visibleCols.map(c => c.width).join(" ") + " 28px");
-  let ctx: RenderCtx = $derived({ sites });
+  let ctx: RenderCtx = $derived({ sites, units: app.displayUnits });
   let pickerOpen = $state(false);
 
   let filtered = $derived(
@@ -101,12 +101,16 @@
               {@render row(d, i, true)}
             {/each}
           {/if}
-        {:else}
+        {:else if t.diveNumbers.length === 0}
           <div class="trip trip--empty">
             <span class="tw">− {t.label}</span>
             <span class="cnt">(no dives parsed)</span>
           </div>
         {/if}
+        <!-- t.diveNumbers.length > 0 but tds is empty means the search query
+             filtered out every dive in this trip — hide the trip entirely
+             rather than showing "(no dives parsed)", which is reserved for
+             trips with no parsed dives at all. -->
       {:else}
         {@render row(entry.dive, gi)}
       {/if}

@@ -41,6 +41,28 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page).toHaveScreenshot(`cloud-dialog-${theme}.png`);
   });
 
+  // Regression: DC download dialog must sit above Leaflet's zoom controls (z-index 1000).
+  test(`dc download dialog above map — ${theme}`, async ({ page, platform }) => {
+    test.skip(platform === 'android', 'desktop-only');
+    await setupPage(page, { logbook: sampleLogbookWithGps, theme, platform });
+    await page.evaluate(async () => {
+      const { app } = await import('/src/lib/stores/app.svelte.ts');
+      app.showDcDialog = true;
+    });
+    await page.waitForTimeout(100);
+    await expect(page).toHaveScreenshot(`dc-dialog-${theme}.png`);
+  });
+
+  // Android has no menu bar, so Preferences (prefs.html) is unreachable there —
+  // MobileSettingsScreen is the actual settings UI on Android.
+  test(`mobile settings screen — ${theme}`, async ({ page, platform }) => {
+    test.skip(platform !== 'android', 'android-only screen');
+    await setupPage(page, { logbook: sampleLogbook, theme, platform });
+    await page.getByLabel('Settings').click();
+    await page.waitForTimeout(100);
+    await expect(page).toHaveScreenshot(`mobile-settings-${theme}.png`);
+  });
+
   test(`dive list scrolled to country column — ${theme}`, async ({ page, platform }) => {
     await setupPage(page, { logbook: sampleLogbook, theme, platform });
     const isAndroid = platform === 'android';

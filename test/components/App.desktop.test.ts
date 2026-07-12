@@ -4,6 +4,8 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/svelte";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { message } from "@tauri-apps/plugin-dialog";
+import * as store from "@tauri-apps/plugin-store";
 import App from "../../src/App.svelte";
 import { app } from "$lib/stores/app.svelte.ts";
 import sample from "$lib/fixtures/logbook.sample.json";
@@ -65,7 +67,7 @@ describe("App — desktop cloud wiring", () => {
 
 describe("App — handleCloudSuccess", () => {
   function openResult(overrides: Partial<OpenResult> = {}): OpenResult {
-    return { logbook: sample as any, displayName: "test", recents: [], ...overrides };
+    return { logbook: sample as any, displayName: "test", recents: [], warnings: [], ...overrides };
   }
 
   beforeEach(() => {
@@ -129,5 +131,108 @@ describe("App — handleCloudSuccess", () => {
     await fireEvent.click(screen.getByRole("button", { name: /open cloud/i }));
 
     await waitFor(() => expect(order).toContain("callback"));
+  });
+});
+
+describe("App — parse warnings dialog", () => {
+  function openResult(overrides: Partial<OpenResult> = {}): OpenResult {
+    return { logbook: sample as any, displayName: "test", recents: [], warnings: [], ...overrides };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    app.reset();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+  });
+
+  it("shows a warning dialog when startup_logbook returns non-empty warnings", async () => {
+    const sampleDive = (sample as any).dives[0];
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_dive") return sampleDive;
+      if (cmd === "startup_logbook") {
+        return openResult({ warnings: ["2024/03/16-Sat-09=00=00/Dive-2: Permission denied (os error 13)"] });
+      }
+      return openResult();
+    });
+
+    render(App);
+
+    await waitFor(() =>
+      expect(vi.mocked(message)).toHaveBeenCalledWith(
+        "1 dive could not be read:\n\n2024/03/16-Sat-09=00=00/Dive-2: Permission denied (os error 13)",
+        { title: "Some Dives Skipped", kind: "warning" }
+      )
+    );
+  });
+
+  it("pluralizes the dialog message for multiple warnings", async () => {
+    const sampleDive = (sample as any).dives[0];
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_dive") return sampleDive;
+      if (cmd === "startup_logbook") {
+        return openResult({ warnings: ["path/one: error one", "path/two: error two"] });
+      }
+      return openResult();
+    });
+
+    render(App);
+
+    await waitFor(() =>
+      expect(vi.mocked(message)).toHaveBeenCalledWith(
+        "2 dives could not be read:\n\npath/one: error one\npath/two: error two",
+        { title: "Some Dives Skipped", kind: "warning" }
+      )
+    );
+  });
+
+  it("does not show a warning dialog when startup_logbook returns no warnings", async () => {
+    const sampleDive = (sample as any).dives[0];
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_dive") return sampleDive;
+      return openResult();
+    });
+
+    render(App);
+    await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument());
+    expect(vi.mocked(message)).not.toHaveBeenCalled();
+  });
+});
+
+describe("App — units preference wiring", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    app.reset();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+  });
+
+  it("loads the saved units preference on startup", async () => {
+    vi.mocked(store.load).mockResolvedValue({
+      get: vi.fn().mockResolvedValue({ theme: "auto", units: "IMPERIAL" }),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    render(App);
+    await waitFor(() => expect(app.unitsPref).toBe("IMPERIAL"));
+  });
+
+  it("updates app.unitsPref when prefs:appearance-changed is received", async () => {
+    render(App);
+    await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument());
+
+    const listenCalls = vi.mocked(listen).mock.calls;
+    const call = listenCalls.find((c) => c[0] === "prefs:appearance-changed");
+    expect(call).toBeDefined();
+    const callback = call![1] as (e: { payload: unknown }) => void;
+    callback({ payload: { theme: "dark", units: "IMPERIAL" } });
+
+    expect(app.unitsPref).toBe("IMPERIAL");
   });
 });

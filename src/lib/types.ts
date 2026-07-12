@@ -52,11 +52,16 @@ export interface DiveSummary {
   decoModel?: string;
   divemode?: string;
   totalWeightKg?: number;
+  mediaCount: number;
+  otu?: number;
+  maxCns?: number;
 }
 
 export interface Dive extends DiveSummary {
   samples: Sample[];
   events: DiveEvent[];
+  dcDeviceId?: string;
+  dcDiveId?: string;
 }
 
 export interface Trip {
@@ -90,4 +95,5 @@ export interface OpenResult {
   logbook: Logbook;
   displayName: string;
   recents: RecentEntry[];
+  warnings: string[];
 }

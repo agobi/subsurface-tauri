@@ -4,7 +4,9 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { app } from "$lib/stores/app.svelte.ts";
+  import { fmtDepth } from "$lib/units.ts";
   import { loadDcConnections, saveDcConnection, type DcConnections, type Transport } from "$lib/dcConnections.ts";
+  import { loadDcDownloadPrefs } from "$lib/prefs.ts";
 
   let { open, onClose }: { open: boolean; onClose: () => void } = $props();
 
@@ -51,9 +53,27 @@
   let statusLabel = $state("Connecting…");
 
   type DiveSummary = { date: string; durationSec: number; maxDepthM: number };
-  let pendingDives = $state<DiveSummary[]>([]);
-  let selectedDives = $state<boolean[]>([]);
-  let selectedCount = $derived(selectedDives.filter(Boolean).length);
+  type DiveGroup = { merged: DiveSummary; segments: DiveSummary[] };
+  type GroupState = { expanded: boolean; mergedChecked: boolean; segmentChecked: boolean[] };
+  let pendingGroups = $state<DiveGroup[]>([]);
+  let groupStates = $state<GroupState[]>([]);
+  let selectedCount = $derived(
+    groupStates.reduce(
+      (n, g) => n + (g.expanded ? g.segmentChecked.filter(Boolean).length : (g.mergedChecked ? 1 : 0)),
+      0,
+    ),
+  );
+
+  function toggleExpanded(i: number) {
+    const g = groupStates[i];
+    if (!g.expanded) {
+      // Expanding: seed each segment's checked state from the merged checkbox.
+      groupStates[i] = { ...g, expanded: true, segmentChecked: g.segmentChecked.map(() => g.mergedChecked) };
+    } else {
+      // Collapsing: merged is checked if any segment was checked.
+      groupStates[i] = { ...g, expanded: false, mergedChecked: g.segmentChecked.some(Boolean) };
+    }
+  }
 
   let unlisteners: (() => void)[] = [];
 
@@ -94,19 +114,23 @@
       progressMaximum = e.payload.maximum;
     }));
     unlisteners.push(await listen<{
-      dives: DiveSummary[];
+      groups: DiveGroup[];
       skipped: number;
       cancelled: boolean;
     }>("dc-complete", (e) => {
       resultSkipped = e.payload.skipped;
       resultCancelled = e.payload.cancelled;
       errorMsg = null;
-      if (e.payload.dives.length > 0) {
+      if (e.payload.groups.length > 0) {
         // Show whatever was fetched for review, even if the download was
         // cancelled partway through — a cancel shouldn't discard progress
         // that was already downloaded.
-        pendingDives = e.payload.dives;
-        selectedDives = e.payload.dives.map(() => true);
+        pendingGroups = e.payload.groups;
+        groupStates = e.payload.groups.map((g) => ({
+          expanded: false,
+          mergedChecked: true,
+          segmentChecked: g.segments.map(() => true),
+        }));
         step = "review";
       } else {
         if (!e.payload.cancelled) {
@@ -114,7 +138,7 @@
           // needs to advance, or every future download re-scans its full
           // history. commit_dc_download always does this regardless of an
           // empty selection.
-          invoke("commit_dc_download", { selectedIndices: [] }).catch(() => {});
+          invoke("commit_dc_download", { selections: [] }).catch(() => {});
         }
         resultAdded = 0;
         step = "result";
@@ -164,6 +188,7 @@
     selectedBleDevice = null;
     bleDevices = [];
     bleScanning = false;
+    permissionDenied = false;
     clearTimeout(bleScanTimer);
     step = "setup";
   }
@@ -219,7 +244,7 @@
     step = "progress";
     progressCurrent = 0;
     progressMaximum = 0;
-    pendingDives = [];
+    pendingGroups = [];
     const transportArg = transport === "Serial"
       ? { kind: "Serial", port: serialPort }
       : transport === "Bluetooth"
@@ -227,21 +252,38 @@
       : transport === "BLE"
       ? { kind: "Ble", address: selectedBleDevice ?? "" }
       : { kind: "UsbHid" };
+    const { mergeGapMinutes } = await loadDcDownloadPrefs();
     try {
-      await invoke("start_dc_download", { vendor, model, transport: transportArg });
+      await invoke("start_dc_download", { vendor, model, transport: transportArg, mergeGapMinutes });
     } catch (e) {
-      errorMsg = e instanceof Error ? e.message : String(e);
-      step = "result";
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === "PermissionDenied") {
+        // The cached-device fast path (selectKnownDevice) can land here with
+        // no scan ever having run — route to "setup" so the BLE permission
+        // recovery UI (warning + Open Settings) is reachable, same as scanBle().
+        permissionDenied = true;
+        step = "setup";
+      } else {
+        errorMsg = msg;
+        step = "result";
+      }
     }
   }
 
   async function saveToLogbook() {
     try {
-      const selectedIndices = selectedDives
-        .map((isSelected, i) => (isSelected ? i : -1))
-        .filter((i) => i !== -1);
-      const added = await invoke<number>("commit_dc_download", { selectedIndices });
+      const selections: { group: number; merged: boolean; segments: number[] }[] = [];
+      groupStates.forEach((g, i) => {
+        if (g.expanded) {
+          const segments = g.segmentChecked.map((c, si) => (c ? si : -1)).filter((si) => si !== -1);
+          if (segments.length > 0) selections.push({ group: i, merged: false, segments });
+        } else if (g.mergedChecked) {
+          selections.push({ group: i, merged: true, segments: [] });
+        }
+      });
+      const added = await invoke<number>("commit_dc_download", { selections });
       resultAdded = added;
+      resultCancelled = false;
       await app.startup();
       step = "result";
     } catch (e) {
@@ -252,7 +294,7 @@
 
   async function discardDownload() {
     await invoke("discard_dc_download").catch(() => {});
-    pendingDives = [];
+    pendingGroups = [];
     step = knownDevices.length > 0 ? "list" : "setup";
   }
 
@@ -260,13 +302,30 @@
   // plus a small margin for the final dc-ble-found emit to land.
   const BLE_SCAN_DURATION_MS = 10_500;
 
+  let permissionDenied = $state(false);
+
   async function scanBle() {
     bleDevices = [];
     errorMsg = null;
+    permissionDenied = false;
     bleScanning = true;
     clearTimeout(bleScanTimer);
-    await invoke("scan_ble_devices", { vendor, model });
-    bleScanTimer = setTimeout(() => { bleScanning = false; }, BLE_SCAN_DURATION_MS);
+    try {
+      await invoke("scan_ble_devices", { vendor, model });
+      bleScanTimer = setTimeout(() => { bleScanning = false; }, BLE_SCAN_DURATION_MS);
+    } catch (e) {
+      bleScanning = false;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === "PermissionDenied") {
+        permissionDenied = true;
+      } else {
+        errorMsg = msg;
+      }
+    }
+  }
+
+  async function openAppSettings() {
+    await invoke("open_app_settings").catch(() => {});
   }
 
   function cancel() { invoke("cancel_dc_download").catch(() => {}); }
@@ -345,6 +404,10 @@
             {#if bleScanning}
               <p class="status">Scanning…</p>
             {/if}
+            {#if permissionDenied}
+              <p class="warning">Bluetooth permission is required to scan for devices.</p>
+              <button type="button" onclick={openAppSettings}>Open Settings</button>
+            {/if}
             {#each bleDevices as d}
               <label><input type="radio" bind:group={selectedBleDevice} value={d.address} />{d.name}</label>
             {/each}
@@ -376,14 +439,34 @@
         {#if resultCancelled}
           <p class="warning">Download was cancelled — showing what was fetched before it stopped.</p>
         {/if}
-        <p>{pendingDives.length} new dive{pendingDives.length !== 1 ? "s" : ""}{resultSkipped > 0 ? `, ${resultSkipped} already in logbook` : ""}.</p>
+        <p>{pendingGroups.length} new dive{pendingGroups.length !== 1 ? "s" : ""}{resultSkipped > 0 ? `, ${resultSkipped} already in logbook` : ""}.</p>
         <div class="dive-list" role="list">
-          {#each pendingDives as dive, i}
-            <div class="dive-item" role="listitem">
-              <input type="checkbox" bind:checked={selectedDives[i]} aria-label={`Include dive on ${dive.date}`} />
-              <span class="dive-date">{dive.date.replace("T", " ")}</span>
-              <span class="dive-depth">{dive.maxDepthM.toFixed(1)} m</span>
-              <span class="dive-dur">{fmtDuration(dive.durationSec)}</span>
+          {#each pendingGroups as group, i}
+            <div class="group">
+              {#if !groupStates[i].expanded}
+                <div class="dive-item" role="listitem">
+                  <input type="checkbox" bind:checked={groupStates[i].mergedChecked} aria-label={`Include dive on ${group.merged.date}`} />
+                  <span class="dive-date">{group.merged.date.replace("T", " ")}</span>
+                  <span class="dive-depth">{fmtDepth(group.merged.maxDepthM, app.displayUnits)}</span>
+                  <span class="dive-dur">{fmtDuration(group.merged.durationSec)}</span>
+                  {#if group.segments.length > 1}
+                    <span class="merge-badge">merged from {group.segments.length} segments</span>
+                    <button type="button" class="unmerge-btn" onclick={() => toggleExpanded(i)}>Unmerge</button>
+                  {/if}
+                </div>
+              {:else}
+                {#each group.segments as seg, si}
+                  <div class="dive-item" role="listitem">
+                    <input type="checkbox" bind:checked={groupStates[i].segmentChecked[si]} aria-label={`Include dive on ${seg.date}`} />
+                    <span class="dive-date">{seg.date.replace("T", " ")}</span>
+                    <span class="dive-depth">{fmtDepth(seg.maxDepthM, app.displayUnits)}</span>
+                    <span class="dive-dur">{fmtDuration(seg.durationSec)}</span>
+                  </div>
+                {/each}
+                <div class="dive-item merge-row">
+                  <button type="button" class="unmerge-btn" onclick={() => toggleExpanded(i)}>Merge</button>
+                </div>
+              {/if}
             </div>
           {/each}
         </div>
@@ -410,7 +493,7 @@
 <style>
   .dialog-backdrop {
     position: fixed; inset: 0; background: rgb(0 0 0 / 50%);
-    display: flex; align-items: center; justify-content: center; z-index: 100;
+    display: flex; align-items: center; justify-content: center; z-index: 1001;
   }
   .dialog {
     background: var(--panel); color: var(--txt);
@@ -434,6 +517,7 @@
     font: inherit; padding: 0.4rem 0.9rem; cursor: pointer;
   }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  progress { width: 100%; }
   .error { color: var(--rate-fast, #e5484d); }
   .warning { color: var(--amber, #f2a33c); font-size: 0.875rem; }
   .known-device-label { font-weight: 600; }
@@ -442,11 +526,14 @@
     max-height: 260px; overflow-y: auto;
   }
   .dive-item {
-    display: grid; grid-template-columns: auto 1fr auto auto;
-    align-items: center;
+    display: flex; align-items: center;
     gap: 0.75rem; padding: 0.4rem 0.75rem; font-size: 0.875rem;
     border-bottom: 1px solid var(--hair);
   }
-  .dive-item:last-child { border-bottom: none; }
+  .group:last-child .dive-item:last-child { border-bottom: none; }
+  .dive-date { flex: 1; }
   .dive-depth, .dive-dur { color: var(--txt-3); white-space: nowrap; }
+  .merge-badge { color: var(--txt-3); font-size: 0.75rem; white-space: nowrap; }
+  .unmerge-btn { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+  .merge-row { justify-content: flex-end; }
 </style>

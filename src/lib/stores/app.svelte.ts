@@ -1,13 +1,14 @@
 // AI-generated (Claude)
 import { invoke } from "@tauri-apps/api/core";
-import type { Logbook, Dive, DiveSummary, OpenResult, RecentEntry } from "$lib/types.ts";
+import type { Logbook, Dive, DiveSummary, OpenResult, RecentEntry, Units } from "$lib/types.ts";
 import type { DiveListPrefs } from "$lib/prefs.ts";
-import { DEFAULT_DIVE_LIST_PREFS, loadDiveListPrefs, saveDiveListPrefs } from "$lib/prefs.ts";
+import { DEFAULT_DIVE_LIST_PREFS, loadDiveListPrefs, saveDiveListPrefs, resolveUnits } from "$lib/prefs.ts";
 import type { ColId, ColDef, RenderCtx } from "$lib/diveListColumns.ts";
 import { ALL_COLS } from "$lib/diveListColumns.ts";
 
 export type PanelKey = "info" | "profile" | "list" | "map";
 export type Theme = "dark" | "light" | "auto";
+export type UnitsPref = "auto" | "METRIC" | "IMPERIAL";
 export type VisiblePanels = Record<PanelKey, boolean>;
 export type Platform = "desktop" | "mobile";
 
@@ -21,10 +22,13 @@ class AppStore {
   selectedDiveLoading = $state(false);
   visiblePanels = $state<VisiblePanels>({ ...ALL_VISIBLE });
   theme = $state<Theme>("auto");
+  unitsPref = $state<UnitsPref>("auto");
   platform = $state<Platform>("desktop");
   get isCloudLogbook(): boolean { return this.recents[0]?.kind === "Cloud"; }
+  get displayUnits(): Units { return resolveUnits(this.unitsPref, this.logbook.units); }
   displayName = $state("");
   recents = $state<RecentEntry[]>([]);
+  parseWarnings = $state<string[]>([]);
   showCloudDialog = $state<{ email: string; message?: string; onSuccess?: () => void } | false>(false);
   showDcDialog = $state(false);
   diveListPrefs = $state<DiveListPrefs>({
@@ -45,24 +49,26 @@ class AppStore {
       .filter((c): c is ColDef => c != null);
   }
 
-  get sortedDives(): DiveSummary[] {
+  #sortedDives = $derived.by((): DiveSummary[] => {
     const { sortKey, sortDir } = this.diveListPrefs;
     if (sortKey === "nr") {
       return [...this.logbook.dives].sort((a, b) => sortDir === "asc" ? a.number - b.number : b.number - a.number);
     }
     const col = ALL_COLS.find(c => c.id === sortKey);
     if (!col) return this.logbook.dives;
-    const ctx: RenderCtx = { sites: this.logbook.sites };
-    return [...this.logbook.dives].sort((a, b) => {
-      const ae = col.render(a, ctx) === "—";
-      const be = col.render(b, ctx) === "—";
-      if (ae && be) return 0;
-      if (ae) return 1;
-      if (be) return -1;
-      const cmp = col.compare(a, b, ctx);
+    const ctx: RenderCtx = { sites: this.logbook.sites, units: this.displayUnits };
+    const entries = this.logbook.dives.map(d => ({ dive: d, isEmpty: col.render(d, ctx) === "—" }));
+    entries.sort((a, b) => {
+      if (a.isEmpty && b.isEmpty) return 0;
+      if (a.isEmpty) return 1;
+      if (b.isEmpty) return -1;
+      const cmp = col.compare(a.dive, b.dive, ctx);
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }
+    return entries.map(e => e.dive);
+  });
+
+  get sortedDives(): DiveSummary[] { return this.#sortedDives; }
 
   async selectDive(number: number | null): Promise<void> {
     this.selectedDiveId = number;
@@ -70,9 +76,16 @@ class AppStore {
     if (number === null) return;
     this.selectedDiveLoading = true;
     try {
-      this.selectedDive = await invoke<Dive>("get_dive", { number });
+      const dive = await invoke<Dive>("get_dive", { number });
+      // A newer selectDive() call may have landed while this one was in
+      // flight — a slower response for a stale selection must not clobber it.
+      if (this.selectedDiveId === number) {
+        this.selectedDive = dive;
+      }
     } finally {
-      this.selectedDiveLoading = false;
+      if (this.selectedDiveId === number) {
+        this.selectedDiveLoading = false;
+      }
     }
   }
 
@@ -81,6 +94,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     this.diveListPrefs = await loadDiveListPrefs();
     await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
@@ -90,6 +104,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
@@ -98,6 +113,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
@@ -106,6 +122,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
@@ -114,6 +131,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     await this.selectDive(result.logbook.dives[0]?.number ?? null);
   }
 
@@ -123,6 +141,7 @@ class AppStore {
     this.logbook = result.logbook;
     this.displayName = result.displayName;
     this.recents = result.recents;
+    this.parseWarnings = result.warnings;
     const stillExists = result.logbook.dives.some((d) => d.number === currentId);
     await this.selectDive(stillExists ? currentId : (result.logbook.dives[0]?.number ?? null));
   }
@@ -135,6 +154,18 @@ class AppStore {
     }
   }
 
+  async loadRecents(): Promise<void> {
+    this.recents = await invoke<RecentEntry[]>("get_recents");
+  }
+
+  async clearRecents(): Promise<void> {
+    this.recents = await invoke<RecentEntry[]>("clear_recents");
+  }
+
+  async removeRecent(index: number): Promise<void> {
+    this.recents = await invoke<RecentEntry[]>("remove_recent", { index });
+  }
+
   togglePanel(key: PanelKey) {
     const next = { ...this.visiblePanels, [key]: !this.visiblePanels[key] };
     if (!Object.values(next).some(Boolean)) return;
@@ -142,6 +173,8 @@ class AppStore {
   }
 
   setTheme(t: Theme) { this.theme = t; }
+
+  setUnitsPref(u: UnitsPref) { this.unitsPref = u; }
 
   setPlatform(p: Platform) { this.platform = p; }
 
@@ -177,7 +210,11 @@ class AppStore {
     if (fromIdx === -1 || toIdx === -1) return;
     const next = [...colOrder];
     next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, fromId);
+    // Removing fromIdx shifts every index after it left by one, so re-target
+    // toIdx to where the target column now sits — otherwise the dragged
+    // column lands on opposite sides of the target depending on drag direction.
+    const insertIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
+    next.splice(insertIdx, 0, fromId);
     this.diveListPrefs = { ...this.diveListPrefs, colOrder: next };
     try {
       await saveDiveListPrefs(this.diveListPrefs);
@@ -193,9 +230,11 @@ class AppStore {
     this.selectedDiveLoading = false;
     this.visiblePanels = { ...ALL_VISIBLE };
     this.theme = "auto";
+    this.unitsPref = "auto";
     this.platform = "desktop";
     this.displayName = "";
     this.recents = [];
+    this.parseWarnings = [];
     this.showCloudDialog = false;
     this.showDcDialog = false;
     this.diveListPrefs = {

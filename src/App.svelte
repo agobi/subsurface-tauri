@@ -95,6 +95,7 @@
 
       const prefs = await loadAppearancePrefs();
       app.setTheme(prefs.theme);
+      app.setUnitsPref(prefs.units);
     } catch (e) {
       startupError = e instanceof Error ? e.message : String(e);
       return;
@@ -114,6 +115,7 @@
         }),
         listen<AppearancePrefs>("prefs:appearance-changed", ({ payload }) => {
           app.setTheme(payload.theme);
+          app.setUnitsPref(payload.units);
         }),
         listen<RecentEntry>("menu:open-recent", ({ payload }) => {
           handleOpenRecent(payload);
@@ -132,6 +134,17 @@
 
   $effect(() => {
     applyTheme(app.theme);
+  });
+
+  $effect(() => {
+    if (app.parseWarnings.length === 0) return;
+    const warnings = app.parseWarnings;
+    app.parseWarnings = [];
+    const n = warnings.length;
+    showMessage(
+      `${n} dive${n === 1 ? "" : "s"} could not be read:\n\n${warnings.join("\n")}`,
+      { title: "Some Dives Skipped", kind: "warning" }
+    );
   });
 </script>
 

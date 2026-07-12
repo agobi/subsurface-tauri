@@ -21,6 +21,7 @@ const emptyOpenResult = {
   logbook: { dives: [], trips: [], sites: [], units: "METRIC" },
   displayName: "",
   recents: [],
+  warnings: [],
 };
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -29,6 +30,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn().mockResolvedValue(null),
+  message: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({

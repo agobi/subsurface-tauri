@@ -6,8 +6,8 @@ import { app } from "$lib/stores/app.svelte.ts";
 import type { Dive, Trip, Site } from "$lib/types.ts";
 
 const dives: Dive[] = [
-  { number: 269, dateTime: "2024-03-15T12:28:43", durationSec: 3310, siteId: "c171f112", tags: ["cave"], rating: 4, maxDepthM: 34.7, cylinders: [], samples: [], events: [] },
-  { number: 270, dateTime: "2024-04-01T10:00:00", durationSec: 2400, siteId: "04782ed8", tags: ["reef"], rating: 5, maxDepthM: 18.2, cylinders: [], samples: [], events: [] },
+  { number: 269, dateTime: "2024-03-15T12:28:43", durationSec: 3310, siteId: "c171f112", tags: ["cave"], rating: 4, maxDepthM: 34.7, cylinders: [], mediaCount: 0, samples: [], events: [] },
+  { number: 270, dateTime: "2024-04-01T10:00:00", durationSec: 2400, siteId: "04782ed8", tags: ["reef"], rating: 5, maxDepthM: 18.2, cylinders: [], mediaCount: 0, samples: [], events: [] },
 ];
 const trips: Trip[] = [{ label: "March 2024", diveNumbers: [269] }];
 const sites: Site[] = [
@@ -46,10 +46,28 @@ describe("DiveList", () => {
     expect(screen.getByText("Fenyes Forras")).toBeInTheDocument(); // ungrouped dive still shown
   });
 
+  it("shows '(no dives parsed)' only for a trip with zero parsed dives, not a search-filtered one", () => {
+    const tTrips: Trip[] = [
+      { label: "Empty trip", diveNumbers: [] },
+      { label: "March 2024", diveNumbers: [269] },
+    ];
+    render(DiveList, { props: { dives, trips: tTrips, sites, query: "" } });
+    expect(screen.getByText(/Empty trip/)).toBeInTheDocument();
+    expect(screen.getByText("(no dives parsed)")).toBeInTheDocument();
+    expect(screen.getByText(/March 2024/)).toBeInTheDocument();
+  });
+
+  it("hides a trip entirely (no misleading '(no dives parsed)') when the search query filters out all its dives", () => {
+    render(DiveList, { props: { dives, trips, sites, query: "reef" } });
+    // "March 2024" only contains dive 269 (tags: ["cave"]), which doesn't match "reef".
+    expect(screen.queryByText("March 2024")).not.toBeInTheDocument();
+    expect(screen.queryByText("(no dives parsed)")).not.toBeInTheDocument();
+  });
+
   it("trip count uses singular 'dive' for 1, plural 'dives' for many", () => {
     const tDives = [
-      { number: 1, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], samples: [], events: [] },
-      { number: 2, dateTime: "2024-01-02T00:00:00", durationSec: 300, tags: [], cylinders: [], samples: [], events: [] },
+      { number: 1, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], mediaCount: 0, samples: [], events: [] },
+      { number: 2, dateTime: "2024-01-02T00:00:00", durationSec: 300, tags: [], cylinders: [], mediaCount: 0, samples: [], events: [] },
     ] satisfies Dive[];
     render(DiveList, { props: { dives: tDives, trips: [{ label: "Solo trip", diveNumbers: [1] }], sites: [], query: "" } });
     expect(screen.getByText("1 dive")).toBeInTheDocument();
@@ -59,7 +77,7 @@ describe("DiveList", () => {
 });
 
 function dive(overrides: Partial<Dive> = {}): Dive {
-  return { number: 1, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], samples: [], events: [], ...overrides };
+  return { number: 1, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], mediaCount: 0, samples: [], events: [], ...overrides };
 }
 
 describe("DiveList — sorting and columns", () => {
@@ -141,8 +159,8 @@ describe("DiveList — interleaving ungrouped dives with trips (regression)", ()
     // before an older trip's dives when sorted by dive number descending — not
     // pushed to the bottom of the whole list regardless of its number.
     const tDives = [
-      { number: 461, dateTime: "2026-06-14T10:19:12", durationSec: 300, tags: [], cylinders: [], samples: [], events: [] },
-      { number: 100, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], samples: [], events: [] },
+      { number: 461, dateTime: "2026-06-14T10:19:12", durationSec: 300, tags: [], cylinders: [], mediaCount: 0, samples: [], events: [] },
+      { number: 100, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], mediaCount: 0, samples: [], events: [] },
     ] satisfies Dive[];
     const tTrips: Trip[] = [{ label: "Old trip", diveNumbers: [100] }];
     const { container } = render(DiveList, { props: { dives: tDives, trips: tTrips, sites: [], query: "" } });

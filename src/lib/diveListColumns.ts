@@ -1,15 +1,18 @@
 // AI-generated (Claude)
-import type { DiveSummary, Site, Cylinder } from "$lib/types.ts";
+import type { DiveSummary, Site, Cylinder, Units } from "$lib/types.ts";
 import { fmtMinSec } from "$lib/format.ts";
+import { fmtDepth, fmtTemp, fmtWeight } from "$lib/units.ts";
 
 export type ColId =
   | "nr" | "date" | "rating" | "depth" | "duration"
   | "buddy" | "guide" | "country" | "location"
   | "temp" | "suit" | "cylinder" | "sac" | "tags"
-  | "notes" | "divemode" | "weight";
+  | "notes" | "divemode" | "weight" | "media"
+  | "otu" | "maxcns";
 
 export interface RenderCtx {
   sites: Site[];
+  units: Units;
 }
 
 export interface ColDef {
@@ -26,7 +29,8 @@ export const DEFAULT_COL_ORDER: ColId[] = [
   "nr", "date", "rating", "depth", "duration",
   "buddy", "guide", "country", "location",
   "temp", "suit", "cylinder", "sac", "tags",
-  "notes", "divemode", "weight",
+  "notes", "divemode", "weight", "media",
+  "otu", "maxcns",
 ];
 
 function gasMix(c?: Cylinder): string {
@@ -72,7 +76,7 @@ export const ALL_COLS: ColDef[] = [
   },
   {
     id: "depth", label: "Depth", width: "56px", defaultVisible: true,
-    render: (d) => d.maxDepthM != null ? d.maxDepthM.toFixed(1) : "—",
+    render: (d, ctx) => d.maxDepthM != null ? fmtDepth(d.maxDepthM, ctx.units, { suffix: false }) : "—",
     compare: (a, b) => (a.maxDepthM ?? 0) - (b.maxDepthM ?? 0),
   },
   {
@@ -102,7 +106,7 @@ export const ALL_COLS: ColDef[] = [
   },
   {
     id: "temp", label: "Temp.", width: "56px", defaultVisible: false,
-    render: (d) => d.waterTempC != null ? d.waterTempC.toFixed(1) : "—",
+    render: (d, ctx) => d.waterTempC != null ? fmtTemp(d.waterTempC, ctx.units, { suffix: false }) : "—",
     compare: (a, b) => (a.waterTempC ?? 0) - (b.waterTempC ?? 0),
   },
   {
@@ -140,7 +144,22 @@ export const ALL_COLS: ColDef[] = [
   },
   {
     id: "weight", label: "Weight", width: "56px", defaultVisible: false,
-    render: (d) => d.totalWeightKg != null ? d.totalWeightKg.toFixed(2) : "—",
+    render: (d, ctx) => d.totalWeightKg != null ? fmtWeight(d.totalWeightKg, ctx.units, { suffix: false }) : "—",
     compare: (a, b) => (a.totalWeightKg ?? 0) - (b.totalWeightKg ?? 0),
+  },
+  {
+    id: "media", label: "Media", width: "56px", defaultVisible: false,
+    render: (d) => d.mediaCount > 0 ? String(d.mediaCount) : "—",
+    compare: (a, b) => a.mediaCount - b.mediaCount,
+  },
+  {
+    id: "otu", label: "OTU", width: "56px", defaultVisible: false,
+    render: (d) => d.otu != null ? String(d.otu) : "—",
+    compare: (a, b) => (a.otu ?? 0) - (b.otu ?? 0),
+  },
+  {
+    id: "maxcns", label: "Max CNS", width: "72px", defaultVisible: false,
+    render: (d) => d.maxCns != null ? `${Math.round(d.maxCns)}%` : "—",
+    compare: (a, b) => (a.maxCns ?? 0) - (b.maxCns ?? 0),
   },
 ];

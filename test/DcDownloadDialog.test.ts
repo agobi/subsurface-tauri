@@ -24,10 +24,12 @@ describe("DcDownloadDialog", () => {
       if (cmd === "list_dc_vendors") return ["Shearwater", "Suunto"];
       if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
       if (cmd === "list_serial_ports") return ["/dev/ttyUSB0"];
-      if (cmd === "startup_logbook") return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "test", recents: [] };
+      if (cmd === "startup_logbook") return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "test", recents: [], warnings: [] };
       return null;
     });
   });
+
+  afterEach(() => app.reset());
 
   it("goes straight to Add Device when there are no known devices", async () => {
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
@@ -151,9 +153,13 @@ describe("DcDownloadDialog", () => {
 
   it("skips setup entirely and connects directly when a Serial connection is cached", async () => {
     vi.mocked(store.load).mockResolvedValue({
-      get: vi.fn().mockResolvedValue({
-        "Shearwater Perdix AI 0001e240": { lastTransport: "Serial", addresses: { Serial: "/dev/ttyUSB0" } },
-      }),
+      get: vi.fn((key: string) =>
+        Promise.resolve(
+          key === "dcConnections"
+            ? { "Shearwater Perdix AI 0001e240": { lastTransport: "Serial", addresses: { Serial: "/dev/ttyUSB0" } } }
+            : null,
+        ),
+      ),
       set: vi.fn(),
       save: vi.fn(),
     } as any);
@@ -177,15 +183,20 @@ describe("DcDownloadDialog", () => {
         vendor: "Shearwater",
         model: "Perdix AI",
         transport: { kind: "Serial", port: "/dev/ttyUSB0" },
+        mergeGapMinutes: 15,
       }),
     );
   });
 
   it("skips setup and the BLE scan entirely when a BLE connection is cached", async () => {
     vi.mocked(store.load).mockResolvedValue({
-      get: vi.fn().mockResolvedValue({
-        "Shearwater Perdix AI 0001e240": { lastTransport: "BLE", addresses: { BLE: "AA:BB:CC:DD:EE:FF" } },
-      }),
+      get: vi.fn((key: string) =>
+        Promise.resolve(
+          key === "dcConnections"
+            ? { "Shearwater Perdix AI 0001e240": { lastTransport: "BLE", addresses: { BLE: "AA:BB:CC:DD:EE:FF" } } }
+            : null,
+        ),
+      ),
       set: vi.fn(),
       save: vi.fn(),
     } as any);
@@ -209,6 +220,7 @@ describe("DcDownloadDialog", () => {
         vendor: "Shearwater",
         model: "Perdix AI",
         transport: { kind: "Ble", address: "AA:BB:CC:DD:EE:FF" },
+        mergeGapMinutes: 15,
       }),
     );
   });
@@ -274,14 +286,35 @@ describe("DcDownloadDialog", () => {
     });
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
     await vi.waitFor(() => expect(completeCb).toBeDefined());
+    const dive = { date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 };
     completeCb!({
       payload: {
-        dives: [{ date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 }],
+        groups: [{ merged: dive, segments: [dive] }],
         skipped: 1,
         cancelled: false,
       },
     });
     expect(await screen.findByText("Review Downloaded Dives")).toBeTruthy();
+  });
+
+  it("shows converted depth in the review list when units is IMPERIAL", async () => {
+    app.setUnitsPref("IMPERIAL");
+    let completeCb: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-complete") completeCb = cb as typeof completeCb;
+      return () => {};
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await vi.waitFor(() => expect(completeCb).toBeDefined());
+    const dive = { date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 };
+    completeCb!({
+      payload: {
+        groups: [{ merged: dive, segments: [dive] }],
+        skipped: 0,
+        cancelled: false,
+      },
+    });
+    expect(await screen.findByText("41 ft")).toBeTruthy();
   });
 
   it("renders the review summary with no stray whitespace before the period", async () => {
@@ -292,13 +325,14 @@ describe("DcDownloadDialog", () => {
     });
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
     await vi.waitFor(() => expect(completeCb).toBeDefined());
+    const dives = [
+      { date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 },
+      { date: "2026-06-13T08:00:00", durationSec: 900, maxDepthM: 8.0 },
+      { date: "2026-06-13T10:00:00", durationSec: 600, maxDepthM: 5.0 },
+    ];
     completeCb!({
       payload: {
-        dives: [
-          { date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 },
-          { date: "2026-06-13T08:00:00", durationSec: 900, maxDepthM: 8.0 },
-          { date: "2026-06-13T10:00:00", durationSec: 600, maxDepthM: 5.0 },
-        ],
+        groups: dives.map((d) => ({ merged: d, segments: [d] })),
         skipped: 0,
         cancelled: false,
       },
@@ -318,10 +352,10 @@ describe("DcDownloadDialog", () => {
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
     await vi.waitFor(() => expect(completeCb).toBeDefined());
     completeCb!({
-      payload: { dives: [], skipped: 50, cancelled: false },
+      payload: { groups: [], skipped: 50, cancelled: false },
     });
     await vi.waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("commit_dc_download", { selectedIndices: [] })
+      expect(invoke).toHaveBeenCalledWith("commit_dc_download", { selections: [] })
     );
   });
 
@@ -333,14 +367,51 @@ describe("DcDownloadDialog", () => {
     });
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
     await vi.waitFor(() => expect(completeCb).toBeDefined());
+    const dive = { date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 };
     completeCb!({
       payload: {
-        dives: [{ date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 }],
+        groups: [{ merged: dive, segments: [dive] }],
         skipped: 0,
         cancelled: true,
       },
     });
     expect(await screen.findByText("Save 1 dive to logbook")).toBeTruthy();
+  });
+
+  it("shows the real save outcome, not a stale cancelled message, after saving dives fetched before a cancel", async () => {
+    let completeCb: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-complete") completeCb = cb as typeof completeCb;
+      return () => {};
+    });
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
+      if (cmd === "commit_dc_download") return 1;
+      if (cmd === "startup_logbook") {
+        return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "x", recents: [], warnings: [] };
+      }
+      return null;
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await vi.waitFor(() => expect(completeCb).toBeDefined());
+    const dive = { date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 };
+    completeCb!({
+      payload: {
+        groups: [{ merged: dive, segments: [dive] }],
+        skipped: 0,
+        cancelled: true,
+      },
+    });
+
+    const saveButton = await screen.findByText("Save 1 dive to logbook");
+    await fireEvent.click(saveButton);
+
+    expect(await screen.findByText("Done")).toBeTruthy();
+    expect(screen.queryByText("Download cancelled. No dives saved.")).toBeNull();
+    expect(await screen.findByText("1 dive added, 0 skipped.")).toBeTruthy();
   });
 
   it("applies the reloaded logbook to the app store after saving", async () => {
@@ -361,16 +432,17 @@ describe("DcDownloadDialog", () => {
       if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
       if (cmd === "commit_dc_download") return 1;
       if (cmd === "startup_logbook") {
-        return { logbook: reloadedLogbook, displayName: "after-save", recents: [] };
+        return { logbook: reloadedLogbook, displayName: "after-save", recents: [], warnings: [] };
       }
       return null;
     });
 
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
     await vi.waitFor(() => expect(completeCb).toBeDefined());
+    const dive = { date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 };
     completeCb!({
       payload: {
-        dives: [{ date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 }],
+        groups: [{ merged: dive, segments: [dive] }],
         skipped: 0,
         cancelled: false,
       },
@@ -383,7 +455,7 @@ describe("DcDownloadDialog", () => {
     expect(app.logbook.dives).toEqual(reloadedLogbook.dives);
   });
 
-  it("lets the user deselect a dive and only commits the remaining selected indices", async () => {
+  it("lets the user deselect a dive and only commits the remaining selected groups", async () => {
     let completeCb: ((e: { payload: unknown }) => void) | undefined;
     vi.mocked(listen).mockImplementation(async (event, cb) => {
       if (event === "dc-complete") completeCb = cb as typeof completeCb;
@@ -395,18 +467,20 @@ describe("DcDownloadDialog", () => {
       if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
       if (cmd === "commit_dc_download") return 1;
       if (cmd === "startup_logbook") {
-        return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "x", recents: [] };
+        return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "x", recents: [], warnings: [] };
       }
       return null;
     });
 
     render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
     await vi.waitFor(() => expect(completeCb).toBeDefined());
+    const diveA = { date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 };
+    const diveB = { date: "2026-06-11T16:32:00", durationSec: 199, maxDepthM: 3.6 };
     completeCb!({
       payload: {
-        dives: [
-          { date: "2026-06-14T08:00:00", durationSec: 1800, maxDepthM: 12.6 },
-          { date: "2026-06-11T16:32:00", durationSec: 199, maxDepthM: 3.6 },
+        groups: [
+          { merged: diveA, segments: [diveA] },
+          { merged: diveB, segments: [diveB] },
         ],
         skipped: 0,
         cancelled: false,
@@ -425,7 +499,122 @@ describe("DcDownloadDialog", () => {
     await fireEvent.click(saveButton);
 
     await vi.waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("commit_dc_download", { selectedIndices: [0] })
+      expect(invoke).toHaveBeenCalledWith("commit_dc_download", {
+        selections: [{ group: 0, merged: true, segments: [] }],
+      })
+    );
+  });
+
+  it("shows an Unmerge control for a group folded from multiple segments, and lets the user split it", async () => {
+    let completeCb: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-complete") completeCb = cb as typeof completeCb;
+      return () => {};
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await vi.waitFor(() => expect(completeCb).toBeDefined());
+
+    const segA = { date: "2026-06-14T08:00:00", durationSec: 180, maxDepthM: 3.0 };
+    const segB = { date: "2026-06-14T08:10:00", durationSec: 2400, maxDepthM: 22.0 };
+    const merged = { date: "2026-06-14T08:00:00", durationSec: 2760, maxDepthM: 22.0 };
+    completeCb!({
+      payload: {
+        groups: [{ merged, segments: [segA, segB] }],
+        skipped: 0,
+        cancelled: false,
+      },
+    });
+
+    await screen.findByText("Review Downloaded Dives");
+    expect(screen.getByText("merged from 2 segments")).toBeTruthy();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+
+    await fireEvent.click(screen.getByText("Unmerge"));
+
+    expect(screen.getAllByRole("checkbox")).toHaveLength(2);
+    expect(screen.getByText("Merge")).toBeTruthy();
+  });
+
+  it("commits individually-selected segments after unmerging a group", async () => {
+    let completeCb: ((e: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, cb) => {
+      if (event === "dc-complete") completeCb = cb as typeof completeCb;
+      return () => {};
+    });
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["BLE"] }];
+      if (cmd === "commit_dc_download") return 1;
+      if (cmd === "startup_logbook") {
+        return { logbook: { dives: [], trips: [], sites: [], units: "METRIC" }, displayName: "x", recents: [], warnings: [] };
+      }
+      return null;
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await vi.waitFor(() => expect(completeCb).toBeDefined());
+
+    const segA = { date: "2026-06-14T08:00:00", durationSec: 180, maxDepthM: 3.0 };
+    const segB = { date: "2026-06-14T08:10:00", durationSec: 2400, maxDepthM: 22.0 };
+    const merged = { date: "2026-06-14T08:00:00", durationSec: 2760, maxDepthM: 22.0 };
+    completeCb!({
+      payload: {
+        groups: [{ merged, segments: [segA, segB] }],
+        skipped: 0,
+        cancelled: false,
+      },
+    });
+
+    await screen.findByText("Review Downloaded Dives");
+    await fireEvent.click(screen.getByText("Unmerge"));
+
+    const checkboxes = screen.getAllByRole("checkbox");
+    expect(checkboxes).toHaveLength(2);
+    await fireEvent.click(checkboxes[0]); // deselect the short pre-dive check
+
+    const saveButton = await screen.findByText("Save 1 dive to logbook");
+    await fireEvent.click(saveButton);
+
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("commit_dc_download", {
+        selections: [{ group: 0, merged: false, segments: [1] }],
+      })
+    );
+  });
+
+  it("loads the configured merge-gap preference and sends it with start_dc_download", async () => {
+    vi.mocked(store.load).mockResolvedValue({
+      get: vi.fn().mockResolvedValue({ mergeGapMinutes: 30 }),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix", transports: ["Serial"] }];
+      if (cmd === "list_serial_ports") return ["/dev/ttyUSB0"];
+      if (cmd === "start_dc_download") return new Promise(() => {}); // never resolves
+      return null;
+    });
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+
+    const vendorSelect = await screen.findByLabelText("Vendor");
+    await fireEvent.change(vendorSelect, { target: { value: "Shearwater" } });
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_dc_models", { vendor: "Shearwater" }));
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_serial_ports"));
+    const portSelect = await screen.findByLabelText("Port");
+    await fireEvent.change(portSelect, { target: { value: "/dev/ttyUSB0" } });
+
+    await fireEvent.click(await screen.findByText("Download"));
+
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("start_dc_download", {
+        vendor: "Shearwater",
+        model: "Perdix",
+        transport: { kind: "Serial", port: "/dev/ttyUSB0" },
+        mergeGapMinutes: 30,
+      }),
     );
   });
 
@@ -503,5 +692,60 @@ describe("DcDownloadDialog", () => {
     expect(await screen.findByText("no BLE adapter found")).toBeTruthy();
     // Must stay on the setup screen, not jump away with no context.
     expect(screen.getByText("Add Device")).toBeTruthy();
+  });
+
+  it("shows an Open Settings recovery button when scan_ble_devices rejects with PermissionDenied", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE"] }];
+      if (cmd === "scan_ble_devices") throw new Error("PermissionDenied");
+      if (cmd === "open_app_settings") return null;
+      return null;
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+
+    const vendorSelect = await screen.findByLabelText("Vendor");
+    await fireEvent.change(vendorSelect, { target: { value: "Shearwater" } });
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_dc_models", { vendor: "Shearwater" }));
+
+    await fireEvent.click(await screen.findByText("Scan"));
+
+    const settingsButton = await screen.findByText("Open Settings");
+    expect(screen.getByText("Bluetooth permission is required to scan for devices.")).toBeTruthy();
+
+    await fireEvent.click(settingsButton);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("open_app_settings"));
+  });
+
+  it("shows the Open Settings recovery on the cached-connection fast path when start_dc_download rejects with PermissionDenied", async () => {
+    vi.mocked(store.load).mockResolvedValue({
+      get: vi.fn().mockResolvedValue({
+        "Shearwater Perdix AI 0001e240": { lastTransport: "BLE", addresses: { BLE: "AA:BB:CC:DD:EE:FF" } },
+      }),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "list_known_devices") return [{ vendor: "Shearwater", product: "Perdix AI", serial: "0001e240", nickname: "" }];
+      if (cmd === "list_dc_vendors") return ["Shearwater"];
+      if (cmd === "list_dc_models") return [{ product: "Perdix AI", transports: ["BLE"] }];
+      if (cmd === "start_dc_download") throw new Error("PermissionDenied");
+      if (cmd === "open_app_settings") return null;
+      return null;
+    });
+
+    render(DcDownloadDialog, { props: { open: true, onClose: () => {} } });
+    await screen.findByText("Select Device");
+    await fireEvent.click(await screen.findByText("Continue"));
+
+    // Must land back on the setup screen with the same recovery UI scanBle() uses,
+    // not the generic error result screen.
+    expect(await screen.findByText("Bluetooth permission is required to scan for devices.")).toBeTruthy();
+    expect(screen.getByText("Connect")).toBeTruthy();
+    const settingsButton = await screen.findByText("Open Settings");
+    await fireEvent.click(settingsButton);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("open_app_settings"));
   });
 });

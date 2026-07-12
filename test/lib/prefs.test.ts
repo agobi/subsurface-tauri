@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import * as store from "@tauri-apps/plugin-store";
 import * as event from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import {
   resolveTheme,
   applyTheme,
@@ -9,7 +10,13 @@ import {
   saveAndEmitAppearance,
   loadDiveListPrefs,
   saveDiveListPrefs,
+  loadLoggingPrefs,
+  applyLogLevel,
+  loadDcDownloadPrefs,
+  saveDcDownloadPrefs,
+  resolveUnits,
   DEFAULT_DIVE_LIST_PREFS,
+  DEFAULT_DC_DOWNLOAD_PREFS,
   type DiveListPrefs,
 } from "$lib/prefs.ts";
 import { ALL_COLS } from "$lib/diveListColumns.ts";
@@ -48,12 +55,24 @@ describe("applyTheme", () => {
   });
 });
 
+describe("resolveUnits", () => {
+  it("returns logbook units when pref is 'auto'", () => {
+    expect(resolveUnits("auto", "IMPERIAL")).toBe("IMPERIAL");
+    expect(resolveUnits("auto", "METRIC")).toBe("METRIC");
+  });
+
+  it("returns the explicit pref, overriding logbook units", () => {
+    expect(resolveUnits("METRIC", "IMPERIAL")).toBe("METRIC");
+    expect(resolveUnits("IMPERIAL", "METRIC")).toBe("IMPERIAL");
+  });
+});
+
 describe("loadAppearancePrefs", () => {
   afterEach(() => {
     vi.resetAllMocks();
   });
 
-  it("returns default auto theme when settings.json has no appearance key", async () => {
+  it("returns default auto theme and auto units when settings.json has no appearance key", async () => {
     const mockGet = vi.fn().mockResolvedValue(null);
     vi.mocked(store.load).mockResolvedValueOnce({
       get: mockGet,
@@ -61,10 +80,10 @@ describe("loadAppearancePrefs", () => {
       save: vi.fn(),
     } as any);
     const prefs = await loadAppearancePrefs();
-    expect(prefs).toEqual({ theme: "auto" });
+    expect(prefs).toEqual({ theme: "auto", units: "auto" });
   });
 
-  it("returns saved theme when present", async () => {
+  it("returns saved theme when present, defaulting units to auto (back-compat)", async () => {
     const mockGet = vi.fn().mockResolvedValue({ theme: "light" });
     vi.mocked(store.load).mockResolvedValueOnce({
       get: mockGet,
@@ -72,7 +91,18 @@ describe("loadAppearancePrefs", () => {
       save: vi.fn(),
     } as any);
     const prefs = await loadAppearancePrefs();
-    expect(prefs).toEqual({ theme: "light" });
+    expect(prefs).toEqual({ theme: "light", units: "auto" });
+  });
+
+  it("returns saved theme and units when both present", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ theme: "dark", units: "IMPERIAL" });
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: mockGet,
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    const prefs = await loadAppearancePrefs();
+    expect(prefs).toEqual({ theme: "dark", units: "IMPERIAL" });
   });
 });
 
@@ -90,11 +120,11 @@ describe("saveAndEmitAppearance", () => {
       save: mockSave,
     } as any);
 
-    await saveAndEmitAppearance({ theme: "auto" });
+    await saveAndEmitAppearance({ theme: "auto", units: "auto" });
 
-    expect(mockSet).toHaveBeenCalledWith("appearance", { theme: "auto" });
+    expect(mockSet).toHaveBeenCalledWith("appearance", { theme: "auto", units: "auto" });
     expect(mockSave).toHaveBeenCalled();
-    expect(vi.mocked(event.emit)).toHaveBeenCalledWith("prefs:appearance-changed", { theme: "auto" });
+    expect(vi.mocked(event.emit)).toHaveBeenCalledWith("prefs:appearance-changed", { theme: "auto", units: "auto" });
   });
 });
 
@@ -109,7 +139,7 @@ describe("loadDiveListPrefs", () => {
     } as any);
     const prefs = await loadDiveListPrefs();
     expect(prefs.hiddenCols).toEqual(expect.arrayContaining(["temp", "suit", "cylinder"]));
-    expect(prefs.colOrder.length).toBe(17);
+    expect(prefs.colOrder.length).toBe(20);
   });
 
   it("migrates old format (no hiddenCols): infers hiddenCols from absent ids", async () => {
@@ -163,6 +193,71 @@ describe("saveDiveListPrefs", () => {
     };
     await saveDiveListPrefs(prefs);
     expect(mockSet).toHaveBeenCalledWith("diveList", prefs);
+    expect(mockSave).toHaveBeenCalled();
+  });
+});
+
+describe("loadLoggingPrefs", () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it("returns the lowercased level reported by the backend", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce("DEBUG");
+    const level = await loadLoggingPrefs();
+    expect(level).toBe("debug");
+    expect(invoke).toHaveBeenCalledWith("get_log_level");
+  });
+});
+
+describe("applyLogLevel", () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it("invokes set_log_level with the chosen level", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+    await applyLogLevel("trace");
+    expect(invoke).toHaveBeenCalledWith("set_log_level", { level: "trace" });
+  });
+});
+
+describe("loadDcDownloadPrefs", () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it("returns the default 15-minute gap when settings.json has no dcDownload key", async () => {
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    const prefs = await loadDcDownloadPrefs();
+    expect(prefs).toEqual(DEFAULT_DC_DOWNLOAD_PREFS);
+    expect(prefs.mergeGapMinutes).toBe(15);
+  });
+
+  it("returns the saved gap when present", async () => {
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: vi.fn().mockResolvedValue({ mergeGapMinutes: 30 }),
+      set: vi.fn(),
+      save: vi.fn(),
+    } as any);
+    const prefs = await loadDcDownloadPrefs();
+    expect(prefs).toEqual({ mergeGapMinutes: 30 });
+  });
+});
+
+describe("saveDcDownloadPrefs", () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it("writes the dcDownload key and saves", async () => {
+    const mockSet = vi.fn();
+    const mockSave = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(store.load).mockResolvedValueOnce({
+      get: vi.fn(),
+      set: mockSet,
+      save: mockSave,
+    } as any);
+
+    await saveDcDownloadPrefs({ mergeGapMinutes: 30 });
+
+    expect(mockSet).toHaveBeenCalledWith("dcDownload", { mergeGapMinutes: 30 });
     expect(mockSave).toHaveBeenCalled();
   });
 });

@@ -10,11 +10,36 @@ function fixtureLogbook(): Logbook {
 }
 
 function fixtureResult(): OpenResult {
-  return { logbook: fixtureLogbook(), displayName: 'Test Logbook', recents: [] };
+  return { logbook: fixtureLogbook(), displayName: 'Test Logbook', recents: [], warnings: [] };
+}
+
+function fixtureRecents(): OpenResult['recents'] {
+  return (window as any).__playwright_fixtures__?.recents ?? [];
+}
+
+type DcFixtures = {
+  vendors?: string[];
+  models?: { product: string; transports: string[] }[];
+  serialPorts?: string[];
+  progress?: { current: number; maximum: number };
+  devinfo?: { model: number; firmware: number; serial: number };
+};
+
+function fixtureDc(): DcFixtures {
+  return (window as any).__playwright_fixtures__?.dc ?? {};
+}
+
+// Populated by the `listen` mock below; `start_dc_download` replays fixture
+// events through these so a harness page can drive DcDownloadDialog past its
+// "setup" step without a real backend.
+const eventListeners = new Map<string, ((e: { payload: unknown }) => void)[]>();
+
+function emitToListeners(event: string, payload: unknown): void {
+  for (const handler of eventListeners.get(event) ?? []) handler({ payload });
 }
 
 // @tauri-apps/api/core
-export async function invoke<T>(cmd: string, _args?: unknown): Promise<T> {
+export async function invoke<T>(cmd: string, args?: unknown): Promise<T> {
   switch (cmd) {
     case 'startup_logbook':
     case 'open_logbook':
@@ -23,11 +48,39 @@ export async function invoke<T>(cmd: string, _args?: unknown): Promise<T> {
     case 'sync_cloud_logbook':
       return fixtureResult() as T;
     case 'new_logbook':
-      return { logbook: EMPTY, displayName: '', recents: [] } as T;
+      return { logbook: EMPTY, displayName: '', recents: [], warnings: [] } as T;
     case 'get_dive': {
-      const args = _args as { number: number } | undefined;
-      const dive = fixtureLogbook().dives.find(d => d.number === args?.number);
+      const a = args as { number: number } | undefined;
+      const dive = fixtureLogbook().dives.find(d => d.number === a?.number);
       return (dive ?? null) as T;
+    }
+    case 'list_known_devices':
+      return [] as T;
+    case 'get_recents':
+      return fixtureRecents() as T;
+    case 'clear_recents':
+      return [] as T;
+    case 'remove_recent': {
+      const a = args as { index: number } | undefined;
+      const recents = fixtureRecents();
+      return recents.filter((_, i) => i !== a?.index) as T;
+    }
+    case 'list_dc_vendors':
+      return (fixtureDc().vendors ?? ['TestVendor']) as T;
+    case 'list_dc_models':
+      return (fixtureDc().models ?? [{ product: 'TestModel', transports: ['Serial'] }]) as T;
+    case 'list_serial_ports':
+      return (fixtureDc().serialPorts ?? ['/dev/ttyUSB0']) as T;
+    case 'get_log_level':
+      return 'INFO' as T;
+    case 'start_dc_download': {
+      const dc = fixtureDc();
+      if (dc.devinfo) emitToListeners('dc-devinfo', dc.devinfo);
+      emitToListeners('dc-progress', dc.progress ?? { current: 524288, maximum: 1048576 });
+      // Never resolves — parks the dialog on the "progress" step so
+      // Playwright can screenshot it mid-download, same as the Toolbar
+      // sync-in-progress harness.
+      return new Promise<T>(() => {});
     }
     default:
       return null as T;
@@ -35,8 +88,13 @@ export async function invoke<T>(cmd: string, _args?: unknown): Promise<T> {
 }
 
 // @tauri-apps/api/event
-export async function listen(_event: string, _handler: unknown): Promise<() => void> {
-  return () => {};
+export async function listen(event: string, handler: (e: { payload: unknown }) => void): Promise<() => void> {
+  const handlers = eventListeners.get(event) ?? [];
+  handlers.push(handler);
+  eventListeners.set(event, handlers);
+  return () => {
+    eventListeners.set(event, (eventListeners.get(event) ?? []).filter(h => h !== handler));
+  };
 }
 export async function emit(_event: string, _payload?: unknown): Promise<void> {}
 
@@ -59,7 +117,10 @@ export async function platform(): Promise<string> {
 // @tauri-apps/plugin-store
 export async function load(_path: string) {
   return {
-    get: async (_key: string) => null,
+    get: async (key: string) => {
+      if (key === 'appearance') return (window as any).__playwright_fixtures__?.appearance ?? null;
+      return null;
+    },
     set: async (_key: string, _value: unknown): Promise<void> => {},
     save: async (): Promise<void> => {},
   };

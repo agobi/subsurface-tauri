@@ -2,7 +2,6 @@
 #[cfg(desktop)]
 mod menu;
 mod cloud;
-#[cfg(desktop)]
 mod dc;
 mod ssrf_git;
 mod state;
@@ -33,15 +32,10 @@ fn path_basename(path: &std::path::Path) -> String {
         .to_owned()
 }
 
-pub(crate) fn update_recents(
-    store: &tauri_plugin_store::Store<impl tauri::Runtime>,
-    entry: RecentEntry,
-) -> Result<Vec<RecentEntry>, String> {
-    let mut recents: Vec<RecentEntry> = store
-        .get("recents")
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
+// Keeps the recents list from growing unbounded across a long-lived install.
+const MAX_RECENTS: usize = 20;
 
+fn dedupe_and_cap_recents(mut recents: Vec<RecentEntry>, entry: RecentEntry) -> Vec<RecentEntry> {
     recents.retain(|e| match (e, &entry) {
         (RecentEntry::Local { path: p1 }, RecentEntry::Local { path: p2 }) => p1 != p2,
         (
@@ -51,6 +45,19 @@ pub(crate) fn update_recents(
         _ => true,
     });
     recents.insert(0, entry);
+    recents.truncate(MAX_RECENTS);
+    recents
+}
+
+pub(crate) fn update_recents(
+    store: &tauri_plugin_store::Store<impl tauri::Runtime>,
+    entry: RecentEntry,
+) -> Result<Vec<RecentEntry>, String> {
+    let recents: Vec<RecentEntry> = store
+        .get("recents")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    let recents = dedupe_and_cap_recents(recents, entry);
 
     store.set("recents", serde_json::to_value(&recents).map_err(|e| e.to_string())?);
     store.save().map_err(|e| e.to_string())?;
@@ -58,9 +65,6 @@ pub(crate) fn update_recents(
 }
 
 fn install_logbook(
-    // Only read on desktop, to check for a pending DC download (see below) —
-    // that flow doesn't exist on mobile.
-    #[cfg_attr(not(desktop), allow(unused_variables))]
     app: &tauri::AppHandle,
     logbook_state: &tauri::State<'_, Mutex<Option<LogbookState>>>,
     root: std::path::PathBuf,
@@ -71,7 +75,6 @@ fn install_logbook(
     // the logbook root at download-start time, so switching here would write
     // the buffered dives to one logbook while the fingerprint update lands
     // in whichever logbook ends up open.
-    #[cfg(desktop)]
     {
         use tauri::Manager;
         let pending = app.state::<dc::commands::PendingDownloadState>();
@@ -149,12 +152,13 @@ async fn startup_logbook(
         .await
         .map_err(|e| e.to_string())??;
 
+    let warnings = parsed.warnings.clone();
     let logbook = install_logbook(&app, &logbook_state, root, parsed)?;
 
     #[cfg(desktop)]
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
 
-    Ok(OpenResult { logbook, display_name, recents })
+    Ok(OpenResult { logbook, display_name, recents, warnings })
 }
 
 #[tauri::command]
@@ -172,6 +176,7 @@ async fn open_logbook(
         .await
         .map_err(|e| e.to_string())??;
 
+    let warnings = parsed.warnings.clone();
     let logbook = install_logbook(&app, &logbook_state, path.clone(), parsed)?;
 
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
@@ -183,7 +188,7 @@ async fn open_logbook(
     #[cfg(desktop)]
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
 
-    Ok(OpenResult { logbook, display_name, recents })
+    Ok(OpenResult { logbook, display_name, recents, warnings })
 }
 
 #[tauri::command]
@@ -204,6 +209,7 @@ async fn new_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
+    let warnings = parsed.warnings.clone();
     let logbook = install_logbook(&app, &logbook_state, path.clone(), parsed)?;
 
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
@@ -215,7 +221,7 @@ async fn new_logbook(
     #[cfg(desktop)]
     menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
 
-    Ok(OpenResult { logbook, display_name, recents })
+    Ok(OpenResult { logbook, display_name, recents, warnings })
 }
 
 #[tauri::command]
@@ -241,6 +247,61 @@ async fn get_recents(app: tauri::AppHandle) -> Result<Vec<RecentEntry>, String> 
         .unwrap_or_default())
 }
 
+#[tauri::command]
+async fn clear_recents(app: tauri::AppHandle) -> Result<Vec<RecentEntry>, String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let recents: Vec<RecentEntry> = Vec::new();
+    store.set("recents", serde_json::to_value(&recents).map_err(|e| e.to_string())?);
+    store.save().map_err(|e| e.to_string())?;
+
+    #[cfg(desktop)]
+    menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
+
+    Ok(recents)
+}
+
+#[tauri::command]
+async fn remove_recent(app: tauri::AppHandle, index: usize) -> Result<Vec<RecentEntry>, String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let mut recents: Vec<RecentEntry> = store
+        .get("recents")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    if index >= recents.len() {
+        return Err(format!("recent index {index} out of range"));
+    }
+    recents.remove(index);
+
+    store.set("recents", serde_json::to_value(&recents).map_err(|e| e.to_string())?);
+    store.save().map_err(|e| e.to_string())?;
+
+    #[cfg(desktop)]
+    menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
+
+    Ok(recents)
+}
+
+fn default_log_level() -> log::LevelFilter {
+    if cfg!(debug_assertions) { log::LevelFilter::Debug } else { log::LevelFilter::Info }
+}
+
+#[tauri::command]
+fn get_log_level() -> String {
+    log::max_level().to_string()
+}
+
+#[tauri::command]
+fn set_log_level(app: tauri::AppHandle, level: String) -> Result<(), String> {
+    let parsed: log::LevelFilter = level
+        .parse()
+        .map_err(|_| format!("invalid log level: {level}"))?;
+    log::set_max_level(parsed);
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    store.set("logging", serde_json::json!({ "level": level.to_lowercase() }));
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -250,13 +311,18 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            let level = app
+                .store("settings.json")
+                .ok()
+                .and_then(|s| s.get("logging"))
+                .and_then(|v| v.get("level").and_then(|l| l.as_str()).map(str::to_owned))
+                .and_then(|s| s.parse::<log::LevelFilter>().ok())
+                .unwrap_or_else(default_log_level);
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(level)
+                    .build(),
+            )?;
             #[cfg(desktop)]
             {
                 let m = menu::build(app.handle(), &[])?;
@@ -265,10 +331,10 @@ pub fn run() {
             Ok(())
         });
 
-    // dc::commands::PendingDownload only exists on desktop (`mod dc;` is
-    // #[cfg(desktop)]-gated) — mobile has no dive-computer download flow.
-    #[cfg(desktop)]
     let builder = builder.manage(Mutex::new(None::<dc::commands::PendingDownload>));
+
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(dc_ble::init());
 
     #[cfg(desktop)]
     let builder = builder.on_menu_event(menu::handle_event);
@@ -280,29 +346,68 @@ pub fn run() {
             new_logbook,
             get_dive,
             get_recents,
+            clear_recents,
+            remove_recent,
+            get_log_level,
+            set_log_level,
             cloud::get_cloud_credentials,
             cloud::open_cloud_logbook,
             cloud::open_recent_cloud_logbook,
             cloud::sync_cloud_logbook,
-            #[cfg(desktop)]
             dc::commands::list_dc_vendors,
-            #[cfg(desktop)]
             dc::commands::list_dc_models,
-            #[cfg(desktop)]
             dc::commands::list_known_devices,
-            #[cfg(desktop)]
             dc::commands::list_serial_ports,
-            #[cfg(desktop)]
             dc::commands::scan_ble_devices,
-            #[cfg(desktop)]
+            #[cfg(target_os = "android")]
+            dc::commands::open_app_settings,
             dc::commands::start_dc_download,
-            #[cfg(desktop)]
             dc::commands::commit_dc_download,
-            #[cfg(desktop)]
             dc::commands::discard_dc_download,
-            #[cfg(desktop)]
             dc::commands::cancel_dc_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_log_level_matches_build_profile() {
+        let expected = if cfg!(debug_assertions) {
+            log::LevelFilter::Debug
+        } else {
+            log::LevelFilter::Info
+        };
+        assert_eq!(default_log_level(), expected);
+    }
+
+    fn local(path: &str) -> RecentEntry {
+        RecentEntry::Local { path: path.to_string() }
+    }
+
+    #[test]
+    fn dedupe_and_cap_recents_inserts_newest_first() {
+        let recents = dedupe_and_cap_recents(vec![local("/a"), local("/b")], local("/c"));
+        assert_eq!(recents, vec![local("/c"), local("/a"), local("/b")]);
+    }
+
+    #[test]
+    fn dedupe_and_cap_recents_moves_existing_entry_to_front() {
+        let recents = dedupe_and_cap_recents(vec![local("/a"), local("/b")], local("/b"));
+        assert_eq!(recents, vec![local("/b"), local("/a")]);
+    }
+
+    #[test]
+    fn dedupe_and_cap_recents_truncates_to_max() {
+        let existing: Vec<RecentEntry> = (0..MAX_RECENTS)
+            .map(|i| local(&format!("/path-{i}")))
+            .collect();
+        let recents = dedupe_and_cap_recents(existing, local("/new"));
+        assert_eq!(recents.len(), MAX_RECENTS);
+        assert_eq!(recents[0], local("/new"));
+        assert!(!recents.contains(&local(&format!("/path-{}", MAX_RECENTS - 1))));
+    }
 }

@@ -8,7 +8,7 @@ import type { OpenResult } from "$lib/types.ts";
 import sample from "$lib/fixtures/logbook.sample.json";
 
 function openResult(email = "user@example.com"): OpenResult {
-  return { logbook: sample as any, displayName: email, recents: [] };
+  return { logbook: sample as any, displayName: email, recents: [], warnings: [] };
 }
 
 describe("CloudLoginDialog", () => {

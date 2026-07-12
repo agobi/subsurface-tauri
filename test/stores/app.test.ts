@@ -6,7 +6,7 @@ import type { Dive, OpenResult } from "$lib/types.ts";
 import sample from "$lib/fixtures/logbook.sample.json";
 
 function openResult(overrides: Partial<OpenResult> = {}): OpenResult {
-  return { logbook: sample as any, displayName: "test", recents: [], ...overrides };
+  return { logbook: sample as any, displayName: "test", recents: [], warnings: [], ...overrides };
 }
 
 const cloudRecents = [{ kind: "Cloud" as const, email: "user@example.com", url: "https://ssrf-cloud-eu.subsurface-divelog.org" }];
@@ -43,6 +43,33 @@ describe("app store", () => {
     expect(app.theme).toBe("auto");
   });
 
+  describe("selectDive", () => {
+    it("ignores a stale get_dive response that resolves after a newer selection", async () => {
+      let resolveFirst!: (d: Dive) => void;
+      let resolveSecond!: (d: Dive) => void;
+      const first = new Promise<Dive>((res) => { resolveFirst = res; });
+      const second = new Promise<Dive>((res) => { resolveSecond = res; });
+
+      vi.mocked(invoke).mockImplementation((cmd: string, args?: any) => {
+        if (cmd === "get_dive" && args?.number === 1) return first as any;
+        if (cmd === "get_dive" && args?.number === 2) return second as any;
+        return Promise.resolve(undefined) as any;
+      });
+
+      const p1 = app.selectDive(1);
+      const p2 = app.selectDive(2);
+
+      // The slower-clicked dive (1) resolves AFTER the newer selection (2).
+      resolveSecond({ number: 2 } as Dive);
+      await p2;
+      resolveFirst({ number: 1 } as Dive);
+      await p1;
+
+      expect(app.selectedDiveId).toBe(2);
+      expect(app.selectedDive?.number).toBe(2);
+    });
+  });
+
   describe("platform", () => {
     it("defaults to desktop", () => {
       expect(app.platform).toBe("desktop");
@@ -64,7 +91,7 @@ describe("app store", () => {
 });
 
 function makeDive(overrides: Partial<Dive> = {}): Dive {
-  return { number: 1, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], samples: [], events: [], ...overrides };
+  return { number: 1, dateTime: "2024-01-01T00:00:00", durationSec: 300, tags: [], cylinders: [], mediaCount: 0, samples: [], events: [], ...overrides };
 }
 
 describe("diveListPrefs", () => {
@@ -127,6 +154,18 @@ describe("diveListPrefs", () => {
     };
     app.reorderColumn("depth", "nr");
     expect(app.diveListPrefs.colOrder).toEqual(["depth", "nr", "date", "duration", "buddy"]);
+  });
+
+  it("reorderColumn dropping forward lands the column immediately before the target, same as dropping backward", () => {
+    // Same target relationship as the backward-drag case above (depth ends up
+    // immediately before nr) but dragging the other direction — must produce
+    // the same "insert immediately before target" placement, not the opposite side.
+    app.diveListPrefs = {
+      ...app.diveListPrefs,
+      colOrder: ["nr", "date", "depth", "duration", "buddy"],
+    };
+    app.reorderColumn("nr", "duration");
+    expect(app.diveListPrefs.colOrder).toEqual(["date", "depth", "nr", "duration", "buddy"]);
   });
 
   it("reorderColumn with same id is a no-op", () => {
@@ -291,5 +330,100 @@ describe("cloud logbook", () => {
     vi.mocked(invoke).mockResolvedValueOnce(openResult({ recents: localRecents }));
     await app.openRecent({ kind: "Local", path: "/some/local/path" });
     expect(invoke).toHaveBeenCalledWith("open_logbook", { root: "/some/local/path" });
+  });
+});
+
+describe("recents management", () => {
+  beforeEach(() => app.reset());
+
+  it("loadRecents() invokes get_recents and sets app.recents", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(localRecents);
+    await app.loadRecents();
+    expect(invoke).toHaveBeenCalledWith("get_recents");
+    expect(app.recents).toEqual(localRecents);
+  });
+
+  it("clearRecents() invokes clear_recents and empties app.recents", async () => {
+    app.recents = localRecents;
+    vi.mocked(invoke).mockResolvedValueOnce([]);
+    await app.clearRecents();
+    expect(invoke).toHaveBeenCalledWith("clear_recents");
+    expect(app.recents).toEqual([]);
+  });
+
+  it("removeRecent(index) invokes remove_recent with the index and updates app.recents", async () => {
+    app.recents = [...localRecents, ...cloudRecents];
+    vi.mocked(invoke).mockResolvedValueOnce(cloudRecents);
+    await app.removeRecent(0);
+    expect(invoke).toHaveBeenCalledWith("remove_recent", { index: 0 });
+    expect(app.recents).toEqual(cloudRecents);
+  });
+});
+
+describe("parseWarnings", () => {
+  beforeEach(() => app.reset());
+
+  it("startup() sets parseWarnings from result.warnings", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(
+      openResult({ warnings: ["2024/03/16-Sat-09=00=00/Dive-2: Permission denied (os error 13)"] })
+    );
+    await app.startup();
+    expect(app.parseWarnings).toEqual(["2024/03/16-Sat-09=00=00/Dive-2: Permission denied (os error 13)"]);
+  });
+
+  it("startup() sets parseWarnings to an empty array when result.warnings is empty", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ warnings: [] }));
+    await app.startup();
+    expect(app.parseWarnings).toEqual([]);
+  });
+
+  it("open() overwrites a stale parseWarnings left over from a previous operation", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ warnings: ["stale warning"] }));
+    await app.startup();
+    expect(app.parseWarnings).toEqual(["stale warning"]);
+
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ warnings: [] }));
+    await app.open("/some/local/path");
+    expect(app.parseWarnings).toEqual([]);
+  });
+
+  it("reset() clears parseWarnings", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(openResult({ warnings: ["a warning"] }));
+    await app.startup();
+    expect(app.parseWarnings).toEqual(["a warning"]);
+
+    app.reset();
+    expect(app.parseWarnings).toEqual([]);
+  });
+});
+
+describe("units preference", () => {
+  beforeEach(() => app.reset());
+
+  it("starts with unitsPref 'auto' and displayUnits METRIC by default", () => {
+    expect(app.unitsPref).toBe("auto");
+    expect(app.displayUnits).toBe("METRIC");
+  });
+
+  it("displayUnits follows logbook.units when unitsPref is auto", () => {
+    app.logbook = { dives: [], trips: [], sites: [], units: "IMPERIAL" };
+    expect(app.displayUnits).toBe("IMPERIAL");
+  });
+
+  it("setUnitsPref('METRIC') overrides an IMPERIAL logbook", () => {
+    app.logbook = { dives: [], trips: [], sites: [], units: "IMPERIAL" };
+    app.setUnitsPref("METRIC");
+    expect(app.displayUnits).toBe("METRIC");
+  });
+
+  it("setUnitsPref('IMPERIAL') overrides a METRIC logbook", () => {
+    app.setUnitsPref("IMPERIAL");
+    expect(app.displayUnits).toBe("IMPERIAL");
+  });
+
+  it("reset() restores unitsPref to 'auto'", () => {
+    app.setUnitsPref("IMPERIAL");
+    app.reset();
+    expect(app.unitsPref).toBe("auto");
   });
 });

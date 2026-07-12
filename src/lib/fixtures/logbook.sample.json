@@ -24,6 +24,7 @@
       "meanDepthM": 14.793,
       "waterTempC": 19,
       "decoModel": "GF 55/85",
+      "mediaCount": 0,
       "samples": [
         {
           "timeSec": 5,

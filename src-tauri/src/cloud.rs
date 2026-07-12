@@ -296,9 +296,42 @@ fn make_fetch_opts<'a>(email: &'a str, password: &'a str) -> git2::FetchOptions<
         }
         git2::Cred::userpass_plaintext(email, password)
     });
+    callbacks.certificate_check(|cert, host| {
+        // Mirrors Qt's certificate_check_cb (core/git-access.cpp): libgit2's own X.509 chain
+        // verification is unreliable across platforms — e.g. on Android, vendored OpenSSL's
+        // hash-dir CA lookup can't chase a freshly cross-signed root even though the served
+        // chain is genuinely valid (issue #67). Since we only ever fetch from our own
+        // hardcoded cloud host, accept unconditionally for that host and let libgit2's
+        // built-in result stand for anything else.
+        if host == cloud_host(CLOUD_BASE) && cert.as_x509().is_some() {
+            Ok(git2::CertificateCheckStatus::CertificateOk)
+        } else {
+            Ok(git2::CertificateCheckStatus::CertificatePassthrough)
+        }
+    });
     let mut opts = git2::FetchOptions::new();
     opts.remote_callbacks(callbacks);
     opts
+}
+
+// Vendored OpenSSL has no CA store on Android (openssl-probe only checks desktop/Linux
+// paths, none of which exist there). Point it at Android's own OS-managed trust store —
+// already in OpenSSL's c_rehash directory format — instead of vendoring/maintaining a
+// separate CA bundle.
+#[cfg(target_os = "android")]
+fn init_android_tls() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        for dir in [
+            "/apex/com.android.conscrypt/cacerts",
+            "/system/etc/security/cacerts",
+        ] {
+            if std::path::Path::new(dir).is_dir() {
+                std::env::set_var("SSL_CERT_DIR", dir);
+                break;
+            }
+        }
+    });
 }
 
 fn clone_or_fetch(
@@ -308,6 +341,9 @@ fn clone_or_fetch(
     email: &str,
     password: &str,
 ) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    init_android_tls();
+
     if cache_dir.is_dir() {
         let repo = git2::Repository::open(cache_dir).map_err(|e| e.to_string())?;
         // Always sync the remote URL — the cache may have been written by an older version
@@ -402,12 +438,13 @@ pub async fn open_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
+    let warnings = parsed.warnings.clone();
     let logbook = crate::install_logbook(&app, &logbook_state, root, parsed)?;
 
     #[cfg(desktop)]
     crate::menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
 
-    Ok(OpenResult { logbook, display_name, recents })
+    Ok(OpenResult { logbook, display_name, recents, warnings })
 }
 
 /// Opens a cloud logbook from the recents list: fetches from the server using the password saved
@@ -458,12 +495,13 @@ pub async fn open_recent_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
+    let warnings = parsed.warnings.clone();
     let logbook = crate::install_logbook(&app, &logbook_state, root, parsed)?;
 
     #[cfg(desktop)]
     crate::menu::rebuild(&app, &recents).map_err(|e| e.to_string())?;
 
-    Ok(OpenResult { logbook, display_name, recents })
+    Ok(OpenResult { logbook, display_name, recents, warnings })
 }
 
 #[tauri::command]
@@ -495,6 +533,7 @@ pub async fn sync_cloud_logbook(
     .await
     .map_err(|e| e.to_string())??;
 
+    let warnings = parsed.warnings.clone();
     let logbook = crate::install_logbook(&app, &logbook_state, root, parsed)?;
 
     // Read recents AFTER the (potentially multi-second) fetch so a concurrent open
@@ -504,7 +543,7 @@ pub async fn sync_cloud_logbook(
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
-    Ok(OpenResult { logbook, display_name, recents })
+    Ok(OpenResult { logbook, display_name, recents, warnings })
 }
 
 #[cfg(test)]
