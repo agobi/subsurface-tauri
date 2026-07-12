@@ -386,7 +386,7 @@ mod tests {
         commit_local_changes(&repo).unwrap();
         fetch(&repo);
         rebase_onto_remote(&repo, BRANCH).unwrap();
-        push_to_remote(&repo, "origin", BRANCH, "", "").unwrap();
+        push_to_remote(&repo, "origin", BRANCH, "", Default::default()).unwrap();
 
         assert_eq!(head_oid(&repo), before);
         assert_eq!(remote_branch_oid(&bare), before);
@@ -406,7 +406,7 @@ mod tests {
 
         fetch(&repo);
         rebase_onto_remote(&repo, BRANCH).unwrap();
-        push_to_remote(&repo, "origin", BRANCH, "", "").unwrap();
+        push_to_remote(&repo, "origin", BRANCH, "", Default::default()).unwrap();
 
         assert_eq!(remote_branch_oid(&bare), after_commit);
     }
@@ -423,7 +423,7 @@ mod tests {
 
         fetch(&repo);
         rebase_onto_remote(&repo, BRANCH).unwrap();
-        push_to_remote(&repo, "origin", BRANCH, "", "").unwrap();
+        push_to_remote(&repo, "origin", BRANCH, "", Default::default()).unwrap();
 
         assert_eq!(remote_branch_oid(&bare), head_oid(&repo));
     }
